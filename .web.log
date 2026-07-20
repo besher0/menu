@@ -1,0 +1,13 @@
+
+> restaurant-menu-builder@0.1.0 dev:web
+> npm run build -w @menu/shared && npm run dev -w @menu/web
+
+
+> @menu/shared@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @menu/web@0.1.0 dev
+> next dev -p 3000
+
+[?25h

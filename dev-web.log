@@ -1,0 +1,21 @@
+
+> restaurant-menu-builder@0.1.0 dev:web
+> npm run build -w @menu/shared && npm run dev -w @menu/web
+
+
+> @menu/shared@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @menu/web@0.1.0 dev
+> next dev -p 3000
+
+   ▲ Next.js 15.5.19
+   - Local:        http://localhost:3000
+   - Network:      http://10.2.0.2:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 4.3s
+ ○ Compiling /dashboard/builder ...
+[?25h

@@ -1,0 +1,468 @@
+
+> restaurant-menu-builder@0.1.0 dev
+> npm run build -w @menu/shared && concurrently "npm run dev -w @menu/api" "npm run dev -w @menu/web"
+
+
+> @menu/shared@0.1.0 build
+> tsc -p tsconfig.json
+
+[1] 
+[1] > @menu/web@0.1.0 dev
+[1] > next dev -p 3000
+[1] 
+[0] 
+[0] > @menu/api@0.1.0 dev
+[0] > tsx watch src/main.ts
+[0] 
+[1]    ▲ Next.js 15.5.19
+[1]    - Local:        http://localhost:3000
+[1]    - Network:      http://10.2.0.2:3000
+[1]    - Environments: .env.local
+[1] 
+[1]  ✓ Starting...
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +26ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +4ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mFeatureFlagsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAnalyticsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOrdersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSyncModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPublicMenuModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mBuilderModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMediaModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mQrModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +230ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +3ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mBuilderController {/dashboard/builder}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/reorder, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/publish, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminController {/admin}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/overview, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants/:id/subscription, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/subscriptions, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/dashboard}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/restaurants/current, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/overview, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id/verify, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/analytics, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMediaController {/dashboard/media}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/upload, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/images, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/3d, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/vr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductsController {/dashboard/products}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id/toggle-availability, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPublicMenuController {/public/menus}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/by-host/current, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/track, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/orders/whatsapp, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrController {/dashboard/qr}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr/:id/svg, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrPublicController {/q}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/q/:id, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSyncController {/dashboard/sync}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs/:id/retry, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOrdersController {/dashboard/orders}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/orders, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 19304  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٠٦:٠٠ ص [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +22ms[39m
+[1]  ✓ Ready in 3.7s
+[1]  ○ Compiling /login ...
+[1]  ✓ Compiled /login in 1190ms (552 modules)
+[1]  GET /login 200 in 1670ms
+[1]  ○ Compiling /m/[slug]/product/[productSlug] ...
+[1]  ✓ Compiled /m/[slug]/product/[productSlug] in 1149ms (696 modules)
+[1]  GET /m/f/product/%D8%A8%D8%B4%D8%B1 200 in 2210ms
+[1] [Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\server-development\3.pack.gz'] {
+[1]   errno: -4058,
+[1]   code: 'ENOENT',
+[1]   syscall: 'stat',
+[1]   path: 'C:\\Users\\USER\\Desktop\\menu\\apps\\web\\.next\\cache\\webpack\\server-development\\3.pack.gz'
+[1] }
+[1]  ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\server-development\3.pack.gz'] {
+[1]   errno: -4058,
+[1]   code: 'ENOENT',
+[1]   syscall: 'stat',
+[1]   path: 'C:\\Users\\USER\\Desktop\\menu\\apps\\web\\.next\\cache\\webpack\\server-development\\3.pack.gz'
+[1] }
+[1]  ⨯ unhandledRejection:  [Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\server-development\3.pack.gz'] {
+[1]   errno: -4058,
+[1]   code: 'ENOENT',
+[1]   syscall: 'stat',
+[1]   path: 'C:\\Users\\USER\\Desktop\\menu\\apps\\web\\.next\\cache\\webpack\\server-development\\3.pack.gz'
+[1] }
+[1] <w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\server-development\3.pack.gz'
+[1] [Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\client-development\12.pack.gz'] {
+[1]   errno: -4058,
+[1]   code: 'ENOENT',
+[1]   syscall: 'stat',
+[1]   path: 'C:\\Users\\USER\\Desktop\\menu\\apps\\web\\.next\\cache\\webpack\\client-development\\12.pack.gz'
+[1] }
+[1]  ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\client-development\12.pack.gz'] {
+[1]   errno: -4058,
+[1]   code: 'ENOENT',
+[1]   syscall: 'stat',
+[1]   path: 'C:\\Users\\USER\\Desktop\\menu\\apps\\web\\.next\\cache\\webpack\\client-development\\12.pack.gz'
+[1] }
+[1]  ⨯ unhandledRejection:  [Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\client-development\12.pack.gz'] {
+[1]   errno: -4058,
+[1]   code: 'ENOENT',
+[1]   syscall: 'stat',
+[1]   path: 'C:\\Users\\USER\\Desktop\\menu\\apps\\web\\.next\\cache\\webpack\\client-development\\12.pack.gz'
+[1] }
+[1] <w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, stat 'C:\Users\USER\Desktop\menu\apps\web\.next\cache\webpack\client-development\12.pack.gz'
+[1]  ○ Compiling /m/[slug]/menu ...
+[1]  ✓ Compiled /m/[slug]/menu in 590ms (686 modules)
+[1]  GET /m/f/menu 200 in 1819ms
+[1]  ✓ Compiled /m/[slug] in 375ms (688 modules)
+[1]  GET /m/f 200 in 1198ms
+[1]  GET /m/f/menu 200 in 94ms
+[1]  GET /m/f 200 in 84ms
+[1]  GET /m/f/menu 200 in 77ms
+[1]  GET /m/f/menu 200 in 67ms
+[1]  GET /m/f/menu 200 in 68ms
+[1]  GET /m/f/menu 200 in 73ms
+[1]  ○ Compiling /dashboard/orders ...
+[1]  ✓ Compiled /dashboard/orders in 764ms (726 modules)
+[1]  GET /dashboard/orders 200 in 1081ms
+[1]  ○ Compiling /dashboard/analytics ...
+[1]  ✓ Compiled /dashboard/analytics in 526ms (750 modules)
+[1]  GET /dashboard/analytics 200 in 716ms
+[1]  ○ Compiling /dashboard/builder ...
+[1]  ✓ Compiled /dashboard/builder in 691ms (773 modules)
+[1]  GET /dashboard/builder 200 in 1005ms
+[0] ١٢:١٦:٣٠ ص [tsx] change in ./..\..\packages\shared\dist\index.js Restarting...
+[0] c ✓ Compiled in 479ms (296 modules)
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +32ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +5ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mFeatureFlagsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAnalyticsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOrdersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSyncModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPublicMenuModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mBuilderModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMediaModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣١ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mQrModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +424ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +3ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mBuilderController {/dashboard/builder}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/reorder, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/publish, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminController {/admin}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/overview, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants/:id/subscription, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/subscriptions, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/dashboard}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/restaurants/current, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/overview, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id/verify, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/analytics, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMediaController {/dashboard/media}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/upload, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/images, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/3d, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/vr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductsController {/dashboard/products}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id/toggle-availability, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPublicMenuController {/public/menus}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/by-host/current, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/track, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/orders/whatsapp, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrController {/dashboard/qr}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr/:id/svg, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrPublicController {/q}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/q/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSyncController {/dashboard/sync}:[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs/:id/retry, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOrdersController {/dashboard/orders}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/orders, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 10752  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:١٦:٣٢ ص [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +20ms[39m
+[1]  ✓ Compiled /dashboard/builder in 291ms (413 modules)
+[1]  GET /dashboard/builder 200 in 737ms
+[1]  ○ Compiling /_not-found ...
+[1]  ✓ Compiled /_not-found in 843ms (714 modules)
+[1]  GET /m/f/product 404 in 1113ms
+[1]  GET /dashboard/builder 200 in 141ms
+[1]  ○ Compiling /m/[slug]/product ...
+[1]  ✓ Compiled /m/[slug]/product in 988ms (722 modules)
+[1]  GET /m/f/product 307 in 3224ms
+[0] ١٢:٢١:٠٠ ص [tsx] change in ./..\..\packages\shared\dist\index.js Restarting...
+[0] c ✓ Compiled in 784ms (722 modules)
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +46ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +8ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mFeatureFlagsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAnalyticsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminModule dependencies initialized[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOrdersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSyncModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPublicMenuModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mBuilderModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMediaModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٣ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mQrModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +740ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +5ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mBuilderController {/dashboard/builder}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder, GET} route[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/reorder, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, PATCH} route[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/publish, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminController {/admin}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/overview, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants/:id/subscription, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/subscriptions, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/dashboard}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/restaurants/current, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/overview, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id/verify, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/analytics, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMediaController {/dashboard/media}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/upload, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/images, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/3d, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/vr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductsController {/dashboard/products}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id/toggle-availability, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPublicMenuController {/public/menus}:[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/by-host/current, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/track, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/orders/whatsapp, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrController {/dashboard/qr}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr/:id/svg, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrPublicController {/q}:[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/q/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSyncController {/dashboard/sync}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs/:id/retry, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOrdersController {/dashboard/orders}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/orders, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 6960  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢١:٠٤ ص [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +34ms[39m
+[1]  GET /m/f/product 307 in 308ms
+[1]  ○ Compiling /m/[slug]/menu ...
+[1]  ✓ Compiled /m/[slug]/menu in 857ms (465 modules)
+[1]  GET /m/f/menu 200 in 1273ms
+[0] ١٢:٢٣:٥٠ ص [tsx] change in ./..\..\packages\shared\dist\index.js Restarting...
+[0] c ✓ Compiled in 701ms (710 modules)
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥١ ص [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +37ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +7ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mFeatureFlagsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAnalyticsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAdminModule dependencies initialized[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mOrdersModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSyncModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPublicMenuModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mBuilderModule dependencies initialized[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMediaModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mQrModule dependencies initialized[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +385ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +2ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/auth}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mBuilderController {/dashboard/builder}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/reorder, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/sections/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/builder/publish, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAdminController {/admin}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/overview, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/restaurants/:id/subscription, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/admin/subscriptions, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/dashboard}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/restaurants/current, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/overview, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/branches/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/categories/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id/verify, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/domains/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/theme, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/analytics, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMediaController {/dashboard/media}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/rules, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/upload, POST} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/images, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/3d, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/media/products/:productId/vr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductsController {/dashboard/products}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/products/:id/toggle-availability, PATCH} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPublicMenuController {/public/menus}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/by-host/current, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/products, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/theme, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/track, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/public/menus/:restaurantSlug/orders/whatsapp, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrController {/dashboard/qr}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, GET} route[39m[38;5;3m +1ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/qr/:id/svg, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mQrPublicController {/q}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/q/:id, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSyncController {/dashboard/sync}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/sync/jobs/:id/retry, POST} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mOrdersController {/dashboard/orders}:[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/orders, GET} route[39m[38;5;3m +0ms[39m
+[0] [32m[Nest] 26004  - [39m١٠‏/٠٧‏/٢٠٢٦، ١٢:٢٣:٥٢ ص [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +18ms[39m
+[1]  ✓ Compiled /m/[slug]/product in 203ms (425 modules)
+[1]  GET /m/f/product 307 in 547ms
+[1]  ✓ Compiled /m/[slug]/menu in 200ms (465 modules)
+[1]  GET /m/f/menu 200 in 520ms
+[1]  ⚠ Blocked cross-origin request from 10.128.45.122 to /_next/* resource. To allow this, configure "allowedDevOrigins" in next.config
+[1] Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+[1]  ✓ Compiled /m/[slug] in 254ms (467 modules)
+[1]  GET /m/f 200 in 356ms
+[1]  GET /m/f/menu 200 in 73ms
+[1]  GET /m/f/menu 200 in 55ms

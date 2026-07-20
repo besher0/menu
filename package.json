@@ -1,0 +1,23 @@
+{
+  "name": "restaurant-menu-builder",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-tenant restaurant menu builder SaaS MVP.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @menu/shared && npm run build -w @menu/api && npm run build -w @menu/web",
+    "dev": "npm run build -w @menu/shared && concurrently \"npm run dev -w @menu/api\" \"npm run dev -w @menu/web\"",
+    "dev:web": "npm run build -w @menu/shared && npm run dev -w @menu/web",
+    "dev:api": "npm run build -w @menu/shared && npm run dev -w @menu/api",
+    "prisma:generate": "npm run prisma:generate -w @menu/api",
+    "seed": "npm run seed -w @menu/api",
+    "typecheck": "npm run build -w @menu/shared && npm run typecheck -w @menu/api && npm run typecheck -w @menu/web"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.6.3"
+  }
+}

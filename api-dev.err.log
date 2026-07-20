@@ -1,0 +1,219 @@
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+[31m[Nest] 8532  - [39m٠١‏/٠٧‏/٢٠٢٦، ٩:٣٠:٠٣ م [31m  ERROR[39m [38;5;3m[ExceptionsHandler] [39m[31mCannot read properties of undefined (reading 'login')[39m
+TypeError: Cannot read properties of undefined (reading 'login')
+    at AuthController.login (C:\Users\USER\Desktop\menu\apps\api\src\modules\auth\auth.controller.ts:11:29)
+    at C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\router\router-execution-context.js:38:29
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+[31m[Nest] 19900  - [39m٠١‏/٠٧‏/٢٠٢٦، ٩:٣٠:٤٨ م [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::4000[39m[38;5;3m +1ms[39m
+node:net:1908
+    const ex = new UVExceptionWithHostPort(err, 'listen', address, port);
+               ^
+
+Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at Server.listen (node:net:2067:7)
+    at ExpressAdapter.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:173:16)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 4000
+}
+
+Node.js v20.19.6
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+[31m[Nest] 9520  - [39m٠١‏/٠٧‏/٢٠٢٦، ٩:٣٣:١٢ م [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::4000[39m[38;5;3m +2ms[39m
+node:net:1908
+    const ex = new UVExceptionWithHostPort(err, 'listen', address, port);
+               ^
+
+Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at Server.listen (node:net:2067:7)
+    at ExpressAdapter.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:173:16)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 4000
+}
+
+Node.js v20.19.6
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+[31m[Nest] 3348  - [39m٠١‏/٠٧‏/٢٠٢٦، ٩:٤٩:٣٨ م [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::4000[39m[38;5;3m +2ms[39m
+node:net:1908
+    const ex = new UVExceptionWithHostPort(err, 'listen', address, port);
+               ^
+
+Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at Server.listen (node:net:2067:7)
+    at ExpressAdapter.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:173:16)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 4000
+}
+
+Node.js v20.19.6
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+[31m[Nest] 19440  - [39m٠٢‏/٠٧‏/٢٠٢٦، ١٢:٠٨:٠٩ ص [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::4000[39m[38;5;3m +6ms[39m
+node:net:1908
+    const ex = new UVExceptionWithHostPort(err, 'listen', address, port);
+               ^
+
+Error: listen EADDRINUSE: address already in use :::4000
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at Server.listen (node:net:2067:7)
+    at ExpressAdapter.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:173:16)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 4000
+}
+
+Node.js v20.19.6
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+Prisma could not connect during boot. The API will start and retry on requests. PrismaClientInitializationError: Can't reach database server at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`
+
+Please make sure your database server is running at `ep-patient-term-atqejdsj-pooler.c-9.us-east-1.aws.neon.tech:5432`.
+    at t (C:\Users\USER\Desktop\menu\node_modules\@prisma\client\runtime\library.js:112:2488)
+    at async Proxy.onModuleInit (C:\Users\USER\Desktop\menu\apps\api\src\modules\prisma\prisma.service.ts:8:7)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application-context.js:234:13)
+    at async NestApplication.init (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:100:9)
+    at async NestApplication.listen (C:\Users\USER\Desktop\menu\node_modules\@nestjs\core\nest-application.js:170:13)
+    at async bootstrap (C:\Users\USER\Desktop\menu\apps\api\src\main.ts:29:3) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}

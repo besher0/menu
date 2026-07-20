@@ -1,0 +1,648 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String
+  name         String?
+  role         GlobalRole         @default(USER)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  auditLogs    AuditLog[]
+  memberships  RestaurantMember[]
+}
+
+model Restaurant {
+  id               String                   @id @default(cuid())
+  name             String
+  slug             String                   @unique
+  description      String?
+  type             String?
+  logoUrl          String?
+  heroImageUrl     String?
+  defaultLanguage  String                   @default("ar")
+  currency         String                   @default("ل.س")
+  city             String?
+  country          String?
+  whatsappPhone    String?
+  isActive         Boolean                  @default(true)
+  platformBranding Boolean                  @default(true)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  deletedAt        DateTime?
+  analyticsEvents  AnalyticsEvent[]
+  auditLogs        AuditLog[]
+  branches         Branch[]
+  categories       Category[]
+  domains          CustomDomain[]
+  imageRules       ImageRule[]
+  mediaAssets      MediaAsset[]
+  menus            Menu[]
+  orders           Order[]
+  products         Product[]
+  qrCodes          QrCode[]
+  members          RestaurantMember[]
+  subscription     RestaurantSubscription?
+  syncJobs         SyncJob[]
+  themeSettings    RestaurantThemeSettings?
+
+  @@index([slug])
+}
+
+model Branch {
+  id            String              @id @default(cuid())
+  restaurantId  String
+  name          String
+  slug          String
+  address       String?
+  city          String?
+  country       String?
+  whatsappPhone String?
+  latitude      Float?
+  longitude     Float?
+  isActive      Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  deletedAt     DateTime?
+  restaurant    Restaurant          @relation(fields: [restaurantId], references: [id])
+  openingHours  BranchOpeningHour[]
+  menus         Menu[]
+  orders        Order[]
+  qrCodes       QrCode[]
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
+}
+
+model BranchOpeningHour {
+  id       String  @id @default(cuid())
+  branchId String
+  day      Int
+  opensAt  String
+  closesAt String
+  isClosed Boolean @default(false)
+  branch   Branch  @relation(fields: [branchId], references: [id])
+
+  @@index([branchId])
+}
+
+model RestaurantMember {
+  id           String         @id @default(cuid())
+  restaurantId String
+  userId       String
+  role         RestaurantRole
+  createdAt    DateTime       @default(now())
+  restaurant   Restaurant     @relation(fields: [restaurantId], references: [id])
+  user         User           @relation(fields: [userId], references: [id])
+
+  @@unique([restaurantId, userId])
+  @@index([restaurantId])
+  @@index([userId])
+}
+
+model Menu {
+  id           String        @id @default(cuid())
+  restaurantId String
+  branchId     String?
+  name         String
+  slug         String
+  status       PublishStatus @default(DRAFT)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
+  pages        MenuPage[]
+  versions     MenuVersion[]
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
+  @@index([branchId])
+}
+
+model MenuPage {
+  id             String        @id @default(cuid())
+  menuId         String
+  title          String
+  slug           String
+  sortOrder      Int           @default(0)
+  isHome         Boolean       @default(false)
+  status         PublishStatus @default(DRAFT)
+  seoTitle       String?
+  seoDescription String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  menu           Menu          @relation(fields: [menuId], references: [id])
+  sections       MenuSection[]
+
+  @@unique([menuId, slug])
+  @@index([menuId])
+}
+
+model MenuSection {
+  id        String   @id @default(cuid())
+  pageId    String
+  type      String
+  sortOrder Int      @default(0)
+  settings  Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  page      MenuPage @relation(fields: [pageId], references: [id])
+
+  @@index([pageId])
+}
+
+model MenuVersion {
+  id          String   @id @default(cuid())
+  menuId      String
+  version     Int
+  snapshot    Json
+  note        String?
+  publishedBy String?
+  createdAt   DateTime @default(now())
+  menu        Menu     @relation(fields: [menuId], references: [id])
+
+  @@unique([menuId, version])
+  @@index([menuId])
+}
+
+model Category {
+  id           String     @id @default(cuid())
+  restaurantId String
+  name         String
+  slug         String
+  description  String?
+  imageUrl     String?
+  imagePosition String?    @default("end")
+  color        String?
+  backgroundType CategoryBackgroundType @default(COLOR)
+  backgroundValue String?
+  backgroundOverlay String?
+  backgroundCss String?
+  visualScrollEnabled Boolean @default(false)
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  deletedAt    DateTime?
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  products     Product[]
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
+}
+
+model Product {
+  id           String               @id @default(cuid())
+  restaurantId String
+  categoryId   String?
+  name         String
+  slug         String
+  description  String?
+  basePrice    Decimal              @db.Decimal(10, 2)
+  currency     String               @default("ل.س")
+  isActive     Boolean              @default(true)
+  isAvailable  Boolean              @default(true)
+  isFeatured   Boolean              @default(false)
+  isNew        Boolean              @default(false)
+  isPopular    Boolean              @default(false)
+  ingredients  Json?
+  nutrition    Json?
+  sortOrder    Int                  @default(0)
+  deletedAt    DateTime?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  orderItems   OrderItem[]
+  category     Category?            @relation(fields: [categoryId], references: [id])
+  restaurant   Restaurant           @relation(fields: [restaurantId], references: [id])
+  media3d      Product3DModel?
+  images       ProductImage[]
+  options      ProductOptionGroup[]
+  vrMedia      ProductVrMedia?
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
+  @@index([categoryId])
+}
+
+model ProductImage {
+  id        String      @id @default(cuid())
+  productId String
+  mediaId   String?
+  url       String
+  altText   String?
+  sortOrder Int         @default(0)
+  isActive  Boolean     @default(true)
+  media     MediaAsset? @relation(fields: [mediaId], references: [id])
+  product   Product     @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([mediaId])
+}
+
+model ProductOptionGroup {
+  id        String          @id @default(cuid())
+  productId String
+  name      String
+  type      OptionGroupType
+  required  Boolean         @default(false)
+  minSelect Int?
+  maxSelect Int?
+  sortOrder Int             @default(0)
+  options   ProductOption[]
+  product   Product         @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+model ProductOption {
+  id         String             @id @default(cuid())
+  groupId    String
+  name       String
+  priceDelta Decimal            @default(0) @db.Decimal(10, 2)
+  isActive   Boolean            @default(true)
+  sortOrder  Int                @default(0)
+  group      ProductOptionGroup @relation(fields: [groupId], references: [id])
+
+  @@index([groupId])
+}
+
+model Product3DModel {
+  id        String  @id @default(cuid())
+  productId String  @unique
+  url       String
+  format    String
+  isActive  Boolean @default(true)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model ProductVrMedia {
+  id          String  @id @default(cuid())
+  productId   String  @unique
+  panoramaUrl String
+  type        String
+  isActive    Boolean @default(true)
+  product     Product @relation(fields: [productId], references: [id])
+}
+
+model MediaAsset {
+  id               String         @id @default(cuid())
+  restaurantId     String
+  filename         String?
+  originalFilename String?
+  mimeType         String?
+  url              String
+  originalUrl      String?
+  type             MediaType
+  size             Int?
+  width            Int?
+  height           Int?
+  altText          String?
+  blurDataUrl      String?
+  metadata         Json?
+  provider         String         @default("LOCAL")
+  createdById      String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  restaurant       Restaurant     @relation(fields: [restaurantId], references: [id])
+  variants         MediaVariant[]
+  productImages    ProductImage[]
+
+  @@index([restaurantId])
+  @@index([type])
+}
+
+model MediaVariant {
+  id        String           @id @default(cuid())
+  mediaId   String
+  kind      MediaVariantKind
+  url       String
+  width     Int?
+  height    Int?
+  size      Int?
+  format    String
+  quality   Int?
+  createdAt DateTime         @default(now())
+  media     MediaAsset       @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, kind, format])
+  @@index([mediaId])
+}
+
+model ImageRule {
+  id           String          @id @default(cuid())
+  restaurantId String?
+  target       ImageRuleTarget
+  maxWidth     Int?
+  maxHeight    Int?
+  jpegQuality  Int             @default(82)
+  webpQuality  Int             @default(82)
+  cropMode     String          @default("contain")
+  aspectRatio  String?
+  generateAvif Boolean         @default(true)
+  generateWebp Boolean         @default(true)
+  lazyLoad     Boolean         @default(true)
+  progressive  Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  restaurant   Restaurant?     @relation(fields: [restaurantId], references: [id])
+
+  @@unique([restaurantId, target])
+  @@index([restaurantId])
+}
+
+model Theme {
+  id                 String                    @id @default(cuid())
+  name               String
+  key                String                    @unique
+  description        String?
+  defaultSettings    Json
+  isSystem           Boolean                   @default(false)
+  createdAt          DateTime                  @default(now())
+  restaurantSettings RestaurantThemeSettings[]
+}
+
+model RestaurantThemeSettings {
+  id           String     @id @default(cuid())
+  restaurantId String     @unique
+  themeId      String?
+  settings     Json
+  iconSettings Json?
+  customCss    String?
+  updatedAt    DateTime   @updatedAt
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  theme        Theme?     @relation(fields: [themeId], references: [id])
+}
+
+model SubscriptionPlan {
+  id            String                   @id @default(cuid())
+  name          String
+  key           String                   @unique
+  priceMonthly  Decimal?                 @db.Decimal(10, 2)
+  priceYearly   Decimal?                 @db.Decimal(10, 2)
+  isActive      Boolean                  @default(true)
+  subscriptions RestaurantSubscription[]
+  features      SubscriptionFeature[]
+}
+
+model SubscriptionFeature {
+  id       String           @id @default(cuid())
+  planId   String
+  key      String
+  enabled  Boolean          @default(true)
+  limit    Int?
+  metadata Json?
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@unique([planId, key])
+  @@index([planId])
+}
+
+model RestaurantSubscription {
+  id           String             @id @default(cuid())
+  restaurantId String             @unique
+  planId       String
+  status       SubscriptionStatus
+  startsAt     DateTime
+  endsAt       DateTime?
+  trialEndsAt  DateTime?
+  plan         SubscriptionPlan   @relation(fields: [planId], references: [id])
+  restaurant   Restaurant         @relation(fields: [restaurantId], references: [id])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  restaurantId    String
+  branchId        String?
+  customerName    String?
+  customerPhone   String?
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  currency        String
+  status          OrderStatus
+  source          String      @default("WHATSAPP")
+  whatsappMessage String?
+  cartSnapshot    Json?
+  createdAt       DateTime    @default(now())
+  branch          Branch?     @relation(fields: [branchId], references: [id])
+  restaurant      Restaurant  @relation(fields: [restaurantId], references: [id])
+  items           OrderItem[]
+
+  @@index([restaurantId])
+  @@index([branchId])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  productId  String?
+  name       String
+  quantity   Int
+  unitPrice  Decimal  @db.Decimal(10, 2)
+  totalPrice Decimal  @db.Decimal(10, 2)
+  options    Json?
+  note       String?
+  order      Order    @relation(fields: [orderId], references: [id])
+  product    Product? @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model AnalyticsEvent {
+  id           String     @id @default(cuid())
+  restaurantId String
+  branchId     String?
+  type         String
+  metadata     Json?
+  path         String?
+  userAgent    String?
+  country      String?
+  createdAt    DateTime   @default(now())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId, type])
+  @@index([createdAt])
+}
+
+model CustomDomain {
+  id                String       @id @default(cuid())
+  restaurantId      String
+  domain            String       @unique
+  status            DomainStatus
+  verificationToken String
+  dnsRecords        Json?
+  dnsVerifiedAt     DateTime?
+  sslStatus         String?
+  sslIssuedAt       DateTime?
+  activatedAt       DateTime?
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  failureReason     String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  restaurant        Restaurant   @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+}
+
+model SyncJob {
+  id           String        @id @default(cuid())
+  restaurantId String
+  type         SyncType
+  direction    SyncDirection
+  status       SyncStatus    @default(PENDING)
+  payload      Json
+  attempts     Int           @default(0)
+  lastError    String?
+  version      Int           @default(1)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  processedAt  DateTime?
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId, status])
+  @@index([type])
+}
+
+model QrCode {
+  id           String     @id @default(cuid())
+  restaurantId String
+  branchId     String?
+  label        String
+  targetUrl    String
+  createdAt    DateTime   @default(now())
+  branch       Branch?    @relation(fields: [branchId], references: [id])
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@index([branchId])
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  restaurantId String?
+  userId       String?
+  action       String
+  entityType   String
+  entityId     String?
+  metadata     Json?
+  createdAt    DateTime    @default(now())
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
+  user         User?       @relation(fields: [userId], references: [id])
+
+  @@index([restaurantId])
+  @@index([userId])
+}
+
+enum GlobalRole {
+  SUPER_ADMIN
+  USER
+}
+
+enum RestaurantRole {
+  OWNER
+  MANAGER
+  EDITOR
+  EMPLOYEE
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum OptionGroupType {
+  SINGLE
+  MULTIPLE
+}
+
+enum CategoryBackgroundType {
+  COLOR
+  IMAGE
+  TEXTURE
+  PATTERN
+  GRADIENT
+}
+
+enum MediaType {
+  IMAGE
+  MODEL_3D
+  VR_PANORAMA
+  SVG_ICON
+  PNG_ICON
+}
+
+enum MediaVariantKind {
+  ORIGINAL
+  THUMBNAIL
+  SMALL
+  MEDIUM
+  LARGE
+  WEBP
+  AVIF
+  BLUR
+}
+
+enum ImageRuleTarget {
+  PRODUCT_IMAGE
+  CATEGORY_IMAGE
+  HERO_IMAGE
+  GALLERY_IMAGE
+  LOGO
+  ICON
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum OrderStatus {
+  PENDING_WHATSAPP
+  SENT_TO_WHATSAPP
+  CANCELED
+}
+
+enum DomainStatus {
+  PENDING
+  DNS_VERIFIED
+  SSL_PENDING
+  SSL_ACTIVE
+  ACTIVE
+  VERIFIED
+  FAILED
+  DISABLED
+}
+
+enum SyncType {
+  PRODUCTS
+  CATEGORIES
+  MENUS
+  ORDERS
+  THEME
+  MEDIA
+  SETTINGS
+  ANALYTICS
+}
+
+enum SyncDirection {
+  PUSH
+  PULL
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
