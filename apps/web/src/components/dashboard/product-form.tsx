@@ -15,6 +15,7 @@ type FormState = {
   basePrice: string;
   currency: string;
   imageUrl: string;
+  moodKey: string;
   ingredients: string;
   weight: string;
   protein: string;
@@ -39,6 +40,11 @@ type CategoryOption = {
   slug?: string;
 };
 
+type MoodOption = {
+  key: string;
+  label: string;
+};
+
 type ProductDetails = {
   id: string;
   name: string;
@@ -48,6 +54,7 @@ type ProductDetails = {
   isNew?: boolean;
   isFeatured?: boolean;
   isPopular?: boolean;
+  moodKey?: string | null;
   ingredients?: string[];
   nutrition?: {
     weight?: string;
@@ -74,6 +81,7 @@ export function ProductForm({ productId }: { productId?: string }) {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [selectedRestaurantName, setSelectedRestaurantName] = useState("");
   const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [moodOptions, setMoodOptions] = useState<MoodOption[]>([]);
   const [form, setForm] = useState<FormState>({
     name: "",
     categoryId: "",
@@ -81,6 +89,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     basePrice: "",
     currency: "ل.س",
     imageUrl: "",
+    moodKey: "",
     ingredients: "",
     weight: "",
     protein: "",
@@ -185,6 +194,37 @@ export function ProductForm({ productId }: { productId?: string }) {
   }, [selectedRestaurantId, restaurants]);
 
   useEffect(() => {
+    if (!selectedRestaurantId) {
+      setMoodOptions([]);
+      return;
+    }
+
+    async function loadMoodOptions() {
+      try {
+        const response = await fetch(`${API_URL}/dashboard/builder`, {
+          headers: selectedRestaurantHeaders(),
+          cache: "no-store"
+        });
+        const payload = await response.json().catch(() => null);
+        const pages = payload?.data?.pages ?? payload?.pages ?? [];
+        const sections = pages.flatMap((page: { sections?: Array<{ type: string; isActive?: boolean; settings?: { moodItems?: Array<{ label?: string }> } }> }) => page.sections ?? []);
+        const moodSection = sections.find((section: { type: string; isActive?: boolean }) => section.type === "MOOD_STRIP" && section.isActive !== false);
+        const moodItems = moodSection?.settings?.moodItems ?? [];
+        const nextOptions = moodItems
+          .map((item: { label?: string }) => item.label?.trim())
+          .filter((label: string | undefined): label is string => Boolean(label))
+          .map((label: string) => ({ key: label, label }));
+
+        setMoodOptions(nextOptions);
+      } catch {
+        setMoodOptions([]);
+      }
+    }
+
+    void loadMoodOptions();
+  }, [selectedRestaurantId, restaurants]);
+
+  useEffect(() => {
     if (!productId || !selectedRestaurantId) {
       return;
     }
@@ -209,6 +249,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           basePrice: String(product.basePrice ?? ""),
           currency: product.currency ?? "ل.س",
           imageUrl: product.images?.[0]?.url ?? "",
+          moodKey: product.moodKey ?? "",
           ingredients: product.ingredients?.join("\n") ?? "",
           weight: product.nutrition?.weight ?? "",
           protein: product.nutrition?.protein ?? "",
@@ -249,6 +290,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           basePrice: Number(form.basePrice),
           currency: form.currency,
           categoryId: form.categoryId || undefined,
+          moodKey: form.moodKey || undefined,
           imageUrl: form.imageUrl,
           ingredients: form.ingredients
             .split(/\r?\n|،|,/)
@@ -389,6 +431,18 @@ export function ProductForm({ productId }: { productId?: string }) {
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>شو مزاجك اليوم</span>
+            <select value={form.moodKey} onChange={(event) => update("moodKey", event.target.value)}>
+              <option value="">لا يظهر ضمن شو مزاجك اليوم</option>
+              {moodOptions.map((mood) => (
+                <option key={mood.key} value={mood.key}>
+                  {mood.label}
                 </option>
               ))}
             </select>

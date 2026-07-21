@@ -39,6 +39,8 @@ export type BuilderSectionSettings = {
     iconPosition?: "start" | "end" | "top" | "bottom" | "manual";
     iconX?: number;
     iconY?: number;
+    iconWidth?: number;
+    iconHeight?: number;
     color?: string;
     backgroundType?: "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
     backgroundValue?: string | null;
@@ -98,9 +100,9 @@ export function defaultSectionSettings(type: BuilderSectionType): BuilderSection
         title: "شو مزاجك اليوم؟",
         layout: "horizontal-chips",
         moodItems: [
-          { label: "سريع وخفيف", iconX: 78, iconY: 50, color: "#d32f2f" },
-          { label: "جوعان كثير", iconX: 78, iconY: 50, color: "#c81e1e" },
-          { label: "عشاق الجبنة", iconX: 78, iconY: 50, color: "#d99a1e" }
+          { label: "سريع وخفيف", iconX: 78, iconY: 50, iconWidth: 34, iconHeight: 34, color: "#d32f2f" },
+          { label: "جوعان كثير", iconX: 78, iconY: 50, iconWidth: 34, iconHeight: 34, color: "#c81e1e" },
+          { label: "عشاق الجبنة", iconX: 78, iconY: 50, iconWidth: 34, iconHeight: 34, color: "#d99a1e" }
         ]
       };
     case "FEATURED_PRODUCTS":

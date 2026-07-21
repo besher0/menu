@@ -17,6 +17,8 @@ type FormState = {
   imageUrl: string;
   imageX: number;
   imageY: number;
+  imageWidth: number;
+  imageHeight: number;
   color: string;
   backgroundColorA: string;
   backgroundColorB: string;
@@ -30,6 +32,8 @@ type FormState = {
 type CategoryPreviewStyle = React.CSSProperties & {
   "--category-preview-x": string;
   "--category-preview-y": string;
+  "--category-preview-icon-width": string;
+  "--category-preview-icon-height": string;
 };
 
 const initialForm: FormState = {
@@ -39,6 +43,8 @@ const initialForm: FormState = {
   imageUrl: "",
   imageX: 78,
   imageY: 50,
+  imageWidth: 34,
+  imageHeight: 34,
   color: "#ed1f2b",
   backgroundColorA: "#ed1f2b",
   backgroundColorB: "#7f1118",
@@ -81,6 +87,8 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
           imageUrl: category.imageUrl ?? "",
           imageX: imagePosition.x,
           imageY: imagePosition.y,
+          imageWidth: category.imageWidth ?? 34,
+          imageHeight: category.imageHeight ?? 34,
           color: category.color ?? "#ed1f2b",
           backgroundColorA: colors.a,
           backgroundColorB: colors.b,
@@ -233,6 +241,14 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
               <span>Y: {form.imageY}%</span>
               <input min="0" max="100" type="range" value={form.imageY} onChange={(event) => update("imageY", Number(event.target.value))} />
             </label>
+            <label className="field">
+              <span>عرض الأيقونة</span>
+              <input min="12" max="140" type="number" value={form.imageWidth} onChange={(event) => update("imageWidth", Number(event.target.value))} />
+            </label>
+            <label className="field">
+              <span>ارتفاع الأيقونة</span>
+              <input min="12" max="140" type="number" value={form.imageHeight} onChange={(event) => update("imageHeight", Number(event.target.value))} />
+            </label>
           </div>
         </div>
       </section>
@@ -245,7 +261,9 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
             style={{
               ...previewStyle(form),
               "--category-preview-x": `${form.imageX}%`,
-              "--category-preview-y": `${form.imageY}%`
+              "--category-preview-y": `${form.imageY}%`,
+              "--category-preview-icon-width": `${form.imageWidth}px`,
+              "--category-preview-icon-height": `${form.imageHeight}px`
             } as CategoryPreviewStyle}
           >
             {form.imageUrl ? <img src={assetUrl(form.imageUrl)} alt="" /> : <ImagePlus size={42} />}

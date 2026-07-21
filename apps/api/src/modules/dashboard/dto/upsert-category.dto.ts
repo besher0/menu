@@ -21,6 +21,16 @@ export class UpsertCategoryDto {
   imagePosition?: string;
 
   @IsOptional()
+  @IsNumber()
+  @Min(1)
+  imageWidth?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  imageHeight?: number;
+
+  @IsOptional()
   @IsString()
   color?: string;
 

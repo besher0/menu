@@ -182,6 +182,8 @@ model Category {
   description  String?
   imageUrl     String?
   imagePosition String?    @default("end")
+  imageWidth   Int?
+  imageHeight  Int?
   color        String?
   backgroundType CategoryBackgroundType @default(COLOR)
   backgroundValue String?
@@ -212,6 +214,7 @@ model Product {
   isFeatured   Boolean              @default(false)
   isNew        Boolean              @default(false)
   isPopular    Boolean              @default(false)
+  moodKey      String?
   ingredients  Json?
   nutrition    Json?
   sortOrder    Int                  @default(0)
@@ -229,6 +232,7 @@ model Product {
   @@unique([restaurantId, slug])
   @@index([restaurantId])
   @@index([categoryId])
+  @@index([restaurantId, moodKey])
 }
 
 model ProductImage {

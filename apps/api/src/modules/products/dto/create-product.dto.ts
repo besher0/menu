@@ -29,6 +29,10 @@ export class CreateProductDto {
   imageUrl?: string;
 
   @IsOptional()
+  @IsString()
+  moodKey?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   ingredients?: string[];

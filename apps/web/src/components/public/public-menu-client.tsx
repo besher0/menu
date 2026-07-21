@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Beef, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -150,6 +151,8 @@ type MoodItem = {
   iconPosition?: "start" | "end" | "top" | "bottom" | "manual";
   iconX?: number;
   iconY?: number;
+  iconWidth?: number;
+  iconHeight?: number;
   color?: string;
   backgroundType?: PublicCategory["backgroundType"];
   backgroundValue?: string | null;
@@ -170,8 +173,30 @@ function parseIconPosition(value?: string | null) {
   };
 }
 
+type CategoryChipStyle = React.CSSProperties & {
+  "--category-image-x": string;
+  "--category-image-y": string;
+  "--category-icon-width": string;
+  "--category-icon-height": string;
+};
+
+function categoryChipStyle(category: PublicCategory): CategoryChipStyle {
+  const position = parseIconPosition(category.imagePosition);
+  return {
+    ...visualBackgroundStyle(category),
+    "--category-image-x": `${position.x}%`,
+    "--category-image-y": `${position.y}%`,
+    "--category-icon-width": `${category.imageWidth ?? 42}px`,
+    "--category-icon-height": `${category.imageHeight ?? 42}px`
+  } as CategoryChipStyle;
+}
+
 function productPrice(product: PublicProduct) {
   return product.price ?? product.basePrice;
+}
+
+function moodMenuHref(restaurantSlug: string, label: string) {
+  return `/m/${restaurantSlug}/menu?mood=${encodeURIComponent(label)}`;
 }
 
 function visualBackgroundStyle(input: Pick<PublicCategory, "backgroundType" | "backgroundValue" | "backgroundCss" | "color">): React.CSSProperties {
@@ -646,106 +671,80 @@ function HomeView({
   const heroSection = homePage?.sections?.find((section) => section.type === "HERO" && section.isActive !== false);
   const moodSection = homePage?.sections?.find((section) => section.type === "MOOD_STRIP" && section.isActive !== false);
   const moodItems: MoodItem[] = moodSection?.settings?.moodItems?.length
-    ? moodSection.settings.moodItems.map((item) => ({
-        label: item.label,
-        href: item.targetUrl || `/m/${data.restaurant.slug}/menu`,
-        iconUrl: item.iconUrl,
+    ? moodSection.settings.moodItems
+      .filter((item) => item.label?.trim())
+      .map((item) => {
+        const label = item.label.trim();
+        return {
+          label,
+          href: moodMenuHref(data.restaurant.slug, label),
+          iconUrl: item.iconUrl,
         iconPosition: "manual",
         iconX: item.iconX,
         iconY: item.iconY,
+        iconWidth: item.iconWidth,
+        iconHeight: item.iconHeight,
         color: item.color,
-        backgroundType: item.backgroundType,
-        backgroundValue: item.backgroundValue,
-        backgroundCss: item.backgroundCss,
-        visualScrollEnabled: item.visualScrollEnabled
-      }))
-    : data.categories.map((category) => {
-        const position = parseIconPosition(category.imagePosition);
-        return {
-          label: category.name,
-          href: `/m/${data.restaurant.slug}/menu`,
-          iconUrl: category.imageUrl ?? undefined,
-          iconPosition: position.mode,
-          iconX: position.x,
-          iconY: position.y,
-          color: category.color ?? undefined,
-          backgroundType: category.backgroundType,
-          backgroundValue: category.backgroundValue,
-          backgroundCss: category.backgroundCss,
-          visualScrollEnabled: category.visualScrollEnabled
+          backgroundType: item.backgroundType,
+          backgroundValue: item.backgroundValue,
+          backgroundCss: item.backgroundCss,
+          visualScrollEnabled: item.visualScrollEnabled
         };
-      });
+      })
+    : [];
   const moodSlots = Array.from({ length: Math.max(4, moodItems.length) });
   const heroImage = heroSection?.settings?.backgroundImageUrl || data.restaurant.heroImageUrl || "/assets/public/menu-home.png";
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
-  const bannerSlides = adBanners.length
-    ? adBanners
-    : [{ imageUrl: heroImage, title: t.todayOffer, targetUrl: `/m/${data.restaurant.slug}/menu` }];
-  const [activeBanner, setActiveBanner] = useState(0);
-  const currentBanner = bannerSlides[activeBanner] ?? bannerSlides[0];
-
-  function moveBanner(direction: -1 | 1) {
-    setActiveBanner((current) => (current + direction + bannerSlides.length) % bannerSlides.length);
-  }
+  const bannerSlides = adBanners;
+  const scrollingBanners = bannerSlides.length > 1 ? [...bannerSlides, ...bannerSlides] : bannerSlides;
 
   return (
     <main className="public-content">
-      <section className="mood-strip">
-        <h1>
-          <Flame size={18} />
-          {t.moodToday}
-        </h1>
-          <div>
-            {moodSlots.map((_, index) => {
-              const item = moodItems[index];
-              return item ? (
-                <Link
-                  key={`${item.label}-${index}`}
-                  href={item.href}
-                  className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
-                  style={{
-                    ...visualBackgroundStyle(item),
-                    "--icon-x": `${item.iconX ?? 78}%`,
-                    "--icon-y": `${item.iconY ?? 50}%`
-                  } as React.CSSProperties}
-                >
-                  {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
-                  <span>{item.label}</span>
-                </Link>
-              ) : (
-                <span key={`mood-placeholder-${index}`} className="mood-chip mood-chip-placeholder" aria-hidden="true" />
-              );
-            })}
-          </div>
-      </section>
-
-      <section className="hero-promo">
-        <Link href={currentBanner?.targetUrl || `/m/${data.restaurant.slug}/menu`}>
-          <img src={currentBanner?.imageUrl ?? heroImage} alt={currentBanner?.title || t.todayOffer} />
-          {currentBanner?.badge ? <span>{currentBanner.badge}</span> : null}
-        </Link>
-        {bannerSlides.length > 1 ? (
-          <>
-            <button className="hero-promo-arrow prev" type="button" onClick={() => moveBanner(-1)} aria-label="السابق">
-              ‹
-            </button>
-            <button className="hero-promo-arrow next" type="button" onClick={() => moveBanner(1)} aria-label="التالي">
-              ›
-            </button>
-            <div className="hero-promo-dots">
-              {bannerSlides.map((banner, index) => (
-                <button
-                  key={`${banner.imageUrl}-${index}`}
-                  type="button"
-                  className={index === activeBanner ? "active" : ""}
-                  onClick={() => setActiveBanner(index)}
-                  aria-label={`بنر ${index + 1}`}
-                />
-              ))}
+      {moodItems.length ? (
+        <section className="mood-strip">
+          <h1>
+            <Flame size={18} />
+            {t.moodToday}
+          </h1>
+            <div>
+              {moodSlots.map((_, index) => {
+                const item = moodItems[index];
+                return item ? (
+                  <Link
+                    key={`${item.label}-${index}`}
+                    href={item.href}
+                    className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
+                    style={{
+                      ...visualBackgroundStyle(item),
+                      "--icon-x": `${item.iconX ?? 78}%`,
+                      "--icon-y": `${item.iconY ?? 50}%`,
+                      "--icon-width": `${item.iconWidth ?? 34}px`,
+                      "--icon-height": `${item.iconHeight ?? 34}px`
+                    } as React.CSSProperties}
+                  >
+                    {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
+                    <span>{item.label}</span>
+                  </Link>
+                ) : (
+                  <span key={`mood-placeholder-${index}`} className="mood-chip mood-chip-placeholder" aria-hidden="true" />
+                );
+              })}
             </div>
-          </>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
+
+      {bannerSlides.length ? (
+        <section className={bannerSlides.length > 1 ? "hero-promo hero-promo-marquee" : "hero-promo"}>
+          <div className="hero-promo-track">
+            {scrollingBanners.map((banner, index) => (
+              <Link key={`${banner.imageUrl}-${index}`} href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}>
+                <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
+                {banner.badge ? <span>{banner.badge}</span> : null}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <ProductRail
         title={t.mostPopular}
@@ -793,22 +792,51 @@ function MenuView({
   t: PublicTranslations;
   showPrices: boolean;
 }) {
-  const [layout, setLayout] = useState<MenuLayout>("list");
+  const searchParams = useSearchParams();
+  const selectedMood = searchParams.get("mood")?.trim() || "";
+  const [layout, setLayout] = useState<MenuLayout>("grid");
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood ? "all" : "");
+  const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
+  const visibleProducts = selectedMood
+    ? data.products.filter((product) => product.moodKey === selectedMood)
+    : data.products;
   const allCategory = data.categories.find((category) => category.slug === "all");
+  const regularCategories = data.categories.filter((category) => category.slug !== "all");
+  const activeCategory = selectedCategorySlug === "all"
+    ? allCategory
+    : regularCategories.find((category) => category.slug === selectedCategorySlug);
+  const sectionCategories = selectedCategorySlug === "all"
+    ? regularCategories
+    : regularCategories.filter((category) => category.slug === selectedCategorySlug);
+  const productsWithoutCategory = selectedCategorySlug === "all"
+    ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
+    : [];
+  const displayedProductsCount = selectedCategorySlug === "all"
+    ? visibleProducts.length
+    : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug).length;
 
-  return (
-    <main className="public-content">
-      <section className="category-banner-list" id="menu-categories">
+  useEffect(() => {
+    if (selectedMood) {
+      setSelectedCategorySlug("all");
+    }
+  }, [selectedMood]);
+
+  function renderCategoryLanding() {
+    return (
+      <section className="category-banner-list category-landing-list" id="menu-categories">
         {data.categories.map((category) => {
           const position = parseIconPosition(category.imagePosition);
           const isAllCategory = category.slug === "all";
-          const productsCount = isAllCategory ? data.products.length : category.productsCount ?? category.count ?? 0;
+          const productsCount = isAllCategory
+            ? visibleProducts.length
+            : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
 
           return (
-            <Link
+            <button
+              type="button"
               key={category.slug}
-              href={isAllCategory ? "#all-products" : `#${category.slug}`}
               className={category.visualScrollEnabled ? "visual-scroll" : ""}
+              onClick={() => setSelectedCategorySlug(category.slug)}
               style={{
                 ...visualBackgroundStyle(category),
                 "--category-overlay": category.backgroundOverlay ?? undefined,
@@ -839,90 +867,208 @@ function MenuView({
                 <b>{productsCount} {t.itemCount}</b>
               </div>
               <ArrowLeft size={22} />
-            </Link>
+            </button>
           );
         })}
       </section>
+    );
+  }
 
-      <div className="menu-view-switch" role="group" aria-label={t.menu}>
-        <button
-          type="button"
-          className={layout === "list" ? "active" : ""}
-          onClick={() => setLayout("list")}
-          aria-label={t.listView}
-          title={t.listView}
-        >
-          <List size={18} />
-        </button>
-        <button
-          type="button"
-          className={layout === "grid" ? "active" : ""}
-          onClick={() => setLayout("grid")}
-          aria-label={t.gridView}
-          title={t.gridView}
-        >
-          <LayoutGrid size={18} />
-        </button>
-      </div>
-
-      <section className={`product-list product-list-${layout}`}>
-        <div id="all-products">
-          <h2 className="category-section-title">
-            <span>{allCategory?.name ?? "الكل"}</span>
-          </h2>
-          <div className={layout === "grid" ? "menu-product-grid" : "menu-product-stack"}>
-            {data.products.map((product) => (
-              <article key={product.slug} className={layout === "grid" ? "menu-product-card" : "menu-product-row"}>
-                <Link href={`/m/${data.restaurant.slug}/product/${product.slug}`} className="menu-product-image-link">
-                  <img src={productImage(product)} alt={product.name} />
-                  {isPopular(product) ? <span>{t.mostPopular}</span> : null}
-                </Link>
-                <div>
-                  <Link href={`/m/${data.restaurant.slug}/product/${product.slug}`}>{product.name}</Link>
-                  <p>{product.description}</p>
-                  {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
-                </div>
-                <button onClick={() => addToCart(product)} aria-label={`${t.add} ${product.name}`}>
-                  <Plus size={18} />
-                </button>
-              </article>
-            ))}
+  function renderProduct(product: PublicProduct) {
+    return (
+      <article key={product.slug} className={layout === "grid" ? "menu-product-card" : "menu-product-row"}>
+        <button type="button" className="menu-product-open" onClick={() => setSelectedProduct(product)}>
+          <span className="menu-product-image-link">
+            <img src={productImage(product)} alt={product.name} />
+            {isPopular(product) ? <span>{t.mostPopular}</span> : null}
+          </span>
+          <div>
+            <b>{product.name}</b>
+            <p>{product.description}</p>
+            {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
           </div>
-        </div>
-        {data.categories.filter((category) => category.slug !== "all").map((category) => {
-          const products = data.products.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
-          if (!products.length) {
-            return null;
-          }
+        </button>
+      </article>
+    );
+  }
 
-          return (
-            <div key={category.slug} id={category.slug}>
-              <h2 className="category-section-title">
-                <span>{category.name}</span>
-              </h2>
+  return (
+    <main className="public-content">
+      {!selectedCategorySlug ? renderCategoryLanding() : (
+        <>
+          <section className="menu-category-strip" id="menu-categories">
+            {data.categories.map((category) => {
+              const isAllCategory = category.slug === "all";
+              const isActive = category.slug === selectedCategorySlug;
+              const productsCount = isAllCategory
+                ? visibleProducts.length
+                : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
+
+              return (
+                <button
+                  type="button"
+                  key={category.slug}
+                  className={`menu-category-chip ${isActive ? "active" : ""} ${category.visualScrollEnabled ? "visual-scroll" : ""}`}
+                  onClick={() => setSelectedCategorySlug(category.slug)}
+                >
+                  <span className="menu-category-icon" style={categoryChipStyle(category)}>
+                    {category.imageUrl ? <img src={category.imageUrl} alt="" aria-hidden="true" /> : <LayoutGrid size={24} />}
+                  </span>
+                  <span>{category.name}</span>
+                  <small>{productsCount}</small>
+                </button>
+              );
+            })}
+          </section>
+
+          {!selectedMood ? (
+            <button type="button" className="category-detail-back" onClick={() => setSelectedCategorySlug("")}>
+              <ChevronRight size={18} />
+              الأقسام
+            </button>
+          ) : null}
+
+          <div className="menu-view-switch" role="group" aria-label={t.menu}>
+            <button
+              type="button"
+              className={layout === "list" ? "active" : ""}
+              onClick={() => setLayout("list")}
+              aria-label={t.listView}
+              title={t.listView}
+            >
+              <List size={18} />
+            </button>
+            <button
+              type="button"
+              className={layout === "grid" ? "active" : ""}
+              onClick={() => setLayout("grid")}
+              aria-label={t.gridView}
+              title={t.gridView}
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
+
+          <section className={`product-list product-list-${layout}`}>
+            {sectionCategories.map((category) => {
+              const products = visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
+              if (!products.length) {
+                return null;
+              }
+
+              return (
+                <div key={category.slug} id={category.slug}>
+                  <h2 className="category-section-title">
+                    <span>{category.name}</span>
+                  </h2>
+                  <div className={layout === "grid" ? "menu-product-grid" : "menu-product-stack"}>
+                    {products.map(renderProduct)}
+                  </div>
+                </div>
+              );
+            })}
+            {productsWithoutCategory.length ? (
+              <div id="all-products">
+                <h2 className="category-section-title">
+                  <span>{selectedMood || activeCategory?.name || allCategory?.name || "الكل"}</span>
+                </h2>
               <div className={layout === "grid" ? "menu-product-grid" : "menu-product-stack"}>
-                {products.map((product) => (
-                  <article key={product.slug} className={layout === "grid" ? "menu-product-card" : "menu-product-row"}>
-                    <Link href={`/m/${data.restaurant.slug}/product/${product.slug}`} className="menu-product-image-link">
-                      <img src={productImage(product)} alt={product.name} />
-                      {isPopular(product) ? <span>{t.mostPopular}</span> : null}
-                    </Link>
-                    <div>
-                      <Link href={`/m/${data.restaurant.slug}/product/${product.slug}`}>{product.name}</Link>
-                      <p>{product.description}</p>
-                      {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
-                    </div>
-                    <button onClick={() => addToCart(product)} aria-label={`${t.add} ${product.name}`}>
-                      <Plus size={18} />
-                    </button>
-                  </article>
-                ))}
+                  {productsWithoutCategory.map(renderProduct)}
               </div>
             </div>
-          );
-        })}
-      </section>
+            ) : null}
+            {!displayedProductsCount ? (
+              <div className="menu-empty-products">
+                <b>{selectedMood || activeCategory?.name || "الكل"}</b>
+                <span>لا توجد منتجات مرتبطة بهذا الخيار حالياً.</span>
+              </div>
+            ) : null}
+          </section>
+        </>
+      )}
+
+      {selectedProduct ? (
+        <ProductQuickViewModal
+          product={selectedProduct}
+          t={t}
+          showPrices={showPrices}
+          onAdd={() => addToCart(selectedProduct)}
+          onClose={() => setSelectedProduct(null)}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function ProductQuickViewModal({
+  product,
+  t,
+  showPrices,
+  onAdd,
+  onClose
+}: {
+  product: PublicProduct;
+  t: PublicTranslations;
+  showPrices: boolean;
+  onAdd: () => void;
+  onClose: () => void;
+}) {
+  const gallery = productImages(product);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const activeImage = gallery[activeImageIndex] ?? gallery[0];
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [product.slug]);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  function moveImage(direction: -1 | 1) {
+    setActiveImageIndex((current) => (current + direction + gallery.length) % gallery.length);
+  }
+
+  return (
+    <div className="product-quick-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <article className="product-quick-modal" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="product-quick-close" onClick={onClose} aria-label={t.close}>
+          <X size={13} />
+        </button>
+        <div className="product-quick-photo">
+          <img src={activeImage.url} alt={activeImage.altText || product.name} />
+          <span>{activeImageIndex + 1}/{gallery.length}</span>
+          {gallery.length > 1 ? (
+            <>
+              <button type="button" className="prev" onClick={() => moveImage(-1)} aria-label="الصورة السابقة">
+                <ChevronRight size={18} />
+              </button>
+              <button type="button" className="next" onClick={() => moveImage(1)} aria-label="الصورة التالية">
+                <ChevronLeft size={18} />
+              </button>
+            </>
+          ) : null}
+        </div>
+        <div className="product-quick-body">
+          <h2>{product.name}</h2>
+          <p>{product.description}</p>
+          <div>
+            {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
+            <button type="button" onClick={onAdd}>
+              <Plus size={16} />
+              {t.add}
+            </button>
+          </div>
+        </div>
+      </article>
+    </div>
   );
 }
 

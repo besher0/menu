@@ -7,6 +7,8 @@ export type PublicCategory = {
   description?: string | null;
   imageUrl?: string | null;
   imagePosition?: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   color?: string | null;
   backgroundType?: "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
   backgroundValue?: string | null;
@@ -33,6 +35,7 @@ export type PublicProduct = {
   featured?: boolean;
   new?: boolean;
   popular?: boolean;
+  moodKey?: string | null;
   ingredients?: string[];
   nutrition?: {
     calories?: string;
@@ -104,6 +107,8 @@ export type PublicMenuData = {
             iconPosition?: "start" | "end" | "top" | "bottom" | "manual";
             iconX?: number;
             iconY?: number;
+            iconWidth?: number;
+            iconHeight?: number;
             color?: string;
             backgroundType?: "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
             backgroundValue?: string | null;

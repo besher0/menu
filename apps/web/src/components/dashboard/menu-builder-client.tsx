@@ -325,6 +325,8 @@ export function MenuBuilderClient() {
             targetUrl: "/menu",
             iconX: 78,
             iconY: 50,
+            iconWidth: 34,
+            iconHeight: 34,
             color: "#d32f2f",
             backgroundType: "COLOR"
           }
@@ -335,7 +337,7 @@ export function MenuBuilderClient() {
 
   function updateMoodItem(
     index: number,
-    key: "label" | "targetUrl" | "iconUrl" | "color" | "iconX" | "iconY" | "backgroundType" | "backgroundValue" | "backgroundCss" | "visualScrollEnabled",
+    key: "label" | "targetUrl" | "iconUrl" | "color" | "iconX" | "iconY" | "iconWidth" | "iconHeight" | "backgroundType" | "backgroundValue" | "backgroundCss" | "visualScrollEnabled",
     value: string | number | boolean
   ) {
     if (!selected) return;
@@ -829,7 +831,9 @@ export function MenuBuilderClient() {
                           style={{
                             ...moodBackgroundStyle(item),
                             "--icon-x": `${item.iconX ?? 78}%`,
-                            "--icon-y": `${item.iconY ?? 50}%`
+                            "--icon-y": `${item.iconY ?? 50}%`,
+                            "--icon-width": `${item.iconWidth ?? 34}px`,
+                            "--icon-height": `${item.iconHeight ?? 34}px`
                           } as React.CSSProperties}
                         >
                           {item.iconUrl ? <img src={item.iconUrl} alt="" /> : null}
@@ -893,6 +897,26 @@ export function MenuBuilderClient() {
                             max="100"
                             value={item.iconY ?? 50}
                             onChange={(event) => updateMoodItem(index, "iconY", Number(event.target.value))}
+                          />
+                        </label>
+                        <label>
+                          <span>عرض الأيقونة</span>
+                          <input
+                            type="number"
+                            min="12"
+                            max="140"
+                            value={item.iconWidth ?? 34}
+                            onChange={(event) => updateMoodItem(index, "iconWidth", Number(event.target.value))}
+                          />
+                        </label>
+                        <label>
+                          <span>ارتفاع الأيقونة</span>
+                          <input
+                            type="number"
+                            min="12"
+                            max="140"
+                            value={item.iconHeight ?? 34}
+                            onChange={(event) => updateMoodItem(index, "iconHeight", Number(event.target.value))}
                           />
                         </label>
                         <button className="danger" type="button" onClick={() => removeMoodItem(index)} aria-label="حذف العنصر">
