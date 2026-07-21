@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -61,6 +61,7 @@ const translations = {
     newBadge: "جديد",
     home: "الرئيسية",
     offers: "العروض",
+    hours: "الدوام",
     listView: "عرض قائمة",
     gridView: "عرض بطاقات",
     photos: "الصور",
@@ -121,6 +122,7 @@ const translations = {
     newBadge: "New",
     home: "Home",
     offers: "Offers",
+    hours: "Hours",
     listView: "List view",
     gridView: "Grid view",
     photos: "Photos",
@@ -598,7 +600,16 @@ export function PublicMenuClient({
         </div>
       ) : null}
 
-      <BottomNav slug={data.restaurant.slug} active={view} t={t} />
+      <BottomNav
+        slug={data.restaurant.slug}
+        active={view}
+        drawerOpen={drawerOpen}
+        t={t}
+        onOpenHours={() => {
+          setDrawerTab("hours");
+          setDrawerOpen(true);
+        }}
+      />
 
       {drawerOpen ? (
         <aside className="public-drawer">
@@ -1444,7 +1455,19 @@ function ProductRail({
   );
 }
 
-function BottomNav({ slug, active, t }: { slug: string; active: "home" | "menu" | "product"; t: PublicTranslations }) {
+function BottomNav({
+  slug,
+  active,
+  drawerOpen,
+  t,
+  onOpenHours
+}: {
+  slug: string;
+  active: "home" | "menu" | "product";
+  drawerOpen: boolean;
+  t: PublicTranslations;
+  onOpenHours: () => void;
+}) {
   return (
     <nav className="public-bottom-nav">
       <Link href={`/m/${slug}`} className={active === "home" ? "active" : ""}>
@@ -1455,6 +1478,10 @@ function BottomNav({ slug, active, t }: { slug: string; active: "home" | "menu" 
         <Utensils size={20} />
         {t.menu}
       </Link>
+      <button type="button" className={drawerOpen ? "active" : ""} onClick={onOpenHours}>
+        <Clock3 size={20} />
+        {t.hours}
+      </button>
     </nav>
   );
 }

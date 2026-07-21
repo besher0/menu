@@ -4785,7 +4785,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-top: 1px solid #eef0f4;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   height: 78px;
   left: 50%;
   max-width: 430px;
@@ -4796,21 +4796,27 @@ body:has(.public-page)::-webkit-scrollbar {
   z-index: 4;
 }
 
-.public-bottom-nav a {
+.public-bottom-nav a,
+.public-bottom-nav button {
   align-items: center;
+  background: transparent;
+  border: 0;
   color: #9ca3af;
   display: grid;
+  font: inherit;
   font-size: 12px;
   gap: 4px;
   justify-items: center;
   padding-top: 10px;
 }
 
-.public-bottom-nav a.active {
+.public-bottom-nav a.active,
+.public-bottom-nav button.active {
   color: var(--color-primary);
 }
 
-.public-bottom-nav a.active svg {
+.public-bottom-nav a.active svg,
+.public-bottom-nav button.active svg {
   background: var(--color-primary);
   border-radius: 50%;
   color: white;
