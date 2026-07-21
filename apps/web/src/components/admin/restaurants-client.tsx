@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, ExternalLink, Loader2, Plus, Store } from "lucide-react";
-import { adminAuthHeaders } from "@/lib/session";
+import { apiFetch } from "@/lib/client-api";
 import { StatCard } from "./stat-card";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
 type Restaurant = {
   id: string;
@@ -31,11 +29,6 @@ type Plan = {
   name: string;
 };
 
-type ApiResponse<T> = {
-  data: T;
-  message?: string;
-};
-
 export function RestaurantsClient() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -51,26 +44,14 @@ export function RestaurantsClient() {
       setMessage("");
 
       try {
-        const [response, plansResponse] = await Promise.all([
-          fetch(`${API_URL}/admin/restaurants`, {
-            headers: adminAuthHeaders(),
-            cache: "no-store"
-          }),
-          fetch(`${API_URL}/admin/subscriptions`, {
-            headers: adminAuthHeaders(),
-            cache: "no-store"
-          })
+        const [restaurantsData, plansData] = await Promise.all([
+          apiFetch<Restaurant[]>("/admin/restaurants"),
+          apiFetch<Plan[]>("/admin/subscriptions").catch(() => [])
         ]);
-        const payload = (await response.json().catch(() => null)) as ApiResponse<Restaurant[]> | null;
-        const plansPayload = (await plansResponse.json().catch(() => null)) as ApiResponse<Plan[]> | null;
-
-        if (!response.ok) {
-          throw new Error(payload?.message ?? "تعذر تحميل المطاعم.");
-        }
 
         if (mounted) {
-          setRestaurants(payload?.data ?? []);
-          setPlans(plansResponse.ok ? plansPayload?.data ?? [] : []);
+          setRestaurants(restaurantsData);
+          setPlans(plansData);
           setStatus("ready");
         }
       } catch (error) {
@@ -112,24 +93,16 @@ export function RestaurantsClient() {
     setMessage("");
 
     try {
-      const response = await fetch(`${API_URL}/admin/restaurants/${restaurant.id}/subscription`, {
+      const updatedSubscription = await apiFetch<{ plan: string; planKey: string }>(`/admin/restaurants/${restaurant.id}/subscription`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...adminAuthHeaders()
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planKey })
       });
-      const payload = (await response.json().catch(() => null)) as ApiResponse<{ plan: string; planKey: string }> | null;
-
-      if (!response.ok) {
-        throw new Error(payload?.message ?? "تعذر تغيير اشتراك المطعم.");
-      }
 
       setRestaurants((current) =>
         current.map((item) =>
           item.id === restaurant.id
-            ? { ...item, plan: payload?.data?.plan ?? plan?.name ?? item.plan, planKey: payload?.data?.planKey ?? planKey }
+            ? { ...item, plan: updatedSubscription.plan ?? plan?.name ?? item.plan, planKey: updatedSubscription.planKey ?? planKey }
             : item
         )
       );
