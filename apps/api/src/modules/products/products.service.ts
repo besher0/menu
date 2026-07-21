@@ -396,7 +396,7 @@ export class ProductsService {
       return url;
     }
 
-    const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 4000}`;
+    const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5010}`;
 
     if (url.startsWith("/uploads/")) {
       return `${apiOrigin}${url}`;

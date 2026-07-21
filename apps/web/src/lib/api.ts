@@ -122,7 +122,7 @@ type ApiResponse<T> = {
   message?: string;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
 async function apiGet<T>(path: string): Promise<T | null> {
   try {

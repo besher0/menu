@@ -6,7 +6,7 @@ import { Download, ExternalLink, Loader2, Plus, Store } from "lucide-react";
 import { authHeaders } from "@/lib/session";
 import { StatCard } from "./stat-card";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
 type Restaurant = {
   id: string;

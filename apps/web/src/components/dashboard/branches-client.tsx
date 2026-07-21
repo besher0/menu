@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Loader2, MapPin, Plus, QrCode, RefreshCcw, Trash2 } from "lucide-react";
 import { authHeaders } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
 type Branch = {
   id: string;

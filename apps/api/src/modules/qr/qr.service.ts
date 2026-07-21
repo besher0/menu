@@ -177,7 +177,7 @@ export class QrService {
   }
 
   private apiOrigin() {
-    return this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 4000}`;
+    return this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5010}`;
   }
 
   private webOrigin() {

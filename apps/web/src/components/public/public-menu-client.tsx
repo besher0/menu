@@ -454,7 +454,7 @@ export function PublicMenuClient({
     setOrderMessage(null);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"}/public/menus/${data.restaurant.slug}/orders/whatsapp`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010"}/public/menus/${data.restaurant.slug}/orders/whatsapp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -972,7 +972,7 @@ function ProductView({
     if (!product?.slug) return;
     if (!shouldTrackProductView(data.restaurant.slug, product.slug)) return;
 
-    void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"}/public/menus/${data.restaurant.slug}/track`, {
+    void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010"}/public/menus/${data.restaurant.slug}/track`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -985,7 +985,7 @@ function ProductView({
 
   async function trackMediaOpen(type: "THREE_D_VIEW_OPENED" | "VR_VIEW_OPENED") {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"}/public/menus/${data.restaurant.slug}/track`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010"}/public/menus/${data.restaurant.slug}/track`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

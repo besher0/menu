@@ -6,5 +6,6 @@ coverage/
 .env.local
 .env.*.local
 npm-debug.log*
+.dev.restart*.log
 prisma/migrations/
 *.tsbuildinfo

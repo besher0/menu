@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, Copy, Globe2, Loader2, Plus, RefreshCcw, ShieldCheck, XCircle } from "lucide-react";
 import { authHeaders } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
 type DomainStatus = "PENDING" | "DNS_VERIFIED" | "SSL_PENDING" | "SSL_ACTIVE" | "ACTIVE" | "VERIFIED" | "FAILED" | "DISABLED";
 

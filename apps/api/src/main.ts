@@ -30,8 +30,8 @@ async function bootstrap() {
   }
   app.use("/uploads", express.static(uploadsDir));
 
-  const port = Number(config.get<string>("PORT") ?? 4000);
-  const host = config.get<string>("API_HOST") ?? "0.0.0.0";
+  const port = Number(config.get<string>("PORT") ?? 5010);
+  const host = config.get<string>("API_HOST") ?? "127.0.0.1";
   await app.listen(port, host);
 }
 

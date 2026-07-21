@@ -38,6 +38,6 @@ Main routes:
 - Public menu: `http://localhost:3000/m/abo-malek`
 - Restaurant dashboard: `http://localhost:3000/dashboard`
 - Super admin: `http://localhost:3000/admin`
-- API health: `http://localhost:4000/health`
+- API health: `http://localhost:5010/health`
 
 The web app includes a demo-login button so the interface can be reviewed before the external PostgreSQL database is configured.

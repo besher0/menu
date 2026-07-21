@@ -5,7 +5,7 @@ import { Check, Loader2, MonitorSmartphone, RotateCcw, Save } from "lucide-react
 import { ABO_MALEK_THEME, ThemeSettings, themeToCssVariables } from "@menu/shared";
 import { authHeaders } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
 type ThemeResponse = {
   data?: {
