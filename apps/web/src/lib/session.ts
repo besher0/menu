@@ -40,8 +40,7 @@ export function authHeaders(): Record<string, string> {
 
   return {
     ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
-    ...(parsedRestaurant?.id ? { "x-restaurant-id": parsedRestaurant.id } : {}),
-    ...(parsedRestaurant?.slug ? { "x-restaurant-slug": parsedRestaurant.slug } : {})
+    ...(parsedRestaurant?.id ? { "x-restaurant-id": parsedRestaurant.id } : {})
   };
 }
 

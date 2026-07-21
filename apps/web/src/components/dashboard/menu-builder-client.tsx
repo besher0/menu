@@ -110,8 +110,7 @@ export function MenuBuilderClient() {
     const selectedRestaurant = restaurants.find((restaurant) => restaurant.id === selectedRestaurantId);
     return {
       ...authHeaders(),
-      ...(selectedRestaurant?.id ? { "x-restaurant-id": selectedRestaurant.id } : {}),
-      ...(selectedRestaurant?.slug ? { "x-restaurant-slug": selectedRestaurant.slug } : {})
+      ...(selectedRestaurant?.id ? { "x-restaurant-id": selectedRestaurant.id } : {})
     };
   }
 

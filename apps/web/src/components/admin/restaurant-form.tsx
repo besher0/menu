@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Save } from "lucide-react";
-import { authHeaders } from "@/lib/session";
+import { authHeaders, setStoredRestaurant } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
@@ -64,6 +64,14 @@ export function RestaurantForm() {
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(payload?.message ?? "تعذر إنشاء المطعم. تأكد من تشغيل API وقاعدة البيانات وتسجيل الدخول كأدمن.");
+      }
+
+      if (payload?.data?.id && payload.data.slug) {
+        setStoredRestaurant({
+          id: payload.data.id,
+          slug: payload.data.slug,
+          name: payload.data.name
+        });
       }
 
       setStatus("success");
