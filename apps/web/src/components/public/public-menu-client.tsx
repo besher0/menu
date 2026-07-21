@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, Settings2, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -61,6 +61,7 @@ const translations = {
     newBadge: "جديد",
     home: "الرئيسية",
     offers: "العروض",
+    settings: "الإعدادات",
     hours: "الدوام",
     listView: "عرض قائمة",
     gridView: "عرض بطاقات",
@@ -122,6 +123,7 @@ const translations = {
     newBadge: "New",
     home: "Home",
     offers: "Offers",
+    settings: "Settings",
     hours: "Hours",
     listView: "List view",
     gridView: "Grid view",
@@ -603,12 +605,7 @@ export function PublicMenuClient({
       <BottomNav
         slug={data.restaurant.slug}
         active={view}
-        drawerOpen={drawerOpen}
         t={t}
-        onOpenHours={() => {
-          setDrawerTab("hours");
-          setDrawerOpen(true);
-        }}
       />
 
       {drawerOpen ? (
@@ -625,20 +622,20 @@ export function PublicMenuClient({
             <span>{t.language}</span>
             <b>{t.switchLanguage}</b>
           </button>
+          <button type="button" className={drawerTab === "info" ? "active" : ""} onClick={() => setDrawerTab("info")}>
+            <span>{t.settings}</span>
+            <Settings2 size={18} />
+          </button>
+          <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab("hours")}>
+            <span>{t.hours}</span>
+            <Clock3 size={18} />
+          </button>
           {[t.complaints, t.social, t.questions, t.rating].map((item) => (
             <button key={item}>
               <span>{item}</span>
               <ArrowLeft size={18} />
             </button>
           ))}
-          <div className="drawer-tabs" role="tablist" aria-label="معلومات المطعم">
-            <button type="button" className={drawerTab === "info" ? "active" : ""} onClick={() => setDrawerTab("info")}>
-              معلومات
-            </button>
-            <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab("hours")}>
-              أوقات الدوام
-            </button>
-          </div>
           <div className="drawer-restaurant-info">
             {drawerTab === "info" ? (
               <>
@@ -704,48 +701,45 @@ function HomeView({
       })
     : [];
   const moodSlots = Array.from({ length: Math.max(4, moodItems.length) });
-  const heroImage = heroSection?.settings?.backgroundImageUrl || data.restaurant.heroImageUrl || "/assets/public/menu-home.png";
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
   const scrollingBanners = bannerSlides.length > 1 ? [...bannerSlides, ...bannerSlides] : bannerSlides;
 
   return (
     <main className="public-content">
-      {moodItems.length ? (
-        <section className="mood-strip">
-          <h1>
-            <Flame size={18} />
-            {t.moodToday}
-          </h1>
-            <div>
-              {moodSlots.map((_, index) => {
-                const item = moodItems[index];
-                return item ? (
-                  <Link
-                    key={`${item.label}-${index}`}
-                    href={item.href}
-                    className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
-                    style={{
-                      ...visualBackgroundStyle(item),
-                      "--icon-x": `${item.iconX ?? 78}%`,
-                      "--icon-y": `${item.iconY ?? 50}%`,
-                      "--icon-width": `${item.iconWidth ?? 34}px`,
-                      "--icon-height": `${item.iconHeight ?? 34}px`
-                    } as React.CSSProperties}
-                  >
-                    {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
-                    <span>{item.label}</span>
-                  </Link>
-                ) : (
-                  <span key={`mood-placeholder-${index}`} className="mood-chip mood-chip-placeholder" aria-hidden="true" />
-                );
-              })}
-            </div>
-        </section>
-      ) : null}
+      <section className="mood-strip">
+        <h1>
+          <Flame size={18} />
+          {t.moodToday}
+        </h1>
+          <div>
+            {moodSlots.map((_, index) => {
+              const item = moodItems[index];
+              return item ? (
+                <Link
+                  key={`${item.label}-${index}`}
+                  href={item.href}
+                  className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
+                  style={{
+                    ...visualBackgroundStyle(item),
+                    "--icon-x": `${item.iconX ?? 78}%`,
+                    "--icon-y": `${item.iconY ?? 50}%`,
+                    "--icon-width": `${item.iconWidth ?? 34}px`,
+                    "--icon-height": `${item.iconHeight ?? 34}px`
+                  } as React.CSSProperties}
+                >
+                  {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
+                  <span>{item.label}</span>
+                </Link>
+              ) : (
+                <span key={`mood-placeholder-${index}`} className="mood-chip mood-chip-placeholder" aria-hidden="true" />
+              );
+            })}
+          </div>
+      </section>
 
-      {bannerSlides.length ? (
-        <section className={bannerSlides.length > 1 ? "hero-promo hero-promo-marquee" : "hero-promo"}>
+      <section className={bannerSlides.length > 1 ? "hero-promo hero-promo-marquee" : "hero-promo hero-promo-empty"}>
+        {bannerSlides.length ? (
           <div className="hero-promo-track">
             {scrollingBanners.map((banner, index) => (
               <Link key={`${banner.imageUrl}-${index}`} href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}>
@@ -754,8 +748,8 @@ function HomeView({
               </Link>
             ))}
           </div>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
 
       <ProductRail
         title={t.mostPopular}
@@ -1458,15 +1452,11 @@ function ProductRail({
 function BottomNav({
   slug,
   active,
-  drawerOpen,
-  t,
-  onOpenHours
+  t
 }: {
   slug: string;
   active: "home" | "menu" | "product";
-  drawerOpen: boolean;
   t: PublicTranslations;
-  onOpenHours: () => void;
 }) {
   return (
     <nav className="public-bottom-nav">
@@ -1478,10 +1468,6 @@ function BottomNav({
         <Utensils size={20} />
         {t.menu}
       </Link>
-      <button type="button" className={drawerOpen ? "active" : ""} onClick={onOpenHours}>
-        <Clock3 size={20} />
-        {t.hours}
-      </button>
     </nav>
   );
 }

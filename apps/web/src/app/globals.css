@@ -3250,14 +3250,19 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .hero-promo {
   aspect-ratio: 2.35 / 1;
-  background: #111;
+  background: transparent;
   border-radius: 18px;
-  box-shadow: 0 14px 24px rgb(16 24 40 / 10%);
+  box-shadow: none;
   display: block;
   margin-top: 2px;
   position: relative;
   overflow: hidden;
   z-index: 1;
+}
+
+.hero-promo:not(.hero-promo-empty) {
+  background: #111;
+  box-shadow: 0 14px 24px rgb(16 24 40 / 10%);
 }
 
 .hero-promo-track {
@@ -4785,7 +4790,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-top: 1px solid #eef0f4;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   height: 78px;
   left: 50%;
   max-width: 430px;
@@ -4796,27 +4801,21 @@ body:has(.public-page)::-webkit-scrollbar {
   z-index: 4;
 }
 
-.public-bottom-nav a,
-.public-bottom-nav button {
+.public-bottom-nav a {
   align-items: center;
-  background: transparent;
-  border: 0;
   color: #9ca3af;
   display: grid;
-  font: inherit;
   font-size: 12px;
   gap: 4px;
   justify-items: center;
   padding-top: 10px;
 }
 
-.public-bottom-nav a.active,
-.public-bottom-nav button.active {
+.public-bottom-nav a.active {
   color: var(--color-primary);
 }
 
-.public-bottom-nav a.active svg,
-.public-bottom-nav button.active svg {
+.public-bottom-nav a.active svg {
   background: var(--color-primary);
   border-radius: 50%;
   color: white;
@@ -4860,6 +4859,11 @@ body:has(.public-page)::-webkit-scrollbar {
   display: flex;
   justify-content: space-between;
   min-height: 54px;
+}
+
+.public-drawer button:not(.drawer-close).active {
+  color: var(--color-primary);
+  font-weight: 900;
 }
 
 .public-drawer button:not(.drawer-close) b {
