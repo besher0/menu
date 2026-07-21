@@ -44,6 +44,14 @@ export function authHeaders(): Record<string, string> {
   };
 }
 
+export function adminAuthHeaders(): Record<string, string> {
+  const session = getBrowserSession();
+
+  return {
+    ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {})
+  };
+}
+
 export function getStoredRestaurant(): { slug?: string; id?: string; name?: string } | null {
   if (typeof window === "undefined") {
     return null;

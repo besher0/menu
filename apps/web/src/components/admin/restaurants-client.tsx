@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, ExternalLink, Loader2, Plus, Store } from "lucide-react";
-import { authHeaders } from "@/lib/session";
+import { adminAuthHeaders } from "@/lib/session";
 import { StatCard } from "./stat-card";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
@@ -53,11 +53,11 @@ export function RestaurantsClient() {
       try {
         const [response, plansResponse] = await Promise.all([
           fetch(`${API_URL}/admin/restaurants`, {
-            headers: authHeaders(),
+            headers: adminAuthHeaders(),
             cache: "no-store"
           }),
           fetch(`${API_URL}/admin/subscriptions`, {
-            headers: authHeaders(),
+            headers: adminAuthHeaders(),
             cache: "no-store"
           })
         ]);
@@ -116,7 +116,7 @@ export function RestaurantsClient() {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders()
+          ...adminAuthHeaders()
         },
         body: JSON.stringify({ planKey })
       });

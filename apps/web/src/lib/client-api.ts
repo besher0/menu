@@ -1,6 +1,6 @@
 "use client";
 
-import { authHeaders } from "./session";
+import { adminAuthHeaders, authHeaders } from "./session";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
@@ -13,7 +13,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
-      ...authHeaders(),
+      ...(path.startsWith("/admin") ? adminAuthHeaders() : authHeaders()),
       ...init.headers
     },
     cache: "no-store"

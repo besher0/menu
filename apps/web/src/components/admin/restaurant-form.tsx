@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Save } from "lucide-react";
-import { authHeaders, setStoredRestaurant } from "@/lib/session";
+import { adminAuthHeaders, setStoredRestaurant } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
 
@@ -52,7 +52,7 @@ export function RestaurantForm() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders()
+          ...adminAuthHeaders()
         },
         body: JSON.stringify({
           ...form,
