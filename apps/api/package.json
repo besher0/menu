@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "seed:demo": "tsx prisma/seed.ts --demo"
   },
   "dependencies": {
     "@menu/shared": "0.1.0",

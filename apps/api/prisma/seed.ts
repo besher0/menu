@@ -319,7 +319,10 @@ async function seedRestaurant() {
 
 async function main() {
   await seedPlans();
-  await seedRestaurant();
+
+  if (process.env.SEED_DEMO_RESTAURANT === "true" || process.argv.includes("--demo")) {
+    await seedRestaurant();
+  }
 }
 
 main()
