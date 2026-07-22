@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, LayoutGrid, Loader2, Menu, MessageCircle, Minus, Plus, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -790,12 +790,13 @@ function MenuView({
   const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood ? "all" : "");
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
+  const defaultProductListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
+  const [productListLayout, setProductListLayout] = useState<CategoryProductListLayout>(defaultProductListLayout);
   const visibleProducts = selectedMood
     ? data.products.filter((product) => product.moodKey === selectedMood)
     : data.products;
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
-  const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
@@ -813,6 +814,10 @@ function MenuView({
       setSelectedCategorySlug("all");
     }
   }, [selectedMood]);
+
+  useEffect(() => {
+    setProductListLayout(defaultProductListLayout);
+  }, [defaultProductListLayout]);
 
   useEffect(() => {
     setActiveSpotlightIndex(0);
@@ -947,6 +952,27 @@ function MenuView({
               );
             })}
           </section>
+
+          <div className="menu-view-switch" role="group" aria-label="تغيير شكل المنتجات">
+            <button
+              type="button"
+              className={productListLayout === "single" ? "active" : ""}
+              onClick={() => setProductListLayout("single")}
+              aria-label="عرض منتج واحد بكل سطر"
+              title="عرض منتج واحد بكل سطر"
+            >
+              <List size={16} />
+            </button>
+            <button
+              type="button"
+              className={productListLayout === "double" ? "active" : ""}
+              onClick={() => setProductListLayout("double")}
+              aria-label="عرض منتجين بكل سطر"
+              title="عرض منتجين بكل سطر"
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </div>
 
           {spotlightProduct ? (
             <section className="category-spotlight" id="menu-products-start">

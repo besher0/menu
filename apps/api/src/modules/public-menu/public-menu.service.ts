@@ -149,7 +149,14 @@ export class PublicMenuService {
     const branch = dto.branchSlug
       ? restaurant.branches.find((candidate) => candidate.slug === dto.branchSlug)
       : restaurant.branches[0];
-    const whatsappPhone = branch?.whatsappPhone ?? restaurant.whatsappPhone;
+
+    if (dto.branchSlug && !branch) {
+      throw new BadRequestException("Branch was not found");
+    }
+
+    const whatsappPhone = dto.branchSlug
+      ? branch?.whatsappPhone ?? restaurant.whatsappPhone
+      : restaurant.whatsappPhone ?? branch?.whatsappPhone;
 
     if (!whatsappPhone) {
       throw new BadRequestException("WhatsApp phone is not configured");
