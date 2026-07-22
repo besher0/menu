@@ -1,4 +1,4 @@
-const CACHE_NAME = "menu-builder-v2";
+const CACHE_NAME = "menu-builder-v3";
 const ASSETS = [
   "/offline",
   "/m/abo-malek",
@@ -38,7 +38,9 @@ self.addEventListener("fetch", (event) => {
     url.pathname === "/sw.js";
 
   if (shouldBypassCache) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(
+      fetch(event.request).catch(() => new Response("Network unavailable", { status: 503, statusText: "Service Unavailable" }))
+    );
     return;
   }
 

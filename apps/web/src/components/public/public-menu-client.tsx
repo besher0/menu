@@ -703,7 +703,23 @@ function HomeView({
   const moodSlots = Array.from({ length: Math.max(4, moodItems.length) });
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
-  const scrollingBanners = bannerSlides.length > 1 ? [...bannerSlides, ...bannerSlides] : bannerSlides;
+  const [activeBanner, setActiveBanner] = useState(0);
+
+  useEffect(() => {
+    setActiveBanner(0);
+  }, [bannerSlides.length]);
+
+  useEffect(() => {
+    if (bannerSlides.length <= 1) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setActiveBanner((current) => (current + 1) % bannerSlides.length);
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [bannerSlides.length]);
 
   return (
     <main className="public-content">
@@ -738,11 +754,17 @@ function HomeView({
           </div>
       </section>
 
-      <section className={bannerSlides.length > 1 ? "hero-promo hero-promo-marquee" : "hero-promo hero-promo-empty"}>
+      <section className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}>
         {bannerSlides.length ? (
           <div className="hero-promo-track">
-            {scrollingBanners.map((banner, index) => (
-              <Link key={`${banner.imageUrl}-${index}`} href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}>
+            {bannerSlides.map((banner, index) => (
+              <Link
+                key={`${banner.imageUrl}-${index}`}
+                href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}
+                className={index === activeBanner ? "active" : ""}
+                aria-hidden={index === activeBanner ? undefined : true}
+                tabIndex={index === activeBanner ? undefined : -1}
+              >
                 <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
                 {banner.badge ? <span>{banner.badge}</span> : null}
               </Link>
