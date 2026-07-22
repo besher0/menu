@@ -4297,7 +4297,8 @@ body:has(.public-page)::-webkit-scrollbar {
   position: relative;
 }
 
-.product-photo img {
+.product-photo > img,
+.product-model-fallback > img {
   height: 100%;
   object-fit: cover;
   width: 100%;
@@ -4335,8 +4336,9 @@ body:has(.public-page)::-webkit-scrollbar {
 .product-media-tabs {
   display: flex;
   gap: 8px;
+  left: 16px;
   position: absolute;
-  right: 16px;
+  right: auto;
   top: 44px;
   z-index: 2;
 }
@@ -4362,8 +4364,42 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .product-model-stage,
 .product-vr-stage {
+  background: #f6f7f9;
   height: 100%;
   width: 100%;
+}
+
+.product-model-stage model-viewer {
+  background: #f6f7f9;
+}
+
+.product-model-fallback {
+  position: relative;
+}
+
+.product-model-fallback > img {
+  filter: brightness(0.72);
+}
+
+.product-model-fallback a {
+  align-items: center;
+  background: var(--color-primary);
+  border-radius: 999px;
+  bottom: 18px;
+  color: white;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 900;
+  gap: 8px;
+  left: 16px;
+  min-height: 40px;
+  padding: 0 16px;
+  position: absolute;
+  text-decoration: none;
+}
+
+.product-model-fallback a img {
+  display: none;
 }
 
 .model-ar-button {

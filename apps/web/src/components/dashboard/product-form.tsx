@@ -637,7 +637,7 @@ export function ProductForm({ productId }: { productId?: string }) {
               onChange={handleModelUpload}
               type="file"
             />
-            <small className="field-hint">ارفع ملف GLB أو GLTF. بعد الرفع سيتم تعبئة الرابط تلقائياً.</small>
+            <small className="field-hint">ارفع GLB/GLTF للمشاهدة داخل الصفحة. للآيفون وQuick Look الأفضل توفير ملف USDZ.</small>
           </label>
 
           <label className="full">

@@ -208,7 +208,7 @@ export class MediaService {
   inferMediaType(filename: string): "IMAGE" | "MODEL_3D" | "VR_PANORAMA" | "SVG_ICON" | "PNG_ICON" {
     const extension = filename.split("?")[0].split(".").pop()?.toLowerCase();
 
-    if (extension && ["glb", "gltf"].includes(extension)) {
+    if (extension && ["glb", "gltf", "usdz"].includes(extension)) {
       return "MODEL_3D";
     }
 
@@ -225,7 +225,7 @@ export class MediaService {
 
   private inferFormat(url: string) {
     const extension = url.split("?")[0].split(".").pop()?.toLowerCase();
-    return extension && ["glb", "gltf"].includes(extension) ? extension : "glb";
+    return extension && ["glb", "gltf", "usdz"].includes(extension) ? extension : "glb";
   }
 
   private buildVariants(dto: CreateMediaAssetDto) {
@@ -314,7 +314,9 @@ export class MediaService {
     const extension = this.filenameFromUrl(url).split(".").pop()?.toLowerCase();
 
     if (type === "MODEL_3D") {
-      return extension === "gltf" ? "model/gltf+json" : "model/gltf-binary";
+      if (extension === "gltf") return "model/gltf+json";
+      if (extension === "usdz") return "model/vnd.usdz+zip";
+      return "model/gltf-binary";
     }
 
     if (type === "SVG_ICON") {

@@ -28,7 +28,30 @@ async function bootstrap() {
   if (!existsSync(uploadsDir)) {
     mkdirSync(uploadsDir, { recursive: true });
   }
-  app.use("/uploads", express.static(uploadsDir));
+  app.use(
+    "/uploads",
+    express.static(uploadsDir, {
+      setHeaders(response, filePath) {
+        const extension = filePath.split(".").pop()?.toLowerCase();
+
+        if (extension === "glb") {
+          response.setHeader("Content-Type", "model/gltf-binary");
+        }
+
+        if (extension === "gltf") {
+          response.setHeader("Content-Type", "model/gltf+json");
+        }
+
+        if (extension === "usdz") {
+          response.setHeader("Content-Type", "model/vnd.usdz+zip");
+        }
+
+        if (extension === "glb" || extension === "gltf" || extension === "usdz") {
+          response.setHeader("Access-Control-Allow-Origin", "*");
+        }
+      }
+    })
+  );
 
   const port = Number(config.get<string>("PORT") ?? 5010);
   const host = config.get<string>("API_HOST") ?? "127.0.0.1";

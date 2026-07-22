@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
+import { createElement, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -16,6 +16,7 @@ type CartItem = {
 
 type PublicLanguage = "ar" | "en";
 type CategoryProductListLayout = "single" | "double";
+type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
 
 const translations = {
@@ -1142,13 +1143,30 @@ function ProductView({
 }) {
   const related = getRelatedProducts(data.products, product);
   const ingredients = productIngredients(product);
+  const model3dUrl = product.media?.model3dUrl ?? null;
+  const model3dFormat = product.media?.model3dFormat?.toUpperCase() ?? null;
+  const canRenderModel = Boolean(model3dUrl && model3dFormat !== "USDZ");
   const gallery = productImages(product);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [mediaMode, setMediaMode] = useState<ProductMediaMode>("image");
   const activeImage = gallery[activeImageIndex] ?? gallery[0];
 
   useEffect(() => {
     setActiveImageIndex(0);
+    setMediaMode("image");
   }, [product.slug]);
+
+  useEffect(() => {
+    if (!model3dUrl || !canRenderModel || document.querySelector("script[data-model-viewer]")) {
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.type = "module";
+    script.src = "https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js";
+    script.dataset.modelViewer = "true";
+    document.head.appendChild(script);
+  }, [canRenderModel, model3dUrl]);
 
   useEffect(() => {
     if (!product?.slug) return;
@@ -1165,14 +1183,83 @@ function ProductView({
     }).catch(() => undefined);
   }, [data.restaurant.slug, product.id, product.slug]);
 
+  async function trackMediaOpen() {
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010"}/public/menus/${data.restaurant.slug}/track`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "THREE_D_VIEW_OPENED",
+          path: `/m/${data.restaurant.slug}/product/${product.slug}`,
+          metadata: { productSlug: product.slug }
+        })
+      });
+    } catch {
+      // Tracking must not interrupt the public menu.
+    }
+  }
+
   return (
     <main className="product-detail">
       <div className="product-photo">
-        <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
+        <div className="product-media-tabs" role="group" aria-label={t.photos}>
+          <button
+            type="button"
+            className={mediaMode === "image" ? "active" : ""}
+            onClick={() => setMediaMode("image")}
+          >
+            <ImageIcon size={16} />
+            {t.photo}
+          </button>
+          {model3dUrl ? (
+            <button
+              type="button"
+              className={mediaMode === "3d" ? "active" : ""}
+              onClick={() => {
+                setMediaMode("3d");
+                void trackMediaOpen();
+              }}
+            >
+              <Rotate3D size={16} />
+              3D
+            </button>
+          ) : null}
+        </div>
+        {mediaMode === "3d" && model3dUrl ? (
+          canRenderModel ? (
+            <div className="product-model-stage">
+              {createElement("model-viewer", {
+                src: model3dUrl,
+                ar: true,
+                "ar-modes": "quick-look scene-viewer webxr",
+                "camera-controls": true,
+                "auto-rotate": true,
+                "camera-orbit": "0deg 72deg auto",
+                "min-camera-orbit": "auto 18deg auto",
+                "max-camera-orbit": "auto 92deg auto",
+                "interaction-prompt": "auto",
+                "shadow-intensity": "1",
+                loading: "lazy",
+                style: { width: "100%", height: "100%", display: "block" }
+              }, createElement("button", { slot: "ar-button", className: "model-ar-button", type: "button" }, "AR"))}
+              <small className="model-ar-note">على الآيفون اضغط AR. إذا لم يفتح، ارفع نسخة USDZ للمنتج.</small>
+            </div>
+          ) : (
+            <div className="product-model-stage product-model-fallback">
+              <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
+              <a href={model3dUrl} rel="ar">
+                <img src={activeImage.url} alt="" aria-hidden="true" />
+                فتح 3D على الآيفون
+              </a>
+            </div>
+          )
+        ) : (
+          <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
+        )}
         <Link href={`/m/${data.restaurant.slug}/menu`} aria-label="الرجوع إلى القائمة">
           <ChevronRight size={18} />
         </Link>
-        <span>{activeImageIndex + 1}/{gallery.length}</span>
+        {mediaMode === "image" ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
       </div>
       {gallery.length > 1 ? (
         <div className="product-thumbnails" aria-label={t.photos}>
@@ -1180,8 +1267,11 @@ function ProductView({
             <button
               key={`${image.url}-${index}`}
               type="button"
-              className={index === activeImageIndex ? "active" : ""}
-              onClick={() => setActiveImageIndex(index)}
+              className={mediaMode === "image" && index === activeImageIndex ? "active" : ""}
+              onClick={() => {
+                setActiveImageIndex(index);
+                setMediaMode("image");
+              }}
               aria-label={`${t.photo} ${index + 1}`}
             >
               <img src={image.url} alt="" aria-hidden="true" />
