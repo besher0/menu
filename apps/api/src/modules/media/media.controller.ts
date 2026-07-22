@@ -86,7 +86,7 @@ export class MediaController {
     }
 
     const cloudinaryUrl = await this.uploadToCloudinaryIfConfigured(file, body.type);
-    const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5010}`;
+    const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5000}`;
 
     return this.mediaService.create(request.restaurant!.id, request.user?.sub, {
       url: cloudinaryUrl ?? `${apiOrigin}/uploads/${file.filename}`,

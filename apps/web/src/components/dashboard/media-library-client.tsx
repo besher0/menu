@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ImageIcon, Loader2, Plus, RefreshCcw, Rotate3D, Save, Settings2, View } from "lucide-react";
 import { authHeaders } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 type MediaType = "IMAGE" | "MODEL_3D" | "VR_PANORAMA" | "SVG_ICON" | "PNG_ICON";
 type ImageRuleTarget = "PRODUCT_IMAGE" | "CATEGORY_IMAGE" | "HERO_IMAGE" | "GALLERY_IMAGE" | "LOGO" | "ICON";

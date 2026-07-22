@@ -6,7 +6,7 @@ import { ArrowRight, ImagePlus, Loader2, Plus, Save, Trash2 } from "lucide-react
 import Link from "next/link";
 import { authHeaders, getBrowserSession, getStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 type FormState = {
   name: string;

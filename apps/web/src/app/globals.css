@@ -3910,34 +3910,32 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-section-title {
   align-items: center;
-  direction: ltr;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(42px, 1fr) max-content;
-  margin: 0 0 12px;
+  direction: rtl;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-start;
+  margin: 0 0 16px;
+  width: 100%;
 }
 
 .category-section-title span {
   color: #16181d;
   direction: rtl;
+  flex: 0 0 auto;
   font-size: 22px;
   font-weight: 900;
-  grid-column: 2;
-  grid-row: 1;
-  justify-self: end;
   line-height: 1;
 }
 
 .category-section-title::after {
-  background: var(--color-primary);
+  background: linear-gradient(90deg, transparent 0, rgb(219 134 139 / 28%) 12%, #db868b 50%, rgb(219 134 139 / 28%) 88%, transparent 100%);
   border-radius: 999px;
   box-shadow: none;
   content: "";
-  grid-column: 1;
-  grid-row: 1;
-  height: 2px;
-  min-width: 0;
-  opacity: 0.95;
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 120px;
+  opacity: 1;
 }
 
 .menu-view-switch {

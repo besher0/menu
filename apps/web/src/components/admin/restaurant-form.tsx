@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Save } from "lucide-react";
 import { adminAuthHeaders, setStoredRestaurant } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 type RestaurantFormState = {
   name: string;

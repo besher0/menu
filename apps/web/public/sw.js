@@ -1,7 +1,6 @@
-const CACHE_NAME = "menu-builder-v3";
+const CACHE_NAME = "menu-builder-v4";
 const ASSETS = [
   "/offline",
-  "/m/abo-malek",
   "/assets/brand/abo-malek-logo.png",
   "/assets/public/menu-home.png",
   "/assets/public/menu-products.png"
@@ -33,6 +32,7 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/admin") ||
     url.pathname.startsWith("/dashboard") ||
     url.pathname.startsWith("/login") ||
+    url.pathname.startsWith("/m/") ||
     url.pathname.startsWith("/_next") ||
     url.pathname.startsWith("/manifest") ||
     url.pathname === "/sw.js";

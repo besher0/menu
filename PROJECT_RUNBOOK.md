@@ -7,10 +7,10 @@ Minimum required for development:
 ```env
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB?sslmode=require"
 JWT_SECRET="long-random-secret"
-PORT=5010
-API_ORIGIN="http://localhost:5010"
+PORT=5000
+API_ORIGIN="http://localhost:5000"
 WEB_ORIGIN="http://localhost:3000"
-NEXT_PUBLIC_API_URL="http://localhost:5010"
+NEXT_PUBLIC_API_URL="http://localhost:5000"
 NEXT_PUBLIC_WEB_URL="http://localhost:3000"
 DOMAIN_VERIFY_BYPASS="true"
 ```
@@ -128,7 +128,7 @@ http://localhost:3000/m/abo-malek
 Local uploads are served by the API at:
 
 ```txt
-http://localhost:5010/uploads/<filename>
+http://localhost:5000/uploads/<filename>
 ```
 
 The local upload folder is:

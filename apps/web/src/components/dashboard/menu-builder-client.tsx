@@ -23,7 +23,7 @@ import {
 } from "@menu/shared";
 import { authHeaders, getBrowserSession } from "@/lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 type MoodBackgroundType = "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
 
 type RestaurantOption = {

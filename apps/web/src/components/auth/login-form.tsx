@@ -26,7 +26,7 @@ type LoginResponse = {
   error?: string;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 export function LoginForm() {
   const router = useRouter();

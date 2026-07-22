@@ -2,7 +2,7 @@
 
 import { adminAuthHeaders, authHeaders } from "./session";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 type ApiResponse<T> = {
   data: T;

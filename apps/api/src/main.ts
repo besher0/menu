@@ -53,7 +53,7 @@ async function bootstrap() {
     })
   );
 
-  const port = Number(config.get<string>("PORT") ?? 5010);
+  const port = Number(config.get<string>("PORT") ?? 5000);
   const host = config.get<string>("API_HOST") ?? "127.0.0.1";
   await app.listen(port, host);
 }
