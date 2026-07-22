@@ -49,6 +49,7 @@ export type ThemeSettings = {
     direction: "rtl" | "ltr";
     productCard: "compact" | "image-first" | "banner";
     categoryGrid: "chips" | "cards" | "banners";
+    categoryProductListLayout?: "single" | "double";
   };
   icons?: {
     defaultSize?: number;
@@ -88,7 +89,8 @@ export const ABO_MALEK_THEME: ThemeSettings = {
   layout: {
     direction: "rtl",
     productCard: "image-first",
-    categoryGrid: "banners"
+    categoryGrid: "banners",
+    categoryProductListLayout: "double"
   },
   icons: {
     defaultSize: 32,

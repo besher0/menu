@@ -2479,6 +2479,80 @@ button.table-link {
   resize: vertical;
 }
 
+.product-ingredients-editor {
+  display: grid;
+  gap: 12px;
+  grid-column: 1 / -1;
+}
+
+.field-row-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-row-head > span {
+  color: #343a46;
+  font-weight: 900;
+}
+
+.field-row-head button,
+.ingredient-empty-add {
+  align-items: center;
+  background: #151515;
+  border: 0;
+  border-radius: 999px;
+  color: white;
+  display: inline-flex;
+  font-weight: 900;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.ingredient-form-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ingredient-form-row {
+  align-items: end;
+  background: #fbfcfe;
+  border: 1px solid #e8e9ee;
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 64px minmax(120px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr) 38px;
+  padding: 12px;
+}
+
+.ingredient-form-row label {
+  min-width: 0;
+}
+
+.ingredient-form-row > img,
+.ingredient-image-placeholder {
+  background: #f1f3f6;
+  border: 1px solid #e8e9ee;
+  border-radius: 14px;
+  height: 64px;
+  object-fit: cover;
+  width: 64px;
+}
+
+.ingredient-remove {
+  align-items: center;
+  background: #fff0f1;
+  border: 0;
+  border-radius: 12px;
+  color: #ed1f2b;
+  display: flex;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
 .categories-layout {
   display: grid;
   gap: 18px;
@@ -3116,7 +3190,7 @@ body:has(.public-page)::-webkit-scrollbar {
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: 34px 1fr 44px;
+  grid-template-columns: 44px 1fr 34px;
   margin-bottom: 18px;
 }
 
@@ -3603,14 +3677,18 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-detail-back {
   align-items: center;
-  background: transparent;
+  background: white;
   border: 0;
-  color: #8c929d;
+  border-radius: 999px;
+  box-shadow: 0 8px 22px rgb(16 24 40 / 12%);
+  color: var(--color-primary);
   display: inline-flex;
-  font-weight: 800;
-  gap: 6px;
+  height: 36px;
   justify-self: flex-start;
+  margin-bottom: -8px;
   padding: 0;
+  width: 36px;
+  justify-content: center;
 }
 
 .category-banner-list {
@@ -3699,6 +3777,99 @@ body:has(.public-page)::-webkit-scrollbar {
 .product-list {
   display: grid;
   gap: 28px;
+}
+
+.product-list > div {
+  scroll-margin-top: 16px;
+}
+
+.category-spotlight {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  scroll-margin-top: 16px;
+}
+
+.category-spotlight-card {
+  background: white;
+  border: 1px solid #eef0f4;
+  border-radius: 18px;
+  box-shadow: 0 14px 30px rgb(16 24 40 / 10%);
+  color: inherit;
+  display: grid;
+  min-height: 292px;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  text-align: center;
+}
+
+.category-spotlight-card img {
+  aspect-ratio: 1.32;
+  background: #fff;
+  height: auto;
+  object-fit: contain;
+  width: 100%;
+}
+
+.category-spotlight-card div {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px 18px;
+}
+
+.category-spotlight-card b {
+  color: #201217;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.category-spotlight-card p {
+  color: #555b66;
+  display: -webkit-box;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.category-spotlight-card strong {
+  color: var(--color-primary);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.category-spotlight-badge {
+  background: var(--color-primary);
+  border-radius: 999px;
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+  inset-inline-end: 12px;
+  padding: 6px 9px;
+  position: absolute;
+  top: 12px;
+}
+
+.spotlight-arrow {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-primary);
+  display: flex;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  width: 34px;
+}
+
+.spotlight-arrow:disabled {
+  color: #d5d7dc;
+  cursor: default;
 }
 
 .category-section-title {
@@ -4135,7 +4306,10 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .product-photo > a {
-  left: 16px;
+  box-shadow: 0 8px 22px rgb(16 24 40 / 16%);
+  color: var(--color-primary);
+  left: auto;
+  right: 16px;
 }
 
 .product-photo > span {
@@ -4409,7 +4583,6 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: center;
 }
 
-.ingredients-row i,
 .nutrition-card i {
   align-items: center;
   background: rgb(237 31 43 / 10%);
@@ -4419,6 +4592,13 @@ body:has(.public-page)::-webkit-scrollbar {
   height: 32px;
   justify-content: center;
   width: 32px;
+}
+
+.ingredients-row img {
+  border-radius: 10px;
+  height: 44px;
+  object-fit: cover;
+  width: 44px;
 }
 
 .ingredients-row b {
@@ -5101,6 +5281,27 @@ body:has(.public-page)::-webkit-scrollbar {
 
   .product-form-card {
     grid-template-columns: 1fr;
+  }
+
+  .ingredient-form-row {
+    grid-template-columns: 64px minmax(0, 1fr) 38px;
+  }
+
+  .ingredient-form-row label,
+  .ingredient-url-field {
+    grid-column: 1 / -1;
+  }
+
+  .ingredient-form-row > img,
+  .ingredient-image-placeholder {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .ingredient-remove {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
   }
 }
 

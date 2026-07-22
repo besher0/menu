@@ -1,5 +1,10 @@
 import { IsArray, IsBoolean, IsNumber, IsObject, IsOptional, IsString, Min } from "class-validator";
 
+type IngredientInput = string | {
+  name?: string;
+  imageUrl?: string | null;
+};
+
 export class CreateProductDto {
   @IsString()
   name: string;
@@ -34,8 +39,7 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  ingredients?: string[];
+  ingredients?: IngredientInput[];
 
   @IsOptional()
   @IsObject()

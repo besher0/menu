@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ImagePlus, Loader2, Save } from "lucide-react";
+import { ArrowRight, ImagePlus, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { authHeaders, getBrowserSession, getStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
@@ -16,7 +16,7 @@ type FormState = {
   currency: string;
   imageUrl: string;
   moodKey: string;
-  ingredients: string;
+  ingredients: IngredientFormItem[];
   weight: string;
   protein: string;
   breadType: string;
@@ -26,6 +26,11 @@ type FormState = {
   vrUrl: string;
   isNew: boolean;
   isPopular: boolean;
+};
+
+type IngredientFormItem = {
+  name: string;
+  imageUrl: string;
 };
 
 type RestaurantOption = {
@@ -55,7 +60,7 @@ type ProductDetails = {
   isFeatured?: boolean;
   isPopular?: boolean;
   moodKey?: string | null;
-  ingredients?: string[];
+  ingredients?: Array<string | { name?: string; imageUrl?: string | null }>;
   nutrition?: {
     weight?: string;
     protein?: string;
@@ -70,6 +75,16 @@ type ProductDetails = {
   category?: { id: string; name: string } | null;
   images?: Array<{ url: string }>;
 };
+
+function normalizeIngredients(items?: Array<string | { name?: string; imageUrl?: string | null }>): IngredientFormItem[] {
+  return (items ?? [])
+    .map((item) =>
+      typeof item === "string"
+        ? { name: item.trim(), imageUrl: "" }
+        : { name: item.name?.trim() ?? "", imageUrl: item.imageUrl ?? "" }
+    )
+    .filter((item) => item.name || item.imageUrl);
+}
 
 export function ProductForm({ productId }: { productId?: string }) {
   const router = useRouter();
@@ -90,7 +105,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     currency: "ل.س",
     imageUrl: "",
     moodKey: "",
-    ingredients: "",
+    ingredients: [],
     weight: "",
     protein: "",
     breadType: "",
@@ -104,6 +119,29 @@ export function ProductForm({ productId }: { productId?: string }) {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function addIngredient() {
+    setForm((current) => ({
+      ...current,
+      ingredients: [...current.ingredients, { name: "", imageUrl: "" }]
+    }));
+  }
+
+  function updateIngredient(index: number, patch: Partial<IngredientFormItem>) {
+    setForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.map((ingredient, itemIndex) =>
+        itemIndex === index ? { ...ingredient, ...patch } : ingredient
+      )
+    }));
+  }
+
+  function removeIngredient(index: number) {
+    setForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.filter((_, itemIndex) => itemIndex !== index)
+    }));
   }
 
   function inferModelFormat(filename: string) {
@@ -250,7 +288,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           currency: product.currency ?? "ل.س",
           imageUrl: product.images?.[0]?.url ?? "",
           moodKey: product.moodKey ?? "",
-          ingredients: product.ingredients?.join("\n") ?? "",
+          ingredients: normalizeIngredients(product.ingredients),
           weight: product.nutrition?.weight ?? "",
           protein: product.nutrition?.protein ?? "",
           breadType: product.nutrition?.breadType ?? "",
@@ -293,9 +331,11 @@ export function ProductForm({ productId }: { productId?: string }) {
           moodKey: form.moodKey || undefined,
           imageUrl: form.imageUrl,
           ingredients: form.ingredients
-            .split(/\r?\n|،|,/)
-            .map((item) => item.trim())
-            .filter(Boolean),
+            .map((item) => ({
+              name: item.name.trim(),
+              imageUrl: item.imageUrl.trim() || undefined
+            }))
+            .filter((item) => item.name || item.imageUrl),
           nutrition: {
             weight: form.weight,
             protein: form.protein,
@@ -355,6 +395,40 @@ export function ProductForm({ productId }: { productId?: string }) {
     } catch (error) {
       setUploadStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر رفع الصورة.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleIngredientImageUpload(index: number, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadStatus("uploading");
+    setMessage("");
+
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("type", "IMAGE");
+      body.append("altText", form.ingredients[index]?.name || form.name || file.name);
+
+      const response = await fetch(`${API_URL}/dashboard/media/upload`, {
+        method: "POST",
+        headers: selectedRestaurantHeaders(),
+        body
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "تعذر رفع صورة المكون.");
+      }
+
+      updateIngredient(index, { imageUrl: payload?.data?.url ?? payload?.url ?? "" });
+      setUploadStatus("idle");
+    } catch (error) {
+      setUploadStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع صورة المكون.");
     } finally {
       event.target.value = "";
     }
@@ -457,15 +531,57 @@ export function ProductForm({ productId }: { productId?: string }) {
             />
           </label>
 
-          <label className="full">
-            <span>مكونات الوجبة</span>
-            <textarea
-              value={form.ingredients}
-              onChange={(event) => update("ingredients", event.target.value)}
-              placeholder={"بطاطا\nجبنة\nصوص خاص"}
-              rows={4}
-            />
-          </label>
+          <div className="product-ingredients-editor full">
+            <div className="field-row-head">
+              <span>مكونات الوجبة</span>
+              <button type="button" onClick={addIngredient}>
+                <Plus size={16} />
+                إضافة مكون
+              </button>
+            </div>
+            {form.ingredients.length ? (
+              <div className="ingredient-form-list">
+                {form.ingredients.map((ingredient, index) => (
+                  <div className="ingredient-form-row" key={`ingredient-${index}`}>
+                    {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name || "مكون"} /> : <span className="ingredient-image-placeholder" />}
+                    <label>
+                      <span>اسم المكون</span>
+                      <input
+                        value={ingredient.name}
+                        onChange={(event) => updateIngredient(index, { name: event.target.value })}
+                        placeholder="بطاطا"
+                      />
+                    </label>
+                    <label>
+                      <span>صورة اختيارية</span>
+                      <input
+                        accept="image/*"
+                        disabled={!selectedRestaurantId || uploadStatus === "uploading"}
+                        onChange={(event) => handleIngredientImageUpload(index, event)}
+                        type="file"
+                      />
+                    </label>
+                    <label className="ingredient-url-field">
+                      <span>رابط الصورة</span>
+                      <input
+                        value={ingredient.imageUrl}
+                        onChange={(event) => updateIngredient(index, { imageUrl: event.target.value })}
+                        placeholder="https://..."
+                      />
+                    </label>
+                    <button type="button" className="ingredient-remove" onClick={() => removeIngredient(index)} aria-label="حذف المكون">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <button type="button" className="ingredient-empty-add" onClick={addIngredient}>
+                <Plus size={16} />
+                إضافة أول مكون
+              </button>
+            )}
+          </div>
 
           <label>
             <span>السعر</span>
@@ -574,7 +690,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           <img src={form.imageUrl || "/assets/public/menu-products.png"} alt={form.name || "معاينة"} />
           <h2>{form.name || "اسم المنتج"}</h2>
           <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
-          {form.ingredients ? <small>{form.ingredients.split(/\r?\n|،|,/).map((item) => item.trim()).filter(Boolean).join(" - ")}</small> : null}
+          {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}
           <b>
             {form.basePrice || "0"} {form.currency}
           </b>

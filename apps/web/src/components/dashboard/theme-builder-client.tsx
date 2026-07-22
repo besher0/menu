@@ -226,6 +226,21 @@ export function ThemeBuilderClient() {
                 </button>
               ))}
             </div>
+            <div className="theme-segments">
+              {([
+                { key: "single", label: "منتج بكل سطر" },
+                { key: "double", label: "منتجين بكل سطر" }
+              ] as const).map((mode) => (
+                <button
+                  key={mode.key}
+                  className={(theme.layout.categoryProductListLayout ?? "double") === mode.key ? "active" : ""}
+                  type="button"
+                  onClick={() => updateLayout("categoryProductListLayout", mode.key)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
           </section>
 
           <section>

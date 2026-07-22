@@ -19,6 +19,11 @@ export type PublicCategory = {
   count?: number;
 };
 
+export type PublicIngredient = string | {
+  name: string;
+  imageUrl?: string | null;
+};
+
 export type PublicProduct = {
   id?: string;
   slug: string;
@@ -36,7 +41,7 @@ export type PublicProduct = {
   new?: boolean;
   popular?: boolean;
   moodKey?: string | null;
-  ingredients?: string[];
+  ingredients?: PublicIngredient[];
   nutrition?: {
     calories?: string;
     protein?: string;

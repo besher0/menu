@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createElement, useEffect, useMemo, useState } from "react";
-import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, CookingPot, Droplet, Drumstick, Fish, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Milk, Minus, Pizza, Plus, Rotate3D, Salad, Sandwich, Scale, Settings2, ShoppingBag, Soup, Trash2, Utensils, View, Wheat, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, LayoutGrid, Loader2, Menu, MessageCircle, Minus, Plus, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -16,8 +15,8 @@ type CartItem = {
 };
 
 type PublicLanguage = "ar" | "en";
-type MenuLayout = "list" | "grid";
-type ProductMediaMode = "image" | "3d" | "vr";
+type CategoryProductListLayout = "single" | "double";
+type NormalizedIngredient = { name: string; imageUrl?: string | null };
 
 const translations = {
   ar: {
@@ -290,22 +289,14 @@ function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
   return true;
 }
 
-function iconForIngredient(ingredient: string): LucideIcon {
-  const value = ingredient.trim().toLowerCase();
-
-  if (["بطاطا", "بطاطس", "fries", "potato"].some((item) => value.includes(item))) return CookingPot;
-  if (["مايونيز", "ميونيز", "mayo", "mayonnaise", "صوص", "sauce"].some((item) => value.includes(item))) return Droplet;
-  if (["فطر", "mushroom"].some((item) => value.includes(item))) return Soup;
-  if (["جبنة", "جبن", "cheese"].some((item) => value.includes(item))) return Milk;
-  if (["زنجر", "دجاج", "chicken", "zinger"].some((item) => value.includes(item))) return Drumstick;
-  if (["لحم", "برغر", "burger", "beef", "meat"].some((item) => value.includes(item))) return Beef;
-  if (["خبز", "صمون", "تورتيلا", "bread", "bun", "tortilla"].some((item) => value.includes(item))) return Wheat;
-  if (["سمك", "fish"].some((item) => value.includes(item))) return Fish;
-  if (["سلطة", "خس", "salad", "lettuce"].some((item) => value.includes(item))) return Salad;
-  if (["بيتزا", "pizza"].some((item) => value.includes(item))) return Pizza;
-  if (["ساندويش", "سندويش", "sandwich"].some((item) => value.includes(item))) return Sandwich;
-
-  return Utensils;
+function productIngredients(product: PublicProduct): NormalizedIngredient[] {
+  return (product.ingredients ?? [])
+    .map((ingredient) =>
+      typeof ingredient === "string"
+        ? { name: ingredient.trim(), imageUrl: null }
+        : { name: ingredient.name?.trim() ?? "", imageUrl: ingredient.imageUrl ?? null }
+    )
+    .filter((ingredient) => ingredient.name || ingredient.imageUrl);
 }
 
 function getRelatedProducts(products: PublicProduct[], product: PublicProduct) {
@@ -331,31 +322,6 @@ function getRelatedProducts(products: PublicProduct[], product: PublicProduct) {
   addMatches(products);
 
   return related.slice(0, 8);
-}
-
-function sceneViewerUrl(modelUrl: string, title: string, fallbackPath: string) {
-  const fileUrl = encodeURIComponent(modelUrl);
-  const fallbackUrl = encodeURIComponent(absolutePublicUrl(fallbackPath));
-  const encodedTitle = encodeURIComponent(title);
-
-  return `intent://arvr.google.com/scene-viewer/1.0?file=${fileUrl}&mode=ar_preferred&title=${encodedTitle}#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;S.browser_fallback_url=${fallbackUrl};end;`;
-}
-
-function absolutePublicUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path;
-  if (typeof window === "undefined") return path;
-  return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-function isSecureModelUrl(modelUrl?: string | null) {
-  return Boolean(modelUrl?.startsWith("https://"));
-}
-
-function isArFriendlyModel(modelUrl?: string | null, format?: string | null) {
-  if (!isSecureModelUrl(modelUrl)) return false;
-  const normalizedFormat = format?.toUpperCase();
-  const cleanUrl = modelUrl?.split("?")[0]?.toLowerCase() ?? "";
-  return normalizedFormat === "GLB" || normalizedFormat === "GLTF" || normalizedFormat === "USDZ" || cleanUrl.endsWith(".glb") || cleanUrl.endsWith(".gltf") || cleanUrl.endsWith(".usdz");
 }
 
 export function PublicMenuClient({
@@ -512,11 +478,11 @@ export function PublicMenuClient({
   return (
     <div className={`public-screen ${showPrices ? "" : "prices-hidden"}`} dir={language === "ar" ? "rtl" : "ltr"} style={cssVars(data.theme)}>
       <header className="public-header">
-        {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
-        <p>{t.chooseCategory}</p>
         <button onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
           <Menu size={24} />
         </button>
+        <p>{t.chooseCategory}</p>
+        {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
       </header>
 
       {view === "home" ? (
@@ -821,32 +787,58 @@ function MenuView({
 }) {
   const searchParams = useSearchParams();
   const selectedMood = searchParams.get("mood")?.trim() || "";
-  const [layout, setLayout] = useState<MenuLayout>("grid");
   const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood ? "all" : "");
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
+  const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const visibleProducts = selectedMood
     ? data.products.filter((product) => product.moodKey === selectedMood)
     : data.products;
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
+  const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
-  const sectionCategories = selectedCategorySlug === "all"
-    ? regularCategories
-    : regularCategories.filter((category) => category.slug === selectedCategorySlug);
+  const activeProducts = selectedCategorySlug === "all"
+    ? visibleProducts
+    : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
+  const spotlightProduct = activeProducts[activeProducts.length ? activeSpotlightIndex % activeProducts.length : 0];
+  const popularForActive = activeProducts.filter(isPopular);
   const productsWithoutCategory = selectedCategorySlug === "all"
     ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
     : [];
-  const displayedProductsCount = selectedCategorySlug === "all"
-    ? visibleProducts.length
-    : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug).length;
 
   useEffect(() => {
     if (selectedMood) {
       setSelectedCategorySlug("all");
     }
   }, [selectedMood]);
+
+  useEffect(() => {
+    setActiveSpotlightIndex(0);
+  }, [selectedCategorySlug, activeProducts.length]);
+
+  useEffect(() => {
+    if (!selectedCategorySlug) {
+      return;
+    }
+
+    const targetId = selectedCategorySlug === "all" ? "menu-products-start" : `category-section-${selectedCategorySlug}`;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedCategorySlug]);
+
+  function selectCategory(slug: string) {
+    setSelectedCategorySlug(slug);
+  }
+
+  function moveSpotlight(direction: -1 | 1) {
+    if (activeProducts.length <= 1) return;
+    setActiveSpotlightIndex((current) => (current + direction + activeProducts.length) % activeProducts.length);
+  }
 
   function renderCategoryLanding() {
     return (
@@ -863,7 +855,7 @@ function MenuView({
               type="button"
               key={category.slug}
               className={category.visualScrollEnabled ? "visual-scroll" : ""}
-              onClick={() => setSelectedCategorySlug(category.slug)}
+              onClick={() => selectCategory(category.slug)}
               style={{
                 ...visualBackgroundStyle(category),
                 "--category-overlay": category.backgroundOverlay ?? undefined,
@@ -902,8 +894,10 @@ function MenuView({
   }
 
   function renderProduct(product: PublicProduct) {
+    const productClassName = productListLayout === "double" ? "menu-product-card" : "menu-product-row";
+
     return (
-      <article key={product.slug} className={layout === "grid" ? "menu-product-card" : "menu-product-row"}>
+      <article key={product.slug} className={productClassName}>
         <button type="button" className="menu-product-open" onClick={() => setSelectedProduct(product)}>
           <span className="menu-product-image-link">
             <img src={productImage(product)} alt={product.name} />
@@ -923,6 +917,12 @@ function MenuView({
     <main className="public-content">
       {!selectedCategorySlug ? renderCategoryLanding() : (
         <>
+          {!selectedMood ? (
+            <button type="button" className="category-detail-back" onClick={() => setSelectedCategorySlug("")} aria-label="الرجوع إلى الأقسام">
+              <ChevronRight size={18} />
+            </button>
+          ) : null}
+
           <section className="menu-category-strip" id="menu-categories">
             {data.categories.map((category) => {
               const isAllCategory = category.slug === "all";
@@ -936,7 +936,7 @@ function MenuView({
                   type="button"
                   key={category.slug}
                   className={`menu-category-chip ${isActive ? "active" : ""} ${category.visualScrollEnabled ? "visual-scroll" : ""}`}
-                  onClick={() => setSelectedCategorySlug(category.slug)}
+                  onClick={() => selectCategory(category.slug)}
                 >
                   <span className="menu-category-icon" style={categoryChipStyle(category)}>
                     {category.imageUrl ? <img src={category.imageUrl} alt="" aria-hidden="true" /> : <LayoutGrid size={24} />}
@@ -948,63 +948,65 @@ function MenuView({
             })}
           </section>
 
-          {!selectedMood ? (
-            <button type="button" className="category-detail-back" onClick={() => setSelectedCategorySlug("")}>
-              <ChevronRight size={18} />
-              الأقسام
-            </button>
+          {spotlightProduct ? (
+            <section className="category-spotlight" id="menu-products-start">
+              <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
+                <ChevronRight size={22} />
+              </button>
+              <button type="button" className="category-spotlight-card" onClick={() => setSelectedProduct(spotlightProduct)}>
+                <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
+                {isPopular(spotlightProduct) ? <span className="category-spotlight-badge">{t.mostPopular}</span> : null}
+                <div>
+                  <b>{spotlightProduct.name}</b>
+                  <p>{spotlightProduct.description}</p>
+                  {showPrices ? <strong>{productPrice(spotlightProduct)} {spotlightProduct.currency}</strong> : null}
+                </div>
+              </button>
+              <button type="button" className="spotlight-arrow next" onClick={() => moveSpotlight(1)} aria-label="المنتج التالي" disabled={activeProducts.length <= 1}>
+                <ChevronLeft size={22} />
+              </button>
+            </section>
           ) : null}
 
-          <div className="menu-view-switch" role="group" aria-label={t.menu}>
-            <button
-              type="button"
-              className={layout === "list" ? "active" : ""}
-              onClick={() => setLayout("list")}
-              aria-label={t.listView}
-              title={t.listView}
-            >
-              <List size={18} />
-            </button>
-            <button
-              type="button"
-              className={layout === "grid" ? "active" : ""}
-              onClick={() => setLayout("grid")}
-              aria-label={t.gridView}
-              title={t.gridView}
-            >
-              <LayoutGrid size={18} />
-            </button>
-          </div>
+          <ProductRail
+            title={t.mostPopular}
+            products={popularForActive}
+            restaurantSlug={data.restaurant.slug}
+            t={t}
+            badgeLabel={t.mostPopular}
+            fillPlaceholders={false}
+            showPrices={showPrices}
+          />
 
-          <section className={`product-list product-list-${layout}`}>
-            {sectionCategories.map((category) => {
+          <section className={`product-list category-product-list-${productListLayout}`}>
+            {regularCategories.map((category) => {
               const products = visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
               if (!products.length) {
                 return null;
               }
 
               return (
-                <div key={category.slug} id={category.slug}>
+                <div key={category.slug} id={`category-section-${category.slug}`}>
                   <h2 className="category-section-title">
                     <span>{category.name}</span>
                   </h2>
-                  <div className={layout === "grid" ? "menu-product-grid" : "menu-product-stack"}>
+                  <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
                     {products.map(renderProduct)}
                   </div>
                 </div>
               );
             })}
             {productsWithoutCategory.length ? (
-              <div id="all-products">
+              <div id="category-section-all-products">
                 <h2 className="category-section-title">
                   <span>{selectedMood || activeCategory?.name || allCategory?.name || "الكل"}</span>
                 </h2>
-              <div className={layout === "grid" ? "menu-product-grid" : "menu-product-stack"}>
+                <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
                   {productsWithoutCategory.map(renderProduct)}
+                </div>
               </div>
-            </div>
             ) : null}
-            {!displayedProductsCount ? (
+            {!activeProducts.length ? (
               <div className="menu-empty-products">
                 <b>{selectedMood || activeCategory?.name || "الكل"}</b>
                 <span>لا توجد منتجات مرتبطة بهذا الخيار حالياً.</span>
@@ -1113,32 +1115,13 @@ function ProductView({
   showPrices: boolean;
 }) {
   const related = getRelatedProducts(data.products, product);
-  const model3dUrl = product.media?.model3dUrl ?? null;
-  const model3dFormat = product.media?.model3dFormat ?? null;
-  const vrUrl = product.media?.vrUrl ?? null;
-  const canOpenAr = isArFriendlyModel(model3dUrl, model3dFormat);
+  const ingredients = productIngredients(product);
   const gallery = productImages(product);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [mediaMode, setMediaMode] = useState<ProductMediaMode>("image");
-  const [realArAvailable, setRealArAvailable] = useState(false);
   const activeImage = gallery[activeImageIndex] ?? gallery[0];
 
   useEffect(() => {
-    if (!model3dUrl || document.querySelector("script[data-model-viewer]")) {
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = "https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js";
-    script.dataset.modelViewer = "true";
-    document.head.appendChild(script);
-  }, [model3dUrl]);
-
-  useEffect(() => {
     setActiveImageIndex(0);
-    setMediaMode("image");
-    setRealArAvailable(false);
   }, [product.slug]);
 
   useEffect(() => {
@@ -1156,113 +1139,12 @@ function ProductView({
     }).catch(() => undefined);
   }, [data.restaurant.slug, product.id, product.slug]);
 
-  async function trackMediaOpen(type: "THREE_D_VIEW_OPENED" | "VR_VIEW_OPENED") {
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5010"}/public/menus/${data.restaurant.slug}/track`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          path: `/m/${data.restaurant.slug}/product/${product.slug}`,
-          metadata: { productSlug: product.slug }
-        })
-      });
-    } catch {
-      // Tracking must not interrupt the public menu.
-    }
-  }
-
   return (
     <main className="product-detail">
       <div className="product-photo">
-        <div className="product-media-tabs" role="group" aria-label={t.photos}>
-          <button
-            type="button"
-            className={mediaMode === "image" ? "active" : ""}
-            onClick={() => setMediaMode("image")}
-          >
-            <ImageIcon size={16} />
-            {t.photo}
-          </button>
-          {model3dUrl ? (
-            <button
-              type="button"
-              className={mediaMode === "3d" ? "active" : ""}
-              onClick={() => {
-                setMediaMode("3d");
-                void trackMediaOpen("THREE_D_VIEW_OPENED");
-              }}
-            >
-              <Rotate3D size={16} />
-              3D
-            </button>
-          ) : null}
-          {vrUrl ? (
-            <button
-              type="button"
-              className={mediaMode === "vr" ? "active" : ""}
-              onClick={() => {
-                setMediaMode("vr");
-                void trackMediaOpen("VR_VIEW_OPENED");
-              }}
-            >
-              <View size={16} />
-              VR
-            </button>
-          ) : null}
-        </div>
-        {mediaMode === "3d" && model3dUrl ? (
-          <div className="product-model-stage">
-            {createElement("model-viewer", {
-              src: model3dUrl,
-              ...(model3dFormat === "USDZ" && canOpenAr ? { "ios-src": model3dUrl } : {}),
-              ...(canOpenAr ? { ar: true } : {}),
-              "ar-modes": "scene-viewer webxr quick-look",
-              "camera-controls": true,
-              "auto-rotate": true,
-              "camera-orbit": "0deg 72deg auto",
-              "min-camera-orbit": "auto 18deg auto",
-              "max-camera-orbit": "auto 92deg auto",
-              "interaction-prompt": "auto",
-              "disable-pan": true,
-              "shadow-intensity": "1",
-              loading: "lazy",
-              ref: (element: HTMLElement | null) => {
-                if (!element || element.dataset.arListener === "true") return;
-                element.dataset.arListener = "true";
-                element.addEventListener("ar-status", (event) => {
-                  const status = (event as CustomEvent<{ status?: string }>).detail?.status;
-                  if (status === "session-started" || status === "object-placed" || status === "not-presenting") {
-                    setRealArAvailable(true);
-                  }
-                  if (status === "failed") {
-                    setRealArAvailable(false);
-                  }
-                });
-              },
-              style: { width: "100%", height: "100%", display: "block" }
-            }, realArAvailable ? createElement("button", { slot: "ar-button", className: "model-ar-button", type: "button" }, "AR") : null)}
-            {canOpenAr && realArAvailable ? (
-              <a className="model-ar-direct" href={sceneViewerUrl(model3dUrl, product.name, `/m/${data.restaurant.slug}/product/${product.slug}`)}>
-                فتح AR مباشر
-              </a>
-            ) : null}
-            {!canOpenAr || !realArAvailable ? (
-              <small className="model-ar-note">{canOpenAr ? "جهازك أو المتصفح لا يدعم AR الحقيقي. يمكنك مشاهدة المنتج بتقنية 3D فقط." : "AR يحتاج رابط HTTPS مباشر وملف GLB/GLTF أو USDZ"}</small>
-            ) : null}
-          </div>
-        ) : mediaMode === "vr" && vrUrl ? (
-          <div className="product-vr-stage">
-            <iframe src={vrUrl} title={`${product.name} VR`} loading="lazy" />
-            <a href={vrUrl} target="_blank" rel="noreferrer" onClick={() => void trackMediaOpen("VR_VIEW_OPENED")}>
-              {t.openVr}
-            </a>
-          </div>
-        ) : (
-          <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
-        )}
-        <Link href={`/m/${data.restaurant.slug}/menu`}>
-          <ArrowLeft size={18} />
+        <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
+        <Link href={`/m/${data.restaurant.slug}/menu`} aria-label="الرجوع إلى القائمة">
+          <ChevronRight size={18} />
         </Link>
         <span>{activeImageIndex + 1}/{gallery.length}</span>
       </div>
@@ -1272,11 +1154,8 @@ function ProductView({
             <button
               key={`${image.url}-${index}`}
               type="button"
-              className={mediaMode === "image" && index === activeImageIndex ? "active" : ""}
-              onClick={() => {
-                setActiveImageIndex(index);
-                setMediaMode("image");
-              }}
+              className={index === activeImageIndex ? "active" : ""}
+              onClick={() => setActiveImageIndex(index)}
               aria-label={`${t.photo} ${index + 1}`}
             >
               <img src={image.url} alt="" aria-hidden="true" />
@@ -1291,79 +1170,22 @@ function ProductView({
         </div>
         <p>{product.description}</p>
 
-        <div className="ar-card">
-          <img src={productImage(product)} alt={product.name} />
-          <div>
-            <b>{t.viewMealRealSize}</b>
-            <span>{t.arHint}</span>
-            {model3dUrl ? (
-              <div className="ar-card-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMediaMode("3d");
-                    void trackMediaOpen("THREE_D_VIEW_OPENED");
-                  }}
-                >
-                  {t.open3d}
-                </button>
-                {canOpenAr && realArAvailable ? <span>AR الحقيقي متاح على جهازك</span> : <span>AR الحقيقي يحتاج جهازاً مدعوماً</span>}
-              </div>
-            ) : (
-              <button type="button" disabled>{t.tryAr}</button>
-            )}
-          </div>
-        </div>
-
-        <h2>
-          <Flame size={18} />
-          {t.mealIncludes}
-        </h2>
-        {model3dUrl || vrUrl ? (
-          <div className="media-view-card">
-            <b>3D / VR</b>
-            <div className="media-view-actions">
-              {model3dUrl ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMediaMode("3d");
-                    void trackMediaOpen("THREE_D_VIEW_OPENED");
-                  }}
-                >
-                  <Rotate3D size={16} />
-                  {t.open3d}
-                </button>
-              ) : null}
-              {vrUrl ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMediaMode("vr");
-                    void trackMediaOpen("VR_VIEW_OPENED");
-                  }}
-                >
-                  <View size={16} />
-                  {t.openVr}
-                </button>
-              ) : null}
+        {ingredients.length ? (
+          <>
+            <h2>
+              <Flame size={18} />
+              {t.mealIncludes}
+            </h2>
+            <div className="ingredients-row">
+              {ingredients.map((ingredient, index) => (
+                <span key={`${ingredient.name}-${index}`}>
+                  {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : null}
+                  <b>{ingredient.name}</b>
+                </span>
+              ))}
             </div>
-          </div>
+          </>
         ) : null}
-
-        <div className="ingredients-row">
-          {(product.ingredients?.length ? product.ingredients : ["بطاطا", "مايونيز", "فطر", "جبنة"]).map((ingredient) => {
-            const IngredientIcon = iconForIngredient(ingredient);
-            return (
-              <span key={ingredient}>
-                <i aria-hidden="true">
-                  <IngredientIcon size={22} />
-                </i>
-                <b>{ingredient}</b>
-              </span>
-            );
-          })}
-        </div>
 
         <h2>
           <Flame size={18} />
