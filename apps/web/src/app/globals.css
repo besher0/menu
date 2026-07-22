@@ -3226,7 +3226,9 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .mood-strip {
-  background: var(--color-background);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   display: grid;
   gap: 12px;
   margin-bottom: 4px;
@@ -3247,8 +3249,13 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .mood-strip h1 {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   font-size: 16px;
   margin: 0;
+  padding: 0;
 }
 
 .mood-strip > div {
@@ -3328,9 +3335,10 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 18px;
   box-shadow: none;
   display: block;
+  margin-bottom: 14px;
   margin-top: 2px;
+  overflow: visible;
   position: relative;
-  overflow: hidden;
   z-index: 1;
 }
 
@@ -3342,7 +3350,9 @@ body:has(.public-page)::-webkit-scrollbar {
 .hero-promo-track {
   display: block;
   height: 100%;
+  overflow: hidden;
   position: relative;
+  border-radius: 18px;
   width: 100%;
 }
 
@@ -3385,6 +3395,31 @@ body:has(.public-page)::-webkit-scrollbar {
   top: 0;
 }
 
+.hero-promo-dots {
+  align-items: center;
+  bottom: -14px;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+
+.hero-promo-dots button {
+  background: var(--color-primary);
+  border: 0;
+  border-radius: 999px;
+  height: 6px;
+  opacity: 0.32;
+  padding: 0;
+  width: 6px;
+}
+
+.hero-promo-dots button.active {
+  opacity: 1;
+}
+
 .product-rail {
   min-height: 166px;
 }
@@ -3418,6 +3453,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .rail-product {
   background: white;
+  border: 0;
   border-radius: 14px;
   box-shadow: none;
   flex: 0 0 118px;
@@ -3798,7 +3834,7 @@ body:has(.public-page)::-webkit-scrollbar {
   box-shadow: 0 14px 30px rgb(16 24 40 / 10%);
   color: inherit;
   display: grid;
-  min-height: 292px;
+  min-height: 348px;
   overflow: hidden;
   padding: 0;
   position: relative;
@@ -3806,7 +3842,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .category-spotlight-card img {
-  aspect-ratio: 1.32;
+  aspect-ratio: 1.04;
   background: #fff;
   height: auto;
   object-fit: contain;
@@ -3815,8 +3851,8 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-spotlight-card div {
   display: grid;
-  gap: 6px;
-  padding: 14px 16px 18px;
+  gap: 4px;
+  padding: 9px 16px 14px;
 }
 
 .category-spotlight-card b {
@@ -3949,7 +3985,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 18px;
   box-shadow: 0 12px 28px rgb(16 24 40 / 10%);
   display: grid;
-  gap: 14px;
+  gap: 8px;
   grid-template-columns: 142px minmax(0, 1fr);
   min-height: 104px;
   overflow: hidden;
@@ -4008,7 +4044,7 @@ body:has(.public-page)::-webkit-scrollbar {
   grid-row: 1;
   justify-items: end;
   min-width: 0;
-  padding: 14px 18px 14px 8px;
+  padding: 10px 12px 10px 4px;
   text-align: end;
 }
 
@@ -4078,7 +4114,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .menu-product-card img {
-  aspect-ratio: 1.12;
+  aspect-ratio: 1.18;
   background: #fff;
   object-fit: contain;
   width: 100%;
@@ -4086,8 +4122,8 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .menu-product-card div {
   display: grid;
-  gap: 5px;
-  padding: 12px;
+  gap: 3px;
+  padding: 6px 10px 10px;
   text-align: center;
 }
 

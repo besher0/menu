@@ -16,6 +16,7 @@ type CartItem = {
 
 type PublicLanguage = "ar" | "en";
 type CategoryProductListLayout = "single" | "double";
+type MenuDisplayMode = "large" | "list";
 type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
 
@@ -723,20 +724,33 @@ function HomeView({
 
       <section className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}>
         {bannerSlides.length ? (
-          <div className="hero-promo-track">
-            {bannerSlides.map((banner, index) => (
-              <Link
-                key={`${banner.imageUrl}-${index}`}
-                href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}
-                className={index === activeBanner ? "active" : ""}
-                aria-hidden={index === activeBanner ? undefined : true}
-                tabIndex={index === activeBanner ? undefined : -1}
-              >
-                <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
-                {banner.badge ? <span>{banner.badge}</span> : null}
-              </Link>
-            ))}
-          </div>
+          <>
+            <div className="hero-promo-track">
+              {bannerSlides.map((banner, index) => (
+                <Link
+                  key={`${banner.imageUrl}-${index}`}
+                  href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}
+                  className={index === activeBanner ? "active" : ""}
+                  aria-hidden={index === activeBanner ? undefined : true}
+                  tabIndex={index === activeBanner ? undefined : -1}
+                >
+                  <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
+                  {banner.badge ? <span>{banner.badge}</span> : null}
+                </Link>
+              ))}
+            </div>
+            <div className="hero-promo-dots" aria-label="بنرات الإعلان">
+              {bannerSlides.map((banner, index) => (
+                <button
+                  key={`${banner.imageUrl}-dot-${index}`}
+                  type="button"
+                  className={index === activeBanner ? "active" : ""}
+                  onClick={() => setActiveBanner(index)}
+                  aria-label={`البنر ${index + 1}`}
+                />
+              ))}
+            </div>
+          </>
         ) : null}
       </section>
 
@@ -745,7 +759,6 @@ function HomeView({
         products={popular}
         restaurantSlug={data.restaurant.slug}
         t={t}
-        badgeLabel={t.mostPopular}
         showPrices={showPrices}
       />
 
@@ -760,7 +773,6 @@ function HomeView({
             return product ? (
             <Link key={product.slug} href={`/m/${data.restaurant.slug}/product/${product.slug}`} className="wide-product">
               <img src={productImage(product)} alt={product.name} />
-              <span className="wide-product-badge">{t.newBadge}</span>
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
               <em>{t.mealDetails}</em>
@@ -791,13 +803,13 @@ function MenuView({
   const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood ? "all" : "");
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
-  const defaultProductListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
-  const [productListLayout, setProductListLayout] = useState<CategoryProductListLayout>(defaultProductListLayout);
+  const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("large");
   const visibleProducts = selectedMood
     ? data.products.filter((product) => product.moodKey === selectedMood)
     : data.products;
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
+  const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
@@ -817,10 +829,6 @@ function MenuView({
   }, [selectedMood]);
 
   useEffect(() => {
-    setProductListLayout(defaultProductListLayout);
-  }, [defaultProductListLayout]);
-
-  useEffect(() => {
     setActiveSpotlightIndex(0);
   }, [selectedCategorySlug, activeProducts.length]);
 
@@ -829,13 +837,13 @@ function MenuView({
       return;
     }
 
-    const targetId = selectedCategorySlug === "all" ? "menu-products-start" : `category-section-${selectedCategorySlug}`;
+    const targetId = menuDisplayMode === "large" || selectedCategorySlug === "all" ? "menu-products-start" : `category-section-${selectedCategorySlug}`;
     const frame = window.requestAnimationFrame(() => {
       document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [selectedCategorySlug]);
+  }, [menuDisplayMode, selectedCategorySlug]);
 
   function selectCategory(slug: string) {
     setSelectedCategorySlug(slug);
@@ -957,25 +965,25 @@ function MenuView({
           <div className="menu-view-switch" role="group" aria-label="تغيير شكل المنتجات">
             <button
               type="button"
-              className={productListLayout === "single" ? "active" : ""}
-              onClick={() => setProductListLayout("single")}
-              aria-label="عرض منتج واحد بكل سطر"
-              title="عرض منتج واحد بكل سطر"
-            >
-              <List size={16} />
-            </button>
-            <button
-              type="button"
-              className={productListLayout === "double" ? "active" : ""}
-              onClick={() => setProductListLayout("double")}
-              aria-label="عرض منتجين بكل سطر"
-              title="عرض منتجين بكل سطر"
+              className={menuDisplayMode === "large" ? "active" : ""}
+              onClick={() => setMenuDisplayMode("large")}
+              aria-label="عرض المنتج الكبير"
+              title="عرض المنتج الكبير"
             >
               <LayoutGrid size={16} />
             </button>
+            <button
+              type="button"
+              className={menuDisplayMode === "list" ? "active" : ""}
+              onClick={() => setMenuDisplayMode("list")}
+              aria-label="عرض المنتجات"
+              title="عرض المنتجات"
+            >
+              <List size={16} />
+            </button>
           </div>
 
-          {spotlightProduct ? (
+          {menuDisplayMode === "large" && spotlightProduct ? (
             <section className="category-spotlight" id="menu-products-start">
               <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
                 <ChevronRight size={22} />
@@ -995,51 +1003,56 @@ function MenuView({
             </section>
           ) : null}
 
-          <ProductRail
-            title={t.mostPopular}
-            products={popularForActive}
-            restaurantSlug={data.restaurant.slug}
-            t={t}
-            badgeLabel={t.mostPopular}
-            fillPlaceholders={false}
-            showPrices={showPrices}
-          />
+          {menuDisplayMode === "large" ? (
+            <ProductRail
+              title={t.mostPopular}
+              products={popularForActive}
+              restaurantSlug={data.restaurant.slug}
+              t={t}
+              badgeLabel={t.mostPopular}
+              fillPlaceholders={false}
+              showPrices={showPrices}
+            />
+          ) : null}
 
-          <section className={`product-list category-product-list-${productListLayout}`}>
-            {regularCategories.map((category) => {
-              const products = visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
-              if (!products.length) {
-                return null;
-              }
+          {menuDisplayMode === "list" ? (
+            <section className={`product-list category-product-list-${productListLayout}`} id="menu-products-start">
+              {regularCategories.map((category) => {
+                const products = visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
+                if (!products.length) {
+                  return null;
+                }
 
-              return (
-                <div key={category.slug} id={`category-section-${category.slug}`}>
+                return (
+                  <div key={category.slug} id={`category-section-${category.slug}`}>
+                    <h2 className="category-section-title">
+                      <span>{category.name}</span>
+                    </h2>
+                    <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
+                      {products.map(renderProduct)}
+                    </div>
+                  </div>
+                );
+              })}
+              {productsWithoutCategory.length ? (
+                <div id="category-section-all-products">
                   <h2 className="category-section-title">
-                    <span>{category.name}</span>
+                    <span>{selectedMood || activeCategory?.name || allCategory?.name || "الكل"}</span>
                   </h2>
                   <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
-                    {products.map(renderProduct)}
+                    {productsWithoutCategory.map(renderProduct)}
                   </div>
                 </div>
-              );
-            })}
-            {productsWithoutCategory.length ? (
-              <div id="category-section-all-products">
-                <h2 className="category-section-title">
-                  <span>{selectedMood || activeCategory?.name || allCategory?.name || "الكل"}</span>
-                </h2>
-                <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
-                  {productsWithoutCategory.map(renderProduct)}
-                </div>
-              </div>
-            ) : null}
-            {!activeProducts.length ? (
-              <div className="menu-empty-products">
-                <b>{selectedMood || activeCategory?.name || "الكل"}</b>
-                <span>لا توجد منتجات مرتبطة بهذا الخيار حالياً.</span>
-              </div>
-            ) : null}
-          </section>
+              ) : null}
+            </section>
+          ) : null}
+
+          {!activeProducts.length ? (
+            <div className="menu-empty-products" id={menuDisplayMode === "large" ? "menu-products-start" : undefined}>
+              <b>{selectedMood || activeCategory?.name || "الكل"}</b>
+              <span>لا توجد منتجات مرتبطة بهذا الخيار حالياً.</span>
+            </div>
+          ) : null}
         </>
       )}
 
