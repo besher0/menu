@@ -37,7 +37,6 @@ export class PublicMenuService {
             orderBy: { sortOrder: "asc" },
             include: {
               sections: {
-                where: { isActive: true },
                 orderBy: { sortOrder: "asc" }
               }
             }

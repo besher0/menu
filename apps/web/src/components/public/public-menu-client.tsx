@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createElement, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -12,6 +12,8 @@ type CartItem = {
   quantity: number;
   price: number;
   currency: string;
+  imageUrl?: string | null;
+  description?: string | null;
 };
 
 type PublicLanguage = "ar" | "en";
@@ -81,7 +83,15 @@ const translations = {
     cartTotal: "المجموع",
     orderError: "تعذر إنشاء الطلب، سيتم فتح واتساب مباشرة",
     removeItem: "حذف المنتج",
-    emptyCart: "السلة فارغة"
+    emptyCart: "السلة فارغة",
+    viewCart: "عرض السلة",
+    checkoutTitle: "تأكيد الطلب",
+    subtotal: "سعر الأصناف",
+    deliveryFee: "رسوم التوصيل",
+    finalTotal: "المجموع النهائي",
+    sendViaWhatsapp: "ارسال عبر الوتس",
+    selectedItems: "العناصر المجتازة",
+    orderNumber: "رقم الطلب"
   },
   en: {
     chooseCategory: "Choose a category and browse..",
@@ -143,7 +153,15 @@ const translations = {
     cartTotal: "Total",
     orderError: "Could not create the order, opening WhatsApp directly",
     removeItem: "Remove item",
-    emptyCart: "Your cart is empty"
+    emptyCart: "Your cart is empty",
+    viewCart: "View cart",
+    checkoutTitle: "Confirm order",
+    subtotal: "Items subtotal",
+    deliveryFee: "Delivery fee",
+    finalTotal: "Final total",
+    sendViaWhatsapp: "Send via WhatsApp",
+    selectedItems: "Selected items",
+    orderNumber: "Order number"
   }
 } as const;
 
@@ -332,18 +350,22 @@ export function PublicMenuClient({
   productSlug
 }: {
   data: PublicMenuData;
-  view: "home" | "menu" | "product";
+  view: "home" | "menu" | "product" | "cart";
   productSlug?: string;
 }) {
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartLoaded, setCartLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [cartOpen, setCartOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
   const [drawerTab, setDrawerTab] = useState<"info" | "hours">("info");
+  const [splashVisible, setSplashVisible] = useState(false);
+  const [menuNested, setMenuNested] = useState(false);
+  const [menuBackSignal, setMenuBackSignal] = useState(0);
   const storageKey = `cart:${data.restaurant.slug}:main`;
   const languageStorageKey = `language:${data.restaurant.slug}`;
+  const splashStorageKey = `splash:${data.restaurant.slug}`;
   const products = data.products;
   const activeProduct = products.find((product) => product.slug === productSlug) ?? products[0];
   const t = translations[language];
@@ -351,13 +373,35 @@ export function PublicMenuClient({
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
   const firstBranch = data.restaurant.branches?.[0];
   const openingHours = formatOpeningHours(firstBranch?.openingHours, language);
+  const allBuilderSections = data.menus?.flatMap((menu) => menu.pages?.flatMap((page) => page.sections ?? []) ?? []) ?? [];
+  const hasHomeSections = !data.menus?.length || allBuilderSections.some((section) =>
+    ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
+  );
+  const activeView = view === "home" && !hasHomeSections ? "menu" : view;
 
   useEffect(() => {
+    setCartLoaded(false);
     const stored = window.localStorage.getItem(storageKey);
     if (stored) {
-      setCart(JSON.parse(stored) as CartItem[]);
+      try {
+        const parsed = JSON.parse(stored) as CartItem[];
+        setCart(parsed.map((item) => ({
+          ...item,
+          name: item.name || item.slug,
+          quantity: Math.max(1, Number(item.quantity) || 1),
+          price: Number(item.price) || 0,
+          currency: item.currency || data.restaurant.currency || "ل.س",
+          imageUrl: item.imageUrl ?? null,
+          description: item.description ?? null
+        })));
+      } catch {
+        setCart([]);
+      }
+    } else {
+      setCart([]);
     }
-  }, [storageKey]);
+    setCartLoaded(true);
+  }, [data.restaurant.currency, storageKey]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(languageStorageKey);
@@ -367,18 +411,33 @@ export function PublicMenuClient({
   }, [languageStorageKey]);
 
   useEffect(() => {
+    if (!cartLoaded) {
+      return;
+    }
     window.localStorage.setItem(storageKey, JSON.stringify(cart));
-  }, [cart, storageKey]);
+  }, [cart, cartLoaded, storageKey]);
 
   useEffect(() => {
     window.localStorage.setItem(languageStorageKey, language);
   }, [language, languageStorageKey]);
 
   useEffect(() => {
-    if (cart.length === 0) {
-      setCartOpen(false);
+    if (window.sessionStorage.getItem(splashStorageKey)) {
+      return;
     }
-  }, [cart.length]);
+
+    window.sessionStorage.setItem(splashStorageKey, "1");
+    setSplashVisible(true);
+    const timer = window.setTimeout(() => setSplashVisible(false), 10000);
+
+    return () => window.clearTimeout(timer);
+  }, [splashStorageKey]);
+
+  useEffect(() => {
+    if (activeView !== "menu") {
+      setMenuNested(false);
+    }
+  }, [activeView]);
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -399,7 +458,48 @@ export function PublicMenuClient({
           name: product.name,
           quantity: 1,
           price: productPrice(product),
-          currency: product.currency
+          currency: product.currency,
+          imageUrl: productImage(product),
+          description: product.description
+        }
+      ];
+    });
+  }
+
+  function setProductQuantity(product: PublicProduct, quantity: number) {
+    setCart((current) => {
+      const nextQuantity = Math.max(0, quantity);
+      const existing = current.find((item) => item.slug === product.slug);
+
+      if (nextQuantity <= 0) {
+        return current.filter((item) => item.slug !== product.slug);
+      }
+
+      if (existing) {
+        return current.map((item) =>
+          item.slug === product.slug
+            ? {
+              ...item,
+              quantity: nextQuantity,
+              price: productPrice(product),
+              currency: product.currency,
+              imageUrl: productImage(product),
+              description: product.description
+            }
+            : item
+        );
+      }
+
+      return [
+        ...current,
+        {
+          slug: product.slug,
+          name: product.name,
+          quantity: nextQuantity,
+          price: productPrice(product),
+          currency: product.currency,
+          imageUrl: productImage(product),
+          description: product.description
         }
       ];
     });
@@ -415,6 +515,10 @@ export function PublicMenuClient({
 
   function removeCartItem(slug: string) {
     setCart((current) => current.filter((item) => item.slug !== slug));
+  }
+
+  function getCartQuantity(slug: string) {
+    return cart.find((item) => item.slug === slug)?.quantity ?? 0;
   }
 
   const whatsappMessage = useMemo(() => {
@@ -478,102 +582,94 @@ export function PublicMenuClient({
   }
 
   return (
-    <div className={`public-screen ${showPrices ? "" : "prices-hidden"}`} dir={language === "ar" ? "rtl" : "ltr"} style={cssVars(data.theme)}>
+    <div className={`public-screen ${showPrices ? "" : "prices-hidden"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`} dir={language === "ar" ? "rtl" : "ltr"} style={cssVars(data.theme)}>
+      {splashVisible ? (
+        <div
+          className="public-splash"
+          role="status"
+          aria-label={data.restaurant.name}
+          style={{
+            "--splash-bg-image": data.restaurant.heroImageUrl ? `url(${data.restaurant.heroImageUrl})` : "none"
+          } as React.CSSProperties}
+        >
+          {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
+        </div>
+      ) : null}
       <header className="public-header">
-        <button onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
-          <Menu size={24} />
-        </button>
+        {activeView === "menu" && menuNested ? (
+          <button onClick={() => setMenuBackSignal((current) => current + 1)} aria-label="الرجوع">
+            <ArrowLeft size={22} />
+          </button>
+        ) : activeView === "menu" ? (
+          <Link href={`/m/${data.restaurant.slug}`} aria-label="الرجوع">
+            <ArrowLeft size={22} />
+          </Link>
+        ) : (
+          <button onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
+            <Menu size={24} />
+          </button>
+        )}
         <p>{t.chooseCategory}</p>
         {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
       </header>
 
-      {view === "home" ? (
+      {activeView === "home" ? (
         <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} />
-      ) : view === "menu" ? (
-        <MenuView data={data} addToCart={addToCart} t={t} showPrices={showPrices} />
+      ) : activeView === "menu" ? (
+        <MenuView
+          data={data}
+          addToCart={addToCart}
+          setProductQuantity={setProductQuantity}
+          getCartQuantity={getCartQuantity}
+          t={t}
+          showPrices={showPrices}
+          menuBackSignal={menuBackSignal}
+          onNestedChange={setMenuNested}
+        />
+      ) : activeView === "product" && activeProduct ? (
+        <ProductView
+          data={data}
+          product={activeProduct}
+          addToCart={addToCart}
+          setProductQuantity={setProductQuantity}
+          getCartQuantity={getCartQuantity}
+          t={t}
+          showPrices={showPrices}
+        />
+      ) : activeView === "product" ? (
+        <main className="product-detail product-empty">
+          <ShoppingBag size={34} />
+          <b>{language === "ar" ? "المنتج غير متوفر حالياً" : "Product is currently unavailable"}</b>
+          <Link href={`/m/${data.restaurant.slug}/menu`}>{t.menu}</Link>
+        </main>
       ) : (
-        <ProductView data={data} product={activeProduct} addToCart={addToCart} t={t} showPrices={showPrices} />
+        <CartView
+          data={data}
+          cart={cart}
+          updateCartItem={updateCartItem}
+          removeCartItem={removeCartItem}
+          sendWhatsappOrder={sendWhatsappOrder}
+          orderSubmitting={orderSubmitting}
+          orderMessage={orderMessage}
+          t={t}
+          showPrices={showPrices}
+        />
       )}
 
-      {cartCount > 0 ? (
-        <div className={`sticky-cart ${cartOpen ? "open" : ""} ${showPrices ? "" : "prices-hidden"}`}>
-          <div className="cart-head">
-          <button
-            type="button"
-            className="cart-summary"
-            onClick={() => setCartOpen((current) => !current)}
-            aria-expanded={cartOpen}
-          >
-            <span className="cart-summary-icon">
-              <ShoppingBag size={18} />
-              <b>{cartCount}</b>
-            </span>
-            <span>
-              <b>{cartOpen ? t.hideCart : t.cart}</b>
-              <small>{cartTotal} {data.restaurant.currency ?? "ل.س"}</small>
-            </span>
-          </button>
-          <span className="cart-total-pill">
-            <small>{t.cartTotal}</small>
-            <b>{cartTotal} {data.restaurant.currency ?? "ل.س"}</b>
-          </span>
-          </div>
-
-          {cartOpen ? (
-            <div className="cart-edit-panel">
-              {cart.map((item) => (
-                <article key={item.slug} className="cart-edit-row">
-                  <div>
-                    <b>{item.name}</b>
-                    <span>{item.price * item.quantity} {item.currency}</span>
-                  </div>
-                  <div className="cart-quantity">
-                    <button
-                      type="button"
-                      onClick={() => updateCartItem(item.slug, item.quantity - 1)}
-                      aria-label={`- ${item.name}`}
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <strong>{item.quantity}</strong>
-                    <button
-                      type="button"
-                      onClick={() => updateCartItem(item.slug, item.quantity + 1)}
-                      aria-label={`+ ${item.name}`}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="cart-remove"
-                    onClick={() => removeCartItem(item.slug)}
-                    aria-label={`${t.removeItem} ${item.name}`}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : null}
-            <span>{cartTotal} {data.restaurant.currency ?? "ل.س"}</span>
-          {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
-          <button
-            type="button"
-            className="cart-whatsapp"
-            onClick={sendWhatsappOrder}
-            disabled={orderSubmitting}
-          >
-            {orderSubmitting ? <Loader2 size={18} className="spin" /> : <MessageCircle size={18} />}
-            {orderSubmitting ? t.preparingOrder : t.sendOrder}
-          </button>
-        </div>
+      {cartCount > 0 && activeView !== "cart" ? (
+        <Link href={`/m/${data.restaurant.slug}/cart`} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
+          <ShoppingBag size={20} />
+          <span>{t.viewCart}</span>
+          <b>{cartCount}</b>
+        </Link>
       ) : null}
 
       <BottomNav
         slug={data.restaurant.slug}
-        active={view}
+        active={activeView}
         t={t}
+        showHome={hasHomeSections}
+        showMenu={Boolean(data.products.length || data.categories.length)}
       />
 
       {drawerOpen ? (
@@ -639,7 +735,7 @@ function HomeView({
 }) {
   const featured = data.products.filter(isFeatured);
   const popular = data.products.filter(isPopular);
-  const featuredSlots = Array.from({ length: Math.max(2, featured.slice(0, 2).length) });
+  const featuredSlots = featured.slice(0, 2);
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const homePage = allPages.find((page) => page.isHome && page.sections?.some((section) => section.type === "HERO" && section.isActive !== false))
     ?? allPages.find((page) => page.isHome)
@@ -668,7 +764,7 @@ function HomeView({
         };
       })
     : [];
-  const moodSlots = Array.from({ length: Math.max(4, moodItems.length) });
+  const moodSlots = moodItems;
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
   const [activeBanner, setActiveBanner] = useState(0);
@@ -759,6 +855,7 @@ function HomeView({
         products={popular}
         restaurantSlug={data.restaurant.slug}
         t={t}
+        fillPlaceholders={false}
         showPrices={showPrices}
       />
 
@@ -790,23 +887,41 @@ function HomeView({
 function MenuView({
   data,
   addToCart,
+  setProductQuantity,
+  getCartQuantity,
   t,
-  showPrices
+  showPrices,
+  menuBackSignal,
+  onNestedChange
 }: {
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
+  setProductQuantity: (product: PublicProduct, quantity: number) => void;
+  getCartQuantity: (slug: string) => number;
   t: PublicTranslations;
   showPrices: boolean;
+  menuBackSignal: number;
+  onNestedChange: (nested: boolean) => void;
 }) {
   const searchParams = useSearchParams();
   const selectedMood = searchParams.get("mood")?.trim() || "";
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood ? "all" : "");
+  const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
+  const categoryGridSection = allPages
+    .flatMap((page) => page.sections ?? [])
+    .find((section) => section.type === "CATEGORY_GRID");
+  const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
+  const showCategoryLanding = categoryControlsEnabled && categoryGridSection?.settings?.showLandingCategories !== false;
+  const showNestedCategoryStrip = categoryControlsEnabled && categoryGridSection?.settings?.showNestedCategoryStrip !== false;
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood || !showCategoryLanding ? "all" : "");
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("large");
-  const visibleProducts = selectedMood
+  const lastMenuBackSignal = useRef(menuBackSignal);
+  const moodProducts = selectedMood
     ? data.products.filter((product) => product.moodKey === selectedMood)
     : data.products;
+  const visibleProducts = selectedMood && moodProducts.length ? moodProducts : data.products;
+  const categoryProductsSource = selectedMood ? data.products : visibleProducts;
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
@@ -815,9 +930,8 @@ function MenuView({
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
   const activeProducts = selectedCategorySlug === "all"
     ? visibleProducts
-    : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
+    : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
   const spotlightProduct = activeProducts[activeProducts.length ? activeSpotlightIndex % activeProducts.length : 0];
-  const popularForActive = activeProducts.filter(isPopular);
   const productsWithoutCategory = selectedCategorySlug === "all"
     ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
     : [];
@@ -827,6 +941,35 @@ function MenuView({
       setSelectedCategorySlug("all");
     }
   }, [selectedMood]);
+
+  useEffect(() => {
+    if (!showCategoryLanding && !selectedCategorySlug) {
+      setSelectedCategorySlug("all");
+    }
+  }, [selectedCategorySlug, showCategoryLanding]);
+
+  useEffect(() => {
+    onNestedChange(Boolean(selectedCategorySlug));
+  }, [onNestedChange, selectedCategorySlug]);
+
+  useEffect(() => {
+    if (lastMenuBackSignal.current === menuBackSignal) {
+      return;
+    }
+
+    lastMenuBackSignal.current = menuBackSignal;
+
+    if (!selectedCategorySlug) {
+      return;
+    }
+
+    if (selectedMood) {
+      window.location.href = `/m/${data.restaurant.slug}`;
+      return;
+    }
+
+    setSelectedCategorySlug("");
+  }, [data.restaurant.slug, menuBackSignal, selectedCategorySlug, selectedMood]);
 
   useEffect(() => {
     setActiveSpotlightIndex(0);
@@ -862,7 +1005,7 @@ function MenuView({
           const isAllCategory = category.slug === "all";
           const productsCount = isAllCategory
             ? visibleProducts.length
-            : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
+            : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
 
           return (
             <button
@@ -874,30 +1017,20 @@ function MenuView({
                 ...visualBackgroundStyle(category),
                 "--category-overlay": category.backgroundOverlay ?? undefined,
                 "--category-image-x": `${position.x}%`,
-                "--category-image-y": `${position.y}%`
+                "--category-image-y": `${position.y}%`,
+                "--category-icon-width": `${category.imageWidth ?? 144}px`,
+                "--category-icon-height": `${category.imageHeight ?? 144}px`
               } as React.CSSProperties}
             >
               {category.imageUrl ? (
-                <img
-                  src={category.imageUrl}
-                  alt=""
-                  aria-hidden="true"
-                  ref={(image) => {
-                    if (!image) return;
-                    requestAnimationFrame(() => {
-                      image.parentElement?.style.setProperty("--category-image-half-width", `${image.getBoundingClientRect().width / 2}px`);
-                    });
-                  }}
-                  onLoad={(event) => {
-                    const image = event.currentTarget;
-                    image.parentElement?.style.setProperty("--category-image-half-width", `${image.getBoundingClientRect().width / 2}px`);
-                  }}
-                />
+                <span className="category-banner-visual" aria-hidden="true">
+                  <img src={category.imageUrl} alt="" />
+                </span>
               ) : null}
               <div className="category-banner-copy">
                 <span>{category.name}</span>
-                <small>{category.description}</small>
-                <b>{productsCount} {t.itemCount}</b>
+                {!isAllCategory && category.description ? <small>{category.description}</small> : null}
+                {!isAllCategory ? <b>{productsCount} {t.itemCount}</b> : null}
               </div>
               <ArrowLeft size={22} />
             </button>
@@ -909,41 +1042,55 @@ function MenuView({
 
   function renderProduct(product: PublicProduct) {
     const productClassName = productListLayout === "double" ? "menu-product-card" : "menu-product-row";
+    const quantity = getCartQuantity(product.slug);
+    const productContent = (
+      <>
+        <span className="menu-product-image-link">
+          <img src={productImage(product)} alt={product.name} />
+        </span>
+        <div className="menu-product-copy">
+          <b>{product.name}</b>
+          <p>{product.description}</p>
+          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+        </div>
+      </>
+    );
 
     return (
       <article key={product.slug} className={productClassName}>
-        <button type="button" className="menu-product-open" onClick={() => setSelectedProduct(product)}>
-          <span className="menu-product-image-link">
-            <img src={productImage(product)} alt={product.name} />
-            {isPopular(product) ? <span>{t.mostPopular}</span> : null}
-          </span>
-          <div>
-            <b>{product.name}</b>
-            <p>{product.description}</p>
-            {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
-          </div>
-        </button>
+        {productListLayout === "double" ? (
+          <button type="button" className="menu-product-open" onClick={() => setSelectedProduct(product)}>
+            {productContent}
+          </button>
+        ) : (
+          <Link href={`/m/${data.restaurant.slug}/product/${product.slug}`} className="menu-product-open">
+            {productContent}
+          </Link>
+        )}
+        {productListLayout === "single" ? (
+          <QuantityControl
+            className="menu-product-quantity"
+            quantity={quantity}
+            onDecrease={() => setProductQuantity(product, quantity - 1)}
+            onIncrease={() => addToCart(product)}
+            label={product.name}
+          />
+        ) : null}
       </article>
     );
   }
 
   return (
     <main className="public-content">
-      {!selectedCategorySlug ? renderCategoryLanding() : (
+      {!selectedCategorySlug && showCategoryLanding ? renderCategoryLanding() : (
         <>
-          {!selectedMood ? (
-            <button type="button" className="category-detail-back" onClick={() => setSelectedCategorySlug("")} aria-label="الرجوع إلى الأقسام">
-              <ChevronRight size={18} />
-            </button>
-          ) : null}
-
-          <section className="menu-category-strip" id="menu-categories">
+          {showNestedCategoryStrip ? <section className="menu-category-strip" id="menu-categories">
             {data.categories.map((category) => {
               const isAllCategory = category.slug === "all";
               const isActive = category.slug === selectedCategorySlug;
               const productsCount = isAllCategory
                 ? visibleProducts.length
-                : visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
+                : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
 
               return (
                 <button
@@ -960,7 +1107,7 @@ function MenuView({
                 </button>
               );
             })}
-          </section>
+          </section> : null}
 
           <div className="menu-view-switch" role="group" aria-label="تغيير شكل المنتجات">
             <button
@@ -985,40 +1132,41 @@ function MenuView({
 
           {menuDisplayMode === "large" && spotlightProduct ? (
             <section className="category-spotlight" id="menu-products-start">
-              <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
-                <ChevronRight size={22} />
-              </button>
-              <button type="button" className="category-spotlight-card" onClick={() => setSelectedProduct(spotlightProduct)}>
-                <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
-                {isPopular(spotlightProduct) ? <span className="category-spotlight-badge">{t.mostPopular}</span> : null}
-                <div>
-                  <b>{spotlightProduct.name}</b>
-                  <p>{spotlightProduct.description}</p>
-                  {showPrices ? <strong>{productPrice(spotlightProduct)} {spotlightProduct.currency}</strong> : null}
+              <article className="category-spotlight-card">
+                <button type="button" className="category-spotlight-open" onClick={() => setSelectedProduct(spotlightProduct)}>
+                  <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
+                  <div className="category-spotlight-copy">
+                    <b>{spotlightProduct.name}</b>
+                    <p>{spotlightProduct.description}</p>
+                  </div>
+                </button>
+                <div className="category-spotlight-controls">
+                  <QuantityControl
+                    quantity={getCartQuantity(spotlightProduct.slug)}
+                    onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
+                    onIncrease={() => addToCart(spotlightProduct)}
+                    label={spotlightProduct.name}
+                  />
+                  {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} /> : null}
                 </div>
-              </button>
-              <button type="button" className="spotlight-arrow next" onClick={() => moveSpotlight(1)} aria-label="المنتج التالي" disabled={activeProducts.length <= 1}>
-                <ChevronLeft size={22} />
-              </button>
+              </article>
+              <div className="spotlight-actions">
+                <div className="spotlight-pager">
+                  <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
+                    <ChevronRight size={22} />
+                  </button>
+                  <button type="button" className="spotlight-arrow next" onClick={() => moveSpotlight(1)} aria-label="المنتج التالي" disabled={activeProducts.length <= 1}>
+                    <ChevronLeft size={22} />
+                  </button>
+                </div>
+              </div>
             </section>
-          ) : null}
-
-          {menuDisplayMode === "large" ? (
-            <ProductRail
-              title={t.mostPopular}
-              products={popularForActive}
-              restaurantSlug={data.restaurant.slug}
-              t={t}
-              badgeLabel={t.mostPopular}
-              fillPlaceholders={false}
-              showPrices={showPrices}
-            />
           ) : null}
 
           {menuDisplayMode === "list" ? (
             <section className={`product-list category-product-list-${productListLayout}`} id="menu-products-start">
               {regularCategories.map((category) => {
-                const products = visibleProducts.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
+                const products = categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
                 if (!products.length) {
                   return null;
                 }
@@ -1059,9 +1207,7 @@ function MenuView({
       {selectedProduct ? (
         <ProductQuickViewModal
           product={selectedProduct}
-          t={t}
           showPrices={showPrices}
-          onAdd={() => addToCart(selectedProduct)}
           onClose={() => setSelectedProduct(null)}
         />
       ) : null}
@@ -1071,15 +1217,11 @@ function MenuView({
 
 function ProductQuickViewModal({
   product,
-  t,
   showPrices,
-  onAdd,
   onClose
 }: {
   product: PublicProduct;
-  t: PublicTranslations;
   showPrices: boolean;
-  onAdd: () => void;
   onClose: () => void;
 }) {
   const gallery = productImages(product);
@@ -1102,14 +1244,15 @@ function ProductQuickViewModal({
   }, [onClose]);
 
   function moveImage(direction: -1 | 1) {
+    if (gallery.length <= 1) return;
     setActiveImageIndex((current) => (current + direction + gallery.length) % gallery.length);
   }
 
   return (
     <div className="product-quick-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <article className="product-quick-modal" onClick={(event) => event.stopPropagation()}>
-        <button type="button" className="product-quick-close" onClick={onClose} aria-label={t.close}>
-          <X size={13} />
+        <button type="button" className="product-quick-close" onClick={onClose} aria-label="إغلاق">
+          <X size={14} />
         </button>
         <div className="product-quick-photo">
           <img src={activeImage.url} alt={activeImage.altText || product.name} />
@@ -1128,16 +1271,164 @@ function ProductQuickViewModal({
         <div className="product-quick-body">
           <h2>{product.name}</h2>
           <p>{product.description}</p>
-          <div>
-            {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
-            <button type="button" onClick={onAdd}>
-              <Plus size={16} />
-              {t.add}
-            </button>
-          </div>
+          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
         </div>
       </article>
     </div>
+  );
+}
+
+function ProductPrice({
+  price,
+  currency,
+  className = ""
+}: {
+  price: number;
+  currency: string;
+  className?: string;
+}) {
+  return (
+    <strong className={`product-price ${className}`.trim()}>
+      <span>{price}</span>
+      <small>{currency}</small>
+    </strong>
+  );
+}
+
+function QuantityControl({
+  quantity,
+  onDecrease,
+  onIncrease,
+  label,
+  className = ""
+}: {
+  quantity: number;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div className={`quantity-control ${className}`.trim()}>
+      <button type="button" onClick={onIncrease} aria-label={`+ ${label}`}>
+        <Plus size={14} />
+      </button>
+      <strong>{quantity}</strong>
+      <button type="button" onClick={onDecrease} disabled={quantity <= 0} aria-label={`- ${label}`}>
+        <Minus size={14} />
+      </button>
+    </div>
+  );
+}
+
+function CartView({
+  data,
+  cart,
+  updateCartItem,
+  removeCartItem,
+  sendWhatsappOrder,
+  orderSubmitting,
+  orderMessage,
+  t,
+  showPrices
+}: {
+  data: PublicMenuData;
+  cart: CartItem[];
+  updateCartItem: (slug: string, quantity: number) => void;
+  removeCartItem: (slug: string) => void;
+  sendWhatsappOrder: () => void;
+  orderSubmitting: boolean;
+  orderMessage: string | null;
+  t: PublicTranslations;
+  showPrices: boolean;
+}) {
+  const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const deliveryFee = 0;
+  const total = subtotal + deliveryFee;
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const orderNumber = useMemo(() => {
+    const hash = data.restaurant.slug.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return 300 + (hash % 700);
+  }, [data.restaurant.slug]);
+
+  return (
+    <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
+      <h1>{t.checkoutTitle}</h1>
+      {cart.length ? (
+        <section className="cart-page-list">
+          {cart.map((item) => {
+            const product = productBySlug.get(item.slug);
+            const imageUrl = item.imageUrl ?? (product ? productImage(product) : "/assets/public/menu-products.png");
+            const description = item.description ?? product?.description ?? "";
+
+            return (
+              <article key={item.slug} className="cart-page-item">
+                <img src={imageUrl} alt={item.name} />
+                <div className="cart-page-copy">
+                  <b>{item.name}</b>
+                  {description ? <p>{description}</p> : null}
+                  {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
+                </div>
+                <QuantityControl
+                  className="cart-page-quantity"
+                  quantity={item.quantity}
+                  onDecrease={() => updateCartItem(item.slug, item.quantity - 1)}
+                  onIncrease={() => updateCartItem(item.slug, item.quantity + 1)}
+                  label={item.name}
+                />
+                <button
+                  type="button"
+                  className="cart-page-remove"
+                  onClick={() => removeCartItem(item.slug)}
+                  aria-label={`${t.removeItem} ${item.name}`}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <section className="cart-empty">
+          <ShoppingBag size={34} />
+          <b>{t.emptyCart}</b>
+          <Link href={`/m/${data.restaurant.slug}/menu`}>{t.menu}</Link>
+        </section>
+      )}
+
+      <section className="cart-checkout-card">
+        <div className="cart-checkout-meta">
+          <span>{t.selectedItems} <b>{cartCount}</b></span>
+          <span>{t.orderNumber}: {orderNumber}</span>
+        </div>
+        <h2>{t.cartReview}</h2>
+        <dl>
+          <div>
+            <dt>{t.subtotal}</dt>
+            <dd>{subtotal}{data.restaurant.currency ?? "ل.س"}</dd>
+          </div>
+          <div>
+            <dt>{t.deliveryFee}</dt>
+            <dd>{deliveryFee}{data.restaurant.currency ?? "ل.س"}</dd>
+          </div>
+          <div>
+            <dt>{t.finalTotal}</dt>
+            <dd>{total}{data.restaurant.currency ?? "ل.س"}</dd>
+          </div>
+        </dl>
+        {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
+        <button
+          type="button"
+          className="cart-whatsapp"
+          onClick={sendWhatsappOrder}
+          disabled={!cart.length || orderSubmitting}
+        >
+          {orderSubmitting ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
+          {orderSubmitting ? t.preparingOrder : t.sendViaWhatsapp}
+        </button>
+      </section>
+    </main>
   );
 }
 
@@ -1145,12 +1436,16 @@ function ProductView({
   data,
   product,
   addToCart,
+  setProductQuantity,
+  getCartQuantity,
   t,
   showPrices
 }: {
   data: PublicMenuData;
   product: PublicProduct;
   addToCart: (product: PublicProduct) => void;
+  setProductQuantity: (product: PublicProduct, quantity: number) => void;
+  getCartQuantity: (slug: string) => number;
   t: PublicTranslations;
   showPrices: boolean;
 }) {
@@ -1163,6 +1458,7 @@ function ProductView({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [mediaMode, setMediaMode] = useState<ProductMediaMode>("image");
   const activeImage = gallery[activeImageIndex] ?? gallery[0];
+  const quantity = getCartQuantity(product.slug);
 
   useEffect(() => {
     setActiveImageIndex(0);
@@ -1295,7 +1591,7 @@ function ProductView({
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
-          {showPrices ? <strong>{productPrice(product)} {product.currency}</strong> : null}
+          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
         </div>
         <p>{product.description}</p>
 
@@ -1308,7 +1604,9 @@ function ProductView({
             <div className="ingredients-row">
               {ingredients.map((ingredient, index) => (
                 <span key={`${ingredient.name}-${index}`}>
-                  {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : null}
+                  <div className="ingredient-image-card">
+                    {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : null}
+                  </div>
                   <b>{ingredient.name}</b>
                 </span>
               ))}
@@ -1351,11 +1649,6 @@ function ProductView({
           </span>
         </div>
 
-        <button className="add-large" onClick={() => addToCart(product)}>
-          <ShoppingBag size={20} />
-          {t.addToCart}
-        </button>
-
         <ProductRail
           title={t.youMayLike}
           products={related}
@@ -1365,6 +1658,18 @@ function ProductView({
           showPrices={showPrices}
         />
       </section>
+      <div className="product-bottom-cart">
+        <QuantityControl
+          quantity={quantity}
+          onDecrease={() => setProductQuantity(product, quantity - 1)}
+          onIncrease={() => addToCart(product)}
+          label={product.name}
+        />
+        <Link href={`/m/${data.restaurant.slug}/cart`} className="product-cart-link">
+          <ShoppingBag size={20} />
+          {t.viewCart}
+        </Link>
+      </div>
     </main>
   );
 }
@@ -1411,7 +1716,7 @@ function ProductRail({
               <img src={productImage(product)} alt={product.name} />
             </Link>
             <b>{product.name}</b>
-            {showPrices ? <small>{productPrice(product)} {product.currency}</small> : null}
+            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" /> : null}
           </article>
           ) : (
             <article key={`rail-placeholder-${index}`} className="rail-product rail-product-placeholder" aria-hidden="true" />
@@ -1425,22 +1730,30 @@ function ProductRail({
 function BottomNav({
   slug,
   active,
-  t
+  t,
+  showHome,
+  showMenu
 }: {
   slug: string;
-  active: "home" | "menu" | "product";
+  active: "home" | "menu" | "product" | "cart";
   t: PublicTranslations;
+  showHome: boolean;
+  showMenu: boolean;
 }) {
+  if (!showHome && !showMenu) {
+    return null;
+  }
+
   return (
-    <nav className="public-bottom-nav">
-      <Link href={`/m/${slug}`} className={active === "home" ? "active" : ""}>
+    <nav className="public-bottom-nav" style={{ "--bottom-nav-count": showHome && showMenu ? 2 : 1 } as React.CSSProperties}>
+      {showHome ? <Link href={`/m/${slug}`} className={active === "home" ? "active" : ""}>
         <Home size={20} />
         {t.home}
-      </Link>
-      <Link href={`/m/${slug}/menu`} className={active === "menu" || active === "product" ? "active" : ""}>
+      </Link> : null}
+      {showMenu ? <Link href={`/m/${slug}/menu`} className={active === "menu" || active === "product" ? "active" : ""}>
         <Utensils size={20} />
         {t.menu}
-      </Link>
+      </Link> : null}
     </nav>
   );
 }

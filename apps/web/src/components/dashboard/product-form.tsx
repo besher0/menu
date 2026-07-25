@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ImagePlus, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { authHeaders, getBrowserSession, getStoredRestaurant, setStoredRestaurant } from "@/lib/session";
+import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
@@ -160,10 +160,9 @@ export function ProductForm({ productId }: { productId?: string }) {
     const queryRestaurantId = new URLSearchParams(window.location.search).get("restaurantId");
     const queryRestaurantSlug = new URLSearchParams(window.location.search).get("restaurantSlug");
     const queryRestaurantName = new URLSearchParams(window.location.search).get("restaurantName") ?? undefined;
-    const storedRestaurant = getStoredRestaurant();
+    const storedRestaurant = resolveStoredRestaurant(session);
 
-    if (queryRestaurantId && queryRestaurantSlug) {
-      setStoredRestaurant({ id: queryRestaurantId, slug: queryRestaurantSlug, name: queryRestaurantName });
+    if (queryRestaurantId && queryRestaurantSlug && setStoredRestaurant({ id: queryRestaurantId, slug: queryRestaurantSlug, name: queryRestaurantName })) {
       setSelectedRestaurantId(queryRestaurantId);
       setSelectedRestaurantName(queryRestaurantName ?? queryRestaurantSlug);
       return;

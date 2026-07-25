@@ -213,6 +213,16 @@ export function MenuBuilderClient() {
     };
   }, [selectedRestaurantId, restaurants, requestedSectionType]);
 
+  function selectSectionByType(type: BuilderSectionType) {
+    const match = orderedSections.find((section) => section.type === type);
+    if (match) {
+      setSelectedId(match.id);
+      return;
+    }
+
+    void addSection(type);
+  }
+
   async function addSection(type: BuilderSectionType) {
     if (!pageId) {
       const section: BuilderSection = {
@@ -263,7 +273,7 @@ export function MenuBuilderClient() {
     );
   }
 
-  function updateSetting(key: string, value: string) {
+  function updateSetting(key: string, value: string | boolean) {
     updateSelected({
       settings: {
         ...selected.settings,
@@ -641,6 +651,9 @@ export function MenuBuilderClient() {
               ? "أضف وعدّل عناصر شو مزاجك اليوم، الأيقونات، الروابط، والألوان ثم احفظ التغييرات."
               : "رتب أقسام صفحة المنيو وعدل النصوص والصور ثم احفظ أو انشر النسخة."}
           </p>
+          <p className="builder-quick-help">
+            لإخفاء صفحات الأقسام اختر قسم "شبكة الأقسام". لرفع خلفية مزاج اختر قسم "شو مزاجك اليوم".
+          </p>
         </div>
         <div className="builder-actions">
           <select value={selectedRestaurantId} onChange={(event) => setSelectedRestaurantId(event.target.value)}>
@@ -667,6 +680,10 @@ export function MenuBuilderClient() {
       <section className="builder-workspace">
         <aside className="section-library">
           <h2>إضافة قسم</h2>
+          <div className="builder-quick-links">
+            <button type="button" onClick={() => selectSectionByType("CATEGORY_GRID")}>إعدادات صفحات الأقسام</button>
+            <button type="button" onClick={() => selectSectionByType("MOOD_STRIP")}>خلفيات شو مزاجك اليوم</button>
+          </div>
           <div>
             {BUILDER_SECTION_TYPES.map((type) => (
               <button key={type} type="button" onClick={() => void addSection(type)}>
@@ -775,6 +792,26 @@ export function MenuBuilderClient() {
                     onChange={(event) => updateSetting("buttonTarget", event.target.value)}
                   />
                 </label>
+                {selected.type === "CATEGORY_GRID" ? (
+                  <div className="full builder-visibility-options">
+                    <label className="builder-check">
+                      <input
+                        checked={selected.settings.showLandingCategories !== false}
+                        onChange={(event) => updateSetting("showLandingCategories", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>إظهار صفحة الأقسام الأولى</span>
+                    </label>
+                    <label className="builder-check">
+                      <input
+                        checked={selected.settings.showNestedCategoryStrip !== false}
+                        onChange={(event) => updateSetting("showNestedCategoryStrip", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>إظهار شريط الأقسام داخل صفحة المنتجات</span>
+                    </label>
+                  </div>
+                ) : null}
                 {selected.type === "HERO" ? (
                   <div className="full builder-ad-banners">
                     <div className="builder-mini-head">
@@ -867,8 +904,11 @@ export function MenuBuilderClient() {
                           </select>
                         </label>
                         <label>
-                          <span>الخلفية</span>
+                          <span>رفع صورة خلفية المزاج</span>
                           <input accept="image/*" disabled={uploadingImage} onChange={(event) => uploadMoodBackground(index, event)} type="file" />
+                        </label>
+                        <label>
+                          <span>رابط/لون الخلفية</span>
                           <input value={item.backgroundValue ?? ""} onChange={(event) => updateMoodItem(index, "backgroundValue", event.target.value)} placeholder="#d32f2f أو رابط صورة أو gradient" />
                         </label>
                         <label>

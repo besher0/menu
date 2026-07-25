@@ -25,6 +25,9 @@ export type BuilderSectionSettings = {
   layout?: string;
   alignment?: "start" | "center" | "end";
   height?: "small" | "medium" | "large";
+  showHomePage?: boolean;
+  showLandingCategories?: boolean;
+  showNestedCategoryStrip?: boolean;
   adBanners?: Array<{
     title?: string;
     subtitle?: string;
@@ -94,7 +97,7 @@ export function defaultSectionSettings(type: BuilderSectionType): BuilderSection
         height: "large"
       };
     case "CATEGORY_GRID":
-      return { title: "الأقسام", layout: "horizontal-chips" };
+      return { title: "الأقسام", layout: "horizontal-chips", showLandingCategories: true, showNestedCategoryStrip: true };
     case "MOOD_STRIP":
       return {
         title: "شو مزاجك اليوم؟",

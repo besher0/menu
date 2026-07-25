@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Store } from "lucide-react";
 import { API_URL } from "@/lib/client-api";
-import { authHeaders, getBrowserSession, getStoredRestaurant, setStoredRestaurant } from "@/lib/session";
+import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
 type RestaurantOption = {
   id: string;
@@ -22,14 +22,13 @@ export function DashboardRestaurantSwitcher() {
 
   useEffect(() => {
     const session = getBrowserSession();
-    const stored = getStoredRestaurant();
+    const stored = resolveStoredRestaurant(session);
     const params = new URLSearchParams(window.location.search);
     const queryId = params.get("restaurantId");
     const querySlug = params.get("restaurantSlug");
     const queryName = params.get("restaurantName") ?? undefined;
 
-    if (queryId && querySlug) {
-      setStoredRestaurant({ id: queryId, slug: querySlug, name: queryName });
+    if (queryId && querySlug && setStoredRestaurant({ id: queryId, slug: querySlug, name: queryName })) {
       setSelectedId(queryId);
     } else if (stored?.id) {
       setSelectedId(stored.id);
@@ -66,7 +65,7 @@ export function DashboardRestaurantSwitcher() {
     const restaurant = restaurants.find((item) => item.id === id);
     if (!restaurant) return;
 
-    setStoredRestaurant(restaurant);
+    if (!setStoredRestaurant(restaurant)) return;
     setSelectedId(id);
 
     const params = new URLSearchParams(window.location.search);

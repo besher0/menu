@@ -97,6 +97,9 @@ export type PublicMenuData = {
         settings?: {
           backgroundImageUrl?: string;
           title?: string;
+          showHomePage?: boolean;
+          showLandingCategories?: boolean;
+          showNestedCategoryStrip?: boolean;
           adBanners?: Array<{
             title?: string;
             subtitle?: string;

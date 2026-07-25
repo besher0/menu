@@ -5,7 +5,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
   const { id } = await params;
 
   return (
-    <AdminShell active="/dashboard">
+    <AdminShell active="/dashboard/products">
       <ProductForm productId={id} />
     </AdminShell>
   );

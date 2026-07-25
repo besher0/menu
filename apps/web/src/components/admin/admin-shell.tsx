@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   BadgeDollarSign,
   BarChart3,
@@ -23,6 +26,7 @@ import {
 } from "lucide-react";
 import { RestaurantContextSync } from "@/components/dashboard/restaurant-context-sync";
 import { DashboardRestaurantSwitcher } from "@/components/dashboard/dashboard-restaurant-switcher";
+import { getBrowserSession } from "@/lib/session";
 
 const adminBaseNavItems = [
   { href: "/admin", label: "الرئيسية", icon: LayoutDashboard },
@@ -30,36 +34,31 @@ const adminBaseNavItems = [
   { href: "/admin/subscriptions", label: "الباقات", icon: BadgeDollarSign }
 ];
 
-const restaurantNavItems = [
+const restaurantOwnerNavItems = [
   { href: "/dashboard", label: "الصفحة الرئيسية", icon: Home },
   { href: "/dashboard/products", label: "المنيو", icon: ShoppingBag },
-  { href: "/dashboard/categories", label: "الأقسام", icon: ShoppingBag },
+  { href: "/dashboard/categories", label: "الأقسام", icon: Tags },
+  { href: "/dashboard/banners", label: "البنرات", icon: Image },
+  { href: "/dashboard/settings", label: "الإعدادات", icon: Settings }
+];
+
+const restaurantAdminNavItems = [
+  { href: "/dashboard", label: "داشبورد المطعم", icon: Home },
+  { href: "/dashboard/products", label: "المنيو", icon: Package },
+  { href: "/dashboard/categories", label: "الأقسام", icon: Tags },
   { href: "/dashboard/orders", label: "الطلبات", icon: ReceiptText },
   { href: "/dashboard/analytics", label: "التحليلات", icon: BarChart3 },
-  { href: "/dashboard/banners", label: "البنرات", icon: ShoppingBag },
+  { href: "/dashboard/banners", label: "البنرات", icon: Image },
   { href: "/dashboard/builder", label: "منشئ الواجهة", icon: PanelsTopLeft },
   { href: "/dashboard/media", label: "الوسائط", icon: Image },
   { href: "/dashboard/theme", label: "الثيمات", icon: Palette },
   { href: "/dashboard/branches", label: "الفروع", icon: MapPinned },
   { href: "/dashboard/qr", label: "رموز QR", icon: QrCode },
   { href: "/dashboard/domains", label: "الدومينات", icon: Globe2 },
-  { href: "/dashboard/settings", label: "الإعدادات", icon: ShoppingBag }
+  { href: "/dashboard/settings", label: "الإعدادات", icon: Settings }
 ];
 
-const adminNavItems = [
-  ...adminBaseNavItems,
-  { href: "/dashboard", label: "داشبورد المطعم", icon: Settings },
-  { href: "/dashboard/products", label: "المنيو", icon: Package },
-  { href: "/dashboard/categories", label: "الأقسام", icon: Tags },
-  { href: "/dashboard/orders", label: "الطلبات", icon: ReceiptText },
-  { href: "/dashboard/analytics", label: "التحليلات", icon: BarChart3 },
-  { href: "/dashboard/builder", label: "منشئ الواجهة", icon: PanelsTopLeft },
-  { href: "/dashboard/media", label: "الوسائط", icon: Image },
-  { href: "/dashboard/theme", label: "الثيمات", icon: Palette },
-  { href: "/dashboard/branches", label: "الفروع", icon: MapPinned },
-  { href: "/dashboard/qr", label: "رموز QR", icon: QrCode },
-  { href: "/dashboard/domains", label: "الدومينات", icon: Globe2 }
-];
+const adminNavItems = [...adminBaseNavItems, ...restaurantAdminNavItems];
 
 export function AdminShell({
   active,
@@ -68,8 +67,17 @@ export function AdminShell({
   active: string;
   children: React.ReactNode;
 }) {
-  const navItems = active.startsWith("/admin") ? adminNavItems : [...adminBaseNavItems, ...restaurantNavItems];
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const isDashboard = active.startsWith("/dashboard");
+  const navItems = active.startsWith("/admin")
+    ? adminNavItems
+    : isSuperAdmin
+      ? adminNavItems
+      : restaurantOwnerNavItems;
+
+  useEffect(() => {
+    setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");
+  }, []);
 
   return (
     <div className="admin-shell restaurant-admin-shell">

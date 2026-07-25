@@ -18,7 +18,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { API_URL, apiFetch } from "@/lib/client-api";
-import { authHeaders, getBrowserSession, getStoredRestaurant, setStoredRestaurant } from "@/lib/session";
+import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
 type LoadState = "loading" | "ready" | "saving" | "error";
 type BackgroundType = "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
@@ -124,14 +124,13 @@ function useRestaurantGate() {
       const querySlug = params.get("restaurantSlug");
       const queryName = params.get("restaurantName") ?? undefined;
 
-      if (queryId && querySlug) {
-        setStoredRestaurant({ id: queryId, slug: querySlug, name: queryName });
+      if (queryId && querySlug && setStoredRestaurant({ id: queryId, slug: querySlug, name: queryName })) {
         setStatus("ready");
         return;
       }
 
       const session = getBrowserSession();
-      const stored = getStoredRestaurant();
+      const stored = resolveStoredRestaurant(session);
       if (stored?.id && stored.slug) {
         setStatus("ready");
         return;

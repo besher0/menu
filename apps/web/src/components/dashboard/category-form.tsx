@@ -255,6 +255,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
 
       <section className="settings-card">
         <h2>الصورة والخلفية</h2>
+        <p className="settings-help">من هنا ترفع صورة/أيقونة القسم، وتقدر ترفع صورة خلفية للكارد نفسه من حقل "رفع صورة خلفية القسم".</p>
         <div className="category-form-media">
           <div
             className="logo-preview category-form-preview"
@@ -285,8 +286,12 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
               </select>
             </label>
             <label className="field">
-              <span>رفع صورة خلفية</span>
+              <span>رفع صورة خلفية القسم</span>
               <input accept="image/*" disabled={uploadStatus === "uploading"} type="file" onChange={(event) => void uploadImage(event, "backgroundValue")} />
+            </label>
+            <label className="field full">
+              <span>رابط خلفية القسم</span>
+              <input value={form.backgroundValue} onChange={(event) => update("backgroundValue", event.target.value)} placeholder="يظهر هنا رابط صورة الخلفية بعد الرفع" />
             </label>
             <label className="field">
               <span>لون الخلفية الأول</span>

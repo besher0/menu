@@ -3,7 +3,7 @@ import { ProductForm } from "@/components/dashboard/product-form";
 
 export default function NewProductPage() {
   return (
-    <AdminShell active="/dashboard">
+    <AdminShell active="/dashboard/products">
       <ProductForm />
     </AdminShell>
   );
