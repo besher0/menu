@@ -3693,9 +3693,9 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .product-detail .rail-product {
-  flex-basis: calc((100vw - 68px) / 4);
-  min-width: 82px;
-  max-width: 118px;
+  flex: 0 0 118px;
+  max-width: none;
+  min-width: 118px;
 }
 
 .rail-product-badge {
@@ -3928,8 +3928,8 @@ body:has(.public-page)::-webkit-scrollbar {
   border: 0;
   color: #a5a1a1;
   display: grid;
-  flex: 0 0 56px;
-  gap: 4px;
+  flex: 0 0 66px;
+  gap: 1px;
   justify-items: center;
   padding: 0;
   position: relative;
@@ -3946,7 +3946,7 @@ body:has(.public-page)::-webkit-scrollbar {
   overflow: hidden;
   position: relative;
   transition: opacity 160ms ease, transform 160ms ease, filter 160ms ease;
-  width: 56px;
+  width: 66px;
 }
 
 .menu-category-chip.active {
@@ -3993,6 +3993,7 @@ body:has(.public-page)::-webkit-scrollbar {
   overflow: hidden;
   text-align: center;
   text-overflow: ellipsis;
+  transform: translateY(-3px);
   white-space: nowrap;
 }
 
@@ -4027,7 +4028,7 @@ body:has(.public-page)::-webkit-scrollbar {
   color: white;
   display: block;
   font: inherit;
-  min-height: 124px;
+  min-height: 112px;
   overflow: hidden;
   padding: 18px 22px;
   position: relative;
@@ -4036,8 +4037,13 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .category-banner-list :where(a, button):first-child {
-  height: 80px;
-  min-height: 80px;
+  height: 112px;
+  min-height: 112px;
+}
+
+.category-landing-list :where(a, button) {
+  height: 112px;
+  min-height: 112px;
 }
 
 .category-banner-list :where(a, button)::after {
@@ -4079,7 +4085,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-banner-copy {
   display: grid;
-  gap: 6px;
+  gap: 0;
   max-width: calc(100% - 188px);
   position: absolute;
   right: 144px;
@@ -4126,7 +4132,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-banner-copy small,
 .category-banner-copy b {
-  display: block;
+  display: none;
 }
 
 .category-banner-list svg {
@@ -4203,14 +4209,15 @@ body:has(.public-page)::-webkit-scrollbar {
 .category-spotlight-copy {
   display: grid;
   gap: 4px;
-  padding: 6px 16px 8px;
+  justify-items: center;
+  padding: 6px 16px 2px;
 }
 
 .category-spotlight-controls {
   align-items: center;
   direction: ltr;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 0 16px 14px;
 }
 
@@ -4220,6 +4227,12 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-spotlight-controls .product-price {
   justify-content: flex-end;
+}
+
+.category-spotlight-copy .spotlight-price {
+  justify-content: center;
+  line-height: 1.05;
+  margin-top: -1px;
 }
 
 .category-spotlight-card b {
@@ -4301,7 +4314,7 @@ body:has(.public-page)::-webkit-scrollbar {
   color: #16181d;
   direction: rtl;
   flex: 0 0 auto;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   line-height: 1;
 }
@@ -4368,7 +4381,7 @@ body:has(.public-page)::-webkit-scrollbar {
   display: grid;
   gap: 4px;
   grid-template-columns: minmax(0, 1fr) 142px;
-  min-height: 104px;
+  min-height: 94px;
   overflow: hidden;
   padding: 0;
   position: relative;
@@ -4407,7 +4420,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .menu-product-row img {
   background: #fff;
-  height: 104px;
+  height: 94px;
   object-fit: cover;
   width: 142px;
 }
@@ -4427,7 +4440,7 @@ body:has(.public-page)::-webkit-scrollbar {
   grid-row: 1;
   justify-items: end;
   min-width: 0;
-  padding: 10px 8px 28px 64px;
+  padding: 18px 8px 22px 58px;
   text-align: end;
 }
 
@@ -4464,8 +4477,8 @@ body:has(.public-page)::-webkit-scrollbar {
 .menu-product-row .menu-product-quantity {
   bottom: 8px;
   flex-direction: column;
-  gap: 0;
-  justify-content: space-between;
+  gap: 5px;
+  justify-content: center;
   left: 10px;
   position: absolute;
   top: 8px;
@@ -4741,6 +4754,16 @@ body:has(.public-page)::-webkit-scrollbar {
   right: 16px;
 }
 
+.product-back-arrow-icon {
+  fill: none;
+  height: 20px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  width: 24px;
+}
+
 .product-photo > span {
   bottom: 28px;
   color: #3a3f47;
@@ -4854,18 +4877,20 @@ body:has(.public-page)::-webkit-scrollbar {
   background: var(--color-primary);
   border: 0;
   border-radius: 999px;
-  bottom: 18px;
+  bottom: auto;
   color: white;
   display: flex;
   font-size: 13px;
   font-weight: 900;
   justify-content: center;
-  min-height: 40px;
-  min-width: 72px;
+  left: 128px;
+  min-height: 36px;
+  min-width: 46px;
   max-width: calc(100% - 32px);
-  padding: 0 18px;
+  padding: 0 12px;
   position: absolute;
-  right: 16px;
+  right: auto;
+  top: 44px;
   z-index: 4;
 }
 
@@ -4881,23 +4906,6 @@ body:has(.public-page)::-webkit-scrollbar {
   padding: 11px 14px;
   position: absolute;
   text-decoration: none;
-}
-
-.model-ar-note {
-  background: rgb(255 255 255 / 90%);
-  border-radius: 999px;
-  bottom: 66px;
-  color: #3a3f47;
-  font-size: 11px;
-  font-weight: 800;
-  left: 16px;
-  line-height: 1.35;
-  max-width: none;
-  padding: 7px 10px;
-  position: absolute;
-  right: 16px;
-  text-align: center;
-  z-index: 4;
 }
 
 .product-vr-stage iframe {
@@ -5095,7 +5103,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .ingredients-row {
   display: flex;
-  gap: 10px;
+  gap: 5px;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -5630,10 +5638,11 @@ body:has(.public-page)::-webkit-scrollbar {
   border: 1px solid #edf0f4;
   border-radius: 14px;
   box-shadow: 0 6px 16px rgb(16 24 40 / 8%);
+  direction: ltr;
   display: grid;
   gap: 5px;
   grid-template-columns: 28px minmax(0, 1fr) 142px;
-  min-height: 86px;
+  min-height: 94px;
   overflow: hidden;
   padding: 0;
 }
@@ -5641,18 +5650,20 @@ body:has(.public-page)::-webkit-scrollbar {
 .cart-page-item > img {
   grid-column: 3;
   grid-row: 1;
-  height: 86px;
+  height: 94px;
   object-fit: cover;
   width: 142px;
 }
 
 .cart-page-copy {
+  direction: rtl;
   display: grid;
   gap: 2px;
   grid-column: 2;
   grid-row: 1;
   justify-items: end;
   min-width: 0;
+  padding: 14px 8px 14px 0;
   text-align: end;
 }
 
@@ -5681,10 +5692,10 @@ body:has(.public-page)::-webkit-scrollbar {
 .cart-page-quantity {
   align-self: stretch;
   flex-direction: column;
-  gap: 0;
+  gap: 5px;
   grid-column: 1;
   grid-row: 1;
-  justify-content: space-around;
+  justify-content: center;
   justify-self: center;
   padding: 6px 0;
 }
@@ -5757,10 +5768,10 @@ body:has(.public-page)::-webkit-scrollbar {
   bottom: 0;
   box-shadow: 0 -12px 36px rgb(16 24 40 / 12%);
   display: grid;
-  gap: 9px;
+  gap: 12px;
   left: 50%;
   max-width: 430px;
-  padding: 18px 22px 32px;
+  padding: 20px 22px 34px;
   position: fixed;
   transform: translateX(-50%);
   width: 100%;
@@ -5782,15 +5793,15 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .cart-checkout-card h2 {
   color: #201217;
-  font-size: 16px;
-  font-weight: 800;
+  font-size: 18px;
+  font-weight: 900;
   margin: 0;
   text-align: end;
 }
 
 .cart-checkout-card dl {
   display: grid;
-  gap: 5px;
+  gap: 10px;
   margin: 0;
 }
 
@@ -5799,7 +5810,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-bottom: 1px dashed #c9cdd4;
   display: flex;
   justify-content: space-between;
-  padding-bottom: 5px;
+  padding: 0 0 9px;
 }
 
 .cart-checkout-card dl div:last-child {
@@ -5809,18 +5820,24 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .cart-checkout-card dt {
   color: #626975;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .cart-checkout-card dd {
   color: #151922;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
   margin: 0;
 }
 
+.cart-checkout-card dl div:last-child dt {
+  color: #201217;
+  font-size: 16px;
+  font-weight: 900;
+}
+
 .cart-checkout-card dl div:last-child dd {
-  font-size: 17px;
+  font-size: 20px;
 }
 
 .cart-checkout-card .cart-whatsapp {

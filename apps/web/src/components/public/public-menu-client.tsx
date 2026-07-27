@@ -79,7 +79,6 @@ const translations = {
     sendOrder: "إرسال الطلب",
     preparingOrder: "يتم تجهيز الطلب...",
     cartReady: "طلبك جاهز للإرسال",
-    cartReview: "راجع السلة قبل الإرسال",
     cartTotal: "المجموع",
     orderError: "تعذر إنشاء الطلب، سيتم فتح واتساب مباشرة",
     removeItem: "حذف المنتج",
@@ -149,7 +148,6 @@ const translations = {
     sendOrder: "Send order",
     preparingOrder: "Preparing order...",
     cartReady: "Your order is ready",
-    cartReview: "Review your cart before sending",
     cartTotal: "Total",
     orderError: "Could not create the order, opening WhatsApp directly",
     removeItem: "Remove item",
@@ -209,8 +207,8 @@ function categoryChipStyle(category: PublicCategory): CategoryChipStyle {
     ...visualBackgroundStyle(category),
     "--category-image-x": `${position.x}%`,
     "--category-image-y": `${position.y}%`,
-    "--category-icon-width": `${category.imageWidth ?? 42}px`,
-    "--category-icon-height": `${category.imageHeight ?? 42}px`
+    "--category-icon-width": `${category.imageWidth ?? 66}px`,
+    "--category-icon-height": `${category.imageHeight ?? 56}px`
   } as CategoryChipStyle;
 }
 
@@ -925,7 +923,7 @@ function MenuView({
   const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood || !showCategoryLanding ? "all" : "");
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
-  const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("large");
+  const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("list");
   const lastMenuBackSignal = useRef(menuBackSignal);
   const moodProducts = selectedMood
     ? data.products.filter((product) => product.moodKey === selectedMood)
@@ -1012,11 +1010,6 @@ function MenuView({
       <section className="category-banner-list category-landing-list" id="menu-categories">
         {data.categories.map((category) => {
           const position = parseIconPosition(category.imagePosition);
-          const isAllCategory = category.slug === "all";
-          const productsCount = isAllCategory
-            ? visibleProducts.length
-            : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
-
           return (
             <button
               type="button"
@@ -1039,8 +1032,6 @@ function MenuView({
               ) : null}
               <div className="category-banner-copy">
                 <span>{category.name}</span>
-                {!isAllCategory && category.description ? <small>{category.description}</small> : null}
-                {!isAllCategory ? <b>{productsCount} {t.itemCount}</b> : null}
               </div>
               <svg className="category-banner-arrow" viewBox="0 0 38 24" aria-hidden="true">
                 <path d="M34 11 C24 8 15 9 6 14" />
@@ -1150,6 +1141,7 @@ function MenuView({
                   <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
+                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
                     <p>{spotlightProduct.description}</p>
                   </div>
                 </button>
@@ -1160,7 +1152,6 @@ function MenuView({
                     onIncrease={() => addToCart(spotlightProduct)}
                     label={spotlightProduct.name}
                   />
-                  {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} /> : null}
                 </div>
               </article>
               <div className="spotlight-actions">
@@ -1441,6 +1432,7 @@ function CartView({
             fillPlaceholders={false}
             showPrices={showPrices}
             onAddToCart={addToCart}
+            showViewAll={false}
           />
         </>
       ) : (
@@ -1494,7 +1486,7 @@ function CartView({
           <span>{t.selectedItems} <b>{cartCount}</b></span>
           <span>{t.orderNumber}: {orderNumber}</span>
         </div>
-        <h2>{cartStep === "review" ? t.finalTotal : t.cartReview}</h2>
+        <h2>{t.finalTotal}</h2>
         <dl>
           <div>
             <dt>{t.subtotal}</dt>
@@ -1630,6 +1622,15 @@ function ProductView({
     setActiveImageIndex((current) => (current + direction + gallery.length) % gallery.length);
   }
 
+  function openAr() {
+    setMediaMode("3d");
+    void trackMediaOpen();
+    window.requestAnimationFrame(() => {
+      const viewer = document.querySelector(".product-model-stage model-viewer") as (HTMLElement & { activateAR?: () => void }) | null;
+      viewer?.activateAR?.();
+    });
+  }
+
   return (
     <main className="product-detail">
       <div className="product-photo">
@@ -1655,6 +1656,11 @@ function ProductView({
               3D
             </button>
           ) : null}
+          {model3dUrl && canRenderModel ? (
+            <button type="button" className="product-ar-tab" onClick={openAr}>
+              AR
+            </button>
+          ) : null}
         </div>
         {mediaMode === "3d" && model3dUrl ? (
           canRenderModel ? (
@@ -1672,8 +1678,7 @@ function ProductView({
                 "shadow-intensity": "1",
                 loading: "lazy",
                 style: { width: "100%", height: "100%", display: "block" }
-              }, createElement("button", { slot: "ar-button", className: "model-ar-button", type: "button" }, "AR"))}
-              <small className="model-ar-note">على الآيفون اضغط AR. إذا لم يفتح، ارفع نسخة USDZ للمنتج.</small>
+              })}
             </div>
           ) : (
             <div className="product-model-stage product-model-fallback">
@@ -1688,7 +1693,9 @@ function ProductView({
           <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
         )}
         <Link href={`/m/${data.restaurant.slug}/menu`} aria-label="الرجوع إلى القائمة">
-          <ChevronRight size={18} />
+          <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
+            <path d="M9 3.5 15.5 10 9 16.5" />
+          </svg>
         </Link>
         {mediaMode === "image" && gallery.length > 1 ? (
           <>
@@ -1788,6 +1795,7 @@ function ProductView({
           t={t}
           fillPlaceholders={false}
           showPrices={showPrices}
+          showViewAll={false}
         />
       </section>
       <div className="product-bottom-cart">
@@ -1815,7 +1823,8 @@ function ProductRail({
   badgeLabel,
   fillPlaceholders = true,
   showPrices,
-  onAddToCart
+  onAddToCart,
+  showViewAll = true
 }: {
   title: string;
   products: PublicProduct[];
@@ -1825,6 +1834,7 @@ function ProductRail({
   fillPlaceholders?: boolean;
   showPrices: boolean;
   onAddToCart?: (product: PublicProduct) => void;
+  showViewAll?: boolean;
 }) {
   if (!products.length && !fillPlaceholders) {
     return null;
@@ -1839,7 +1849,7 @@ function ProductRail({
           <Flame size={18} />
           {title}
         </h2>
-        <Link href={`/m/${restaurantSlug}/menu`}>{t.viewAll}</Link>
+        {showViewAll ? <Link href={`/m/${restaurantSlug}/menu`}>{t.viewAll}</Link> : null}
       </div>
       <div className="rail-scroll">
         {railSlots.map((_, index) => {
