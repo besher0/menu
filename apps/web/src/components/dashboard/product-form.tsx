@@ -15,6 +15,7 @@ type FormState = {
   basePrice: string;
   currency: string;
   imageUrl: string;
+  imageUrls: string[];
   moodKey: string;
   ingredients: IngredientFormItem[];
   weight: string;
@@ -73,7 +74,7 @@ type ProductDetails = {
     vrUrl?: string | null;
   };
   category?: { id: string; name: string } | null;
-  images?: Array<{ url: string }>;
+  images?: Array<{ id?: string; url: string; altText?: string | null }>;
 };
 
 function normalizeIngredients(items?: Array<string | { name?: string; imageUrl?: string | null }>): IngredientFormItem[] {
@@ -104,6 +105,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     basePrice: "",
     currency: "ل.س",
     imageUrl: "",
+    imageUrls: [],
     moodKey: "",
     ingredients: [],
     weight: "",
@@ -119,6 +121,64 @@ export function ProductForm({ productId }: { productId?: string }) {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setProductImages(urls: string[]) {
+    const uniqueUrls = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
+    setForm((current) => ({
+      ...current,
+      imageUrl: uniqueUrls[0] ?? "",
+      imageUrls: uniqueUrls
+    }));
+  }
+
+  function setPrimaryImage(url: string) {
+    setForm((current) => {
+      const nextUrl = url.trim();
+      const rest = current.imageUrls.filter((item, index) => index > 0 && item !== nextUrl);
+      const imageUrls = nextUrl ? [nextUrl, ...rest] : rest;
+      return { ...current, imageUrl: nextUrl, imageUrls };
+    });
+  }
+
+  function addProductImageUrl(url = "") {
+    setForm((current) => ({ ...current, imageUrls: [...current.imageUrls, url] }));
+  }
+
+  function updateProductImageUrl(index: number, url: string) {
+    setForm((current) => {
+      const imageUrls = current.imageUrls.map((item, itemIndex) => (itemIndex === index ? url : item));
+      return {
+        ...current,
+        imageUrl: imageUrls[0]?.trim() ?? "",
+        imageUrls
+      };
+    });
+  }
+
+  function removeProductImage(index: number) {
+    setForm((current) => {
+      const imageUrls = current.imageUrls.filter((_, itemIndex) => itemIndex !== index);
+      return {
+        ...current,
+        imageUrl: imageUrls[0]?.trim() ?? "",
+        imageUrls
+      };
+    });
+  }
+
+  function moveProductImage(index: number, direction: -1 | 1) {
+    setForm((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.imageUrls.length) return current;
+      const imageUrls = [...current.imageUrls];
+      [imageUrls[index], imageUrls[target]] = [imageUrls[target], imageUrls[index]];
+      return {
+        ...current,
+        imageUrl: imageUrls[0]?.trim() ?? "",
+        imageUrls
+      };
+    });
   }
 
   function addIngredient() {
@@ -279,13 +339,15 @@ export function ProductForm({ productId }: { productId?: string }) {
         }
 
         const product = payload?.data as ProductDetails;
+        const imageUrls = product.images?.map((image) => image.url).filter(Boolean) ?? [];
         setForm({
           name: product.name ?? "",
           categoryId: product.category?.id ?? "",
           description: product.description ?? "",
           basePrice: String(product.basePrice ?? ""),
           currency: product.currency ?? "ل.س",
-          imageUrl: product.images?.[0]?.url ?? "",
+          imageUrl: imageUrls[0] ?? "",
+          imageUrls,
           moodKey: product.moodKey ?? "",
           ingredients: normalizeIngredients(product.ingredients),
           weight: product.nutrition?.weight ?? "",
@@ -329,6 +391,13 @@ export function ProductForm({ productId }: { productId?: string }) {
           categoryId: form.categoryId || undefined,
           moodKey: form.moodKey || undefined,
           imageUrl: form.imageUrl,
+          images: (form.imageUrls.length ? form.imageUrls : [form.imageUrl])
+            .map((url) => url.trim())
+            .filter(Boolean)
+            .map((url, index) => ({
+              url,
+              altText: index === 0 ? form.name : `${form.name} ${index + 1}`
+            })),
           ingredients: form.ingredients
             .map((item) => ({
               name: item.name.trim(),
@@ -389,11 +458,52 @@ export function ProductForm({ productId }: { productId?: string }) {
         throw new Error(payload?.message ?? "تعذر رفع الصورة.");
       }
 
-      update("imageUrl", payload?.data?.url ?? payload?.url ?? "");
+      setPrimaryImage(payload?.data?.url ?? payload?.url ?? "");
       setUploadStatus("idle");
     } catch (error) {
       setUploadStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر رفع الصورة.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleGalleryImagesUpload(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+
+    setUploadStatus("uploading");
+    setMessage("");
+
+    try {
+      const uploadedUrls: string[] = [];
+
+      for (const file of files) {
+        const body = new FormData();
+        body.append("file", file);
+        body.append("type", "IMAGE");
+        body.append("altText", form.name || file.name);
+
+        const response = await fetch(`${API_URL}/dashboard/media/upload`, {
+          method: "POST",
+          headers: selectedRestaurantHeaders(),
+          body
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.message ?? "تعذر رفع إحدى الصور.");
+        }
+
+        const url = payload?.data?.url ?? payload?.url;
+        if (url) uploadedUrls.push(url);
+      }
+
+      setProductImages([...(form.imageUrls.length ? form.imageUrls : form.imageUrl ? [form.imageUrl] : []), ...uploadedUrls]);
+      setUploadStatus("idle");
+    } catch (error) {
+      setUploadStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع الصور.");
     } finally {
       event.target.value = "";
     }
@@ -467,6 +577,8 @@ export function ProductForm({ productId }: { productId?: string }) {
       event.target.value = "";
     }
   }
+
+  const productGalleryUrls = form.imageUrls.length ? form.imageUrls : form.imageUrl ? [form.imageUrl] : [];
 
   return (
     <form className="product-form-page" onSubmit={handleSubmit}>
@@ -625,8 +737,56 @@ export function ProductForm({ productId }: { productId?: string }) {
 
           <label className="full">
             <span>رابط الصورة بعد الرفع</span>
-            <input value={form.imageUrl} onChange={(event) => update("imageUrl", event.target.value)} />
+            <input value={form.imageUrl} onChange={(event) => setPrimaryImage(event.target.value)} />
           </label>
+
+          <section className="product-gallery-manager full">
+            <div className="product-gallery-head">
+              <div>
+                <span>صور المنتج الإضافية</span>
+                <small>أول صورة هي الصورة الرئيسية. يمكنك ترتيب الصور التي تظهر في صفحة المنتج.</small>
+              </div>
+              <button type="button" onClick={() => addProductImageUrl()}>
+                <Plus size={16} />
+                رابط صورة
+              </button>
+            </div>
+            <label className="gallery-upload-button">
+              <ImagePlus size={18} />
+              <span>رفع عدة صور</span>
+              <input
+                accept="image/*"
+                disabled={!selectedRestaurantId || uploadStatus === "uploading"}
+                multiple
+                onChange={handleGalleryImagesUpload}
+                type="file"
+              />
+            </label>
+            <div className="product-gallery-list">
+              {productGalleryUrls.map((url, index) => (
+                <article key={`${url}-${index}`} className="product-gallery-row">
+                  <span className="gallery-thumb">
+                    {url ? <img src={url} alt="" /> : <ImagePlus size={18} />}
+                  </span>
+                  <label>
+                    <small>{index === 0 ? "الصورة الرئيسية" : `صورة ${index + 1}`}</small>
+                    <input value={url} onChange={(event) => updateProductImageUrl(index, event.target.value)} placeholder="https://..." />
+                  </label>
+                  <div>
+                    <button type="button" onClick={() => moveProductImage(index, -1)} disabled={index === 0}>
+                      <ArrowRight size={15} />
+                    </button>
+                    <button type="button" onClick={() => moveProductImage(index, 1)} disabled={index === productGalleryUrls.length - 1}>
+                      <ArrowRight size={15} className="flip" />
+                    </button>
+                    <button type="button" onClick={() => removeProductImage(index)}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
 
           <label className="full">
             <span>رفع ملف 3D للوجبة</span>

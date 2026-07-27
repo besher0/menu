@@ -117,12 +117,13 @@ export class ProductsService {
               }
             }
           : undefined,
-        images: dto.imageUrl
+        images: this.productImageInputs(dto).length
           ? {
-              create: {
-                url: dto.imageUrl,
-                altText: dto.name
-              }
+              create: this.productImageInputs(dto).map((image, index) => ({
+                url: image.url,
+                altText: image.altText ?? dto.name,
+                sortOrder: index
+              }))
             }
           : undefined
       },
@@ -194,22 +195,8 @@ export class ProductsService {
       }
     });
 
-    if (dto.imageUrl && dto.imageUrl !== existing.images[0]?.url) {
-      if (existing.images[0]) {
-        await this.prisma.productImage.update({
-          where: { id: existing.images[0].id },
-          data: { url: dto.imageUrl, altText: dto.name }
-        });
-      } else {
-        await this.prisma.productImage.create({
-          data: {
-            productId: id,
-            url: dto.imageUrl,
-            altText: dto.name,
-            sortOrder: 0
-          }
-        });
-      }
+    if (dto.images !== undefined || dto.imageUrl !== undefined) {
+      await this.syncProductImages(id, dto);
     }
 
     await this.sync3dMedia(id, dto);
@@ -357,6 +344,45 @@ export class ProductsService {
     if (sort === "priceDesc") return [{ basePrice: "desc" }, { sortOrder: "asc" }];
     if (sort === "name") return [{ name: "asc" }];
     return [{ sortOrder: "asc" }, { createdAt: "desc" }];
+  }
+
+  private productImageInputs(dto: CreateProductDto) {
+    const images = dto.images?.length
+      ? dto.images
+      : dto.imageUrl
+        ? [{ url: dto.imageUrl, altText: dto.name }]
+        : [];
+
+    const seen = new Set<string>();
+    return images
+      .map((image) => ({
+        url: image.url?.trim() ?? "",
+        altText: image.altText?.trim() || dto.name
+      }))
+      .filter((image) => {
+        if (!image.url || seen.has(image.url)) return false;
+        seen.add(image.url);
+        return true;
+      });
+  }
+
+  private async syncProductImages(productId: string, dto: CreateProductDto) {
+    const images = this.productImageInputs(dto);
+
+    await this.prisma.productImage.deleteMany({ where: { productId } });
+
+    if (!images.length) {
+      return;
+    }
+
+    await this.prisma.productImage.createMany({
+      data: images.map((image, index) => ({
+        productId,
+        url: image.url,
+        altText: image.altText,
+        sortOrder: index
+      }))
+    });
   }
 
   private clampPositiveInt(value: unknown, fallback: number) {

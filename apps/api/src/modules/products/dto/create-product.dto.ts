@@ -5,6 +5,11 @@ type IngredientInput = string | {
   imageUrl?: string | null;
 };
 
+type ProductImageInput = {
+  url?: string;
+  altText?: string | null;
+};
+
 export class CreateProductDto {
   @IsString()
   name: string;
@@ -32,6 +37,10 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  images?: ProductImageInput[];
 
   @IsOptional()
   @IsString()

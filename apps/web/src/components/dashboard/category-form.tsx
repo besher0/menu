@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ImagePlus, Loader2, Save } from "lucide-react";
 import { API_URL } from "@/lib/client-api";
-import { authHeaders } from "@/lib/session";
+import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 import type * as React from "react";
 
 type BackgroundType = "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
@@ -60,10 +60,27 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "success" | "error">(categoryId ? "loading" : "idle");
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
+  const [restaurantReady, setRestaurantReady] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    if (!categoryId) return;
+    const session = getBrowserSession();
+    const params = new URLSearchParams(window.location.search);
+    const queryRestaurantId = params.get("restaurantId");
+    const queryRestaurantSlug = params.get("restaurantSlug");
+    const queryRestaurantName = params.get("restaurantName") ?? undefined;
+
+    if (queryRestaurantId && queryRestaurantSlug) {
+      setStoredRestaurant({ id: queryRestaurantId, slug: queryRestaurantSlug, name: queryRestaurantName });
+    } else {
+      resolveStoredRestaurant(session);
+    }
+
+    setRestaurantReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!categoryId || !restaurantReady) return;
 
     async function loadCategory() {
       try {
@@ -106,7 +123,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
     }
 
     void loadCategory();
-  }, [categoryId]);
+  }, [categoryId, restaurantReady]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -115,6 +132,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
   async function uploadImage(event: ChangeEvent<HTMLInputElement>, target: "imageUrl" | "backgroundValue") {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!restaurantReady) return;
 
     setUploadStatus("uploading");
     setMessage("");
@@ -151,6 +169,10 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!restaurantReady) {
+      setMessage("يتم تجهيز سياق المطعم، حاول بعد لحظة.");
+      return;
+    }
     setStatus("saving");
     setMessage("");
 
@@ -207,7 +229,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
           <ArrowRight size={18} />
           رجوع للأقسام
         </Link>
-        <button className="settings-save" type="submit" disabled={status === "saving"}>
+        <button className="settings-save" type="submit" disabled={status === "saving" || !restaurantReady}>
           {status === "saving" ? <Loader2 className="spin" size={18} /> : <Save size={18} />}
           {categoryId ? "تعديل القسم" : "حفظ القسم"}
         </button>
@@ -272,7 +294,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
           <div className="form-grid two">
             <label className="field full">
               <span>صورة/أيقونة القسم</span>
-              <input accept="image/*" disabled={uploadStatus === "uploading"} type="file" onChange={(event) => void uploadImage(event, "imageUrl")} />
+              <input accept="image/*" disabled={uploadStatus === "uploading" || !restaurantReady} type="file" onChange={(event) => void uploadImage(event, "imageUrl")} />
               <input value={form.imageUrl} onChange={(event) => update("imageUrl", event.target.value)} placeholder="سيظهر الرابط بعد الرفع" />
             </label>
             <label className="field">
@@ -287,7 +309,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
             </label>
             <label className="field">
               <span>رفع صورة خلفية القسم</span>
-              <input accept="image/*" disabled={uploadStatus === "uploading"} type="file" onChange={(event) => void uploadImage(event, "backgroundValue")} />
+              <input accept="image/*" disabled={uploadStatus === "uploading" || !restaurantReady} type="file" onChange={(event) => void uploadImage(event, "backgroundValue")} />
             </label>
             <label className="field full">
               <span>رابط خلفية القسم</span>

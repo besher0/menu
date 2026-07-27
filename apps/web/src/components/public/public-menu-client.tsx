@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, Trash2, Utensils, Wheat, X } from "lucide-react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Star, Trash2, Truck, Utensils, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
@@ -596,7 +596,11 @@ export function PublicMenuClient({
         </div>
       ) : null}
       <header className="public-header">
-        {activeView === "menu" && menuNested ? (
+        {activeView === "cart" ? (
+          <button onClick={() => window.history.length > 1 ? window.history.back() : window.location.assign(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
+            <ChevronLeft size={22} />
+          </button>
+        ) : activeView === "menu" && menuNested ? (
           <button onClick={() => setMenuBackSignal((current) => current + 1)} aria-label="الرجوع">
             <ArrowLeft size={22} />
           </button>
@@ -609,7 +613,7 @@ export function PublicMenuClient({
             <Menu size={24} />
           </button>
         )}
-        <p>{t.chooseCategory}</p>
+        <p>{activeView === "cart" ? "تأكيد الطلب" : t.chooseCategory}</p>
         {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
       </header>
 
@@ -633,6 +637,7 @@ export function PublicMenuClient({
           addToCart={addToCart}
           setProductQuantity={setProductQuantity}
           getCartQuantity={getCartQuantity}
+          cartCount={cartCount}
           t={t}
           showPrices={showPrices}
         />
@@ -648,6 +653,7 @@ export function PublicMenuClient({
           cart={cart}
           updateCartItem={updateCartItem}
           removeCartItem={removeCartItem}
+          addToCart={addToCart}
           sendWhatsappOrder={sendWhatsappOrder}
           orderSubmitting={orderSubmitting}
           orderMessage={orderMessage}
@@ -656,7 +662,7 @@ export function PublicMenuClient({
         />
       )}
 
-      {cartCount > 0 && activeView !== "cart" ? (
+      {cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
         <Link href={`/m/${data.restaurant.slug}/cart`} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
           <ShoppingBag size={20} />
           <span>{t.viewCart}</span>
@@ -857,11 +863,15 @@ function HomeView({
         t={t}
         fillPlaceholders={false}
         showPrices={showPrices}
+        onAddToCart={addToCart}
       />
 
       <section className="new-grid">
         <div className="rail-head">
-          <h2>{t.newItems}</h2>
+          <h2>
+            <Star size={16} />
+            {t.newItems}
+          </h2>
           <Link href={`/m/${data.restaurant.slug}/menu`}>{t.viewAll}</Link>
         </div>
         <div>
@@ -1032,7 +1042,10 @@ function MenuView({
                 {!isAllCategory && category.description ? <small>{category.description}</small> : null}
                 {!isAllCategory ? <b>{productsCount} {t.itemCount}</b> : null}
               </div>
-              <ArrowLeft size={22} />
+              <svg className="category-banner-arrow" viewBox="0 0 38 24" aria-hidden="true">
+                <path d="M34 11 C24 8 15 9 6 14" />
+                <path d="M14 5 L6 14 L17 20" />
+              </svg>
             </button>
           );
         })}
@@ -1326,6 +1339,7 @@ function CartView({
   cart,
   updateCartItem,
   removeCartItem,
+  addToCart,
   sendWhatsappOrder,
   orderSubmitting,
   orderMessage,
@@ -1336,15 +1350,20 @@ function CartView({
   cart: CartItem[];
   updateCartItem: (slug: string, quantity: number) => void;
   removeCartItem: (slug: string) => void;
+  addToCart: (product: PublicProduct) => void;
   sendWhatsappOrder: () => void;
   orderSubmitting: boolean;
   orderMessage: string | null;
   t: PublicTranslations;
   showPrices: boolean;
 }) {
+  const [cartStep, setCartStep] = useState<"review" | "confirm">("review");
+  const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup");
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
+  const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
+  const related = data.products.filter((product) => !cartSlugs.has(product.slug)).slice(0, 8);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const deliveryFee = 0;
+  const deliveryFee = fulfillment === "delivery" ? 0 : 0;
   const total = subtotal + deliveryFee;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const orderNumber = useMemo(() => {
@@ -1352,48 +1371,121 @@ function CartView({
     return 300 + (hash % 700);
   }, [data.restaurant.slug]);
 
+  useEffect(() => {
+    function restoreReviewStep() {
+      setCartStep("review");
+    }
+
+    window.addEventListener("popstate", restoreReviewStep);
+    return () => window.removeEventListener("popstate", restoreReviewStep);
+  }, []);
+
+  function goToConfirmStep() {
+    window.history.pushState({ cartStep: "confirm" }, "", window.location.href);
+    setCartStep("confirm");
+  }
+
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
-      <h1>{t.checkoutTitle}</h1>
-      {cart.length ? (
-        <section className="cart-page-list">
-          {cart.map((item) => {
-            const product = productBySlug.get(item.slug);
-            const imageUrl = item.imageUrl ?? (product ? productImage(product) : "/assets/public/menu-products.png");
-            const description = item.description ?? product?.description ?? "";
+      <CheckoutSteps active={cartStep} />
 
-            return (
-              <article key={item.slug} className="cart-page-item">
-                <img src={imageUrl} alt={item.name} />
-                <div className="cart-page-copy">
-                  <b>{item.name}</b>
-                  {description ? <p>{description}</p> : null}
-                  {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
-                </div>
-                <QuantityControl
-                  className="cart-page-quantity"
-                  quantity={item.quantity}
-                  onDecrease={() => updateCartItem(item.slug, item.quantity - 1)}
-                  onIncrease={() => updateCartItem(item.slug, item.quantity + 1)}
-                  label={item.name}
-                />
-                <button
-                  type="button"
-                  className="cart-page-remove"
-                  onClick={() => removeCartItem(item.slug)}
-                  aria-label={`${t.removeItem} ${item.name}`}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </article>
-            );
-          })}
-        </section>
+      {cartStep === "review" ? (
+        <>
+          {cart.length ? (
+            <section className="cart-page-list">
+              {cart.map((item) => {
+                const product = productBySlug.get(item.slug);
+                const imageUrl = item.imageUrl ?? (product ? productImage(product) : "/assets/public/menu-products.png");
+                const description = item.description ?? product?.description ?? "";
+
+                return (
+                  <article key={item.slug} className="cart-page-item">
+                    <img src={imageUrl} alt={item.name} />
+                    <div className="cart-page-copy">
+                      <b>{item.name}</b>
+                      {description ? <p>{description}</p> : null}
+                      {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
+                    </div>
+                    <QuantityControl
+                      className="cart-page-quantity"
+                      quantity={item.quantity}
+                      onDecrease={() => updateCartItem(item.slug, item.quantity - 1)}
+                      onIncrease={() => updateCartItem(item.slug, item.quantity + 1)}
+                      label={item.name}
+                    />
+                    <button
+                      type="button"
+                      className="cart-page-remove"
+                      onClick={() => removeCartItem(item.slug)}
+                      aria-label={`${t.removeItem} ${item.name}`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </article>
+                );
+              })}
+            </section>
+          ) : (
+            <section className="cart-empty">
+              <ShoppingBag size={34} />
+              <b>{t.emptyCart}</b>
+              <Link href={`/m/${data.restaurant.slug}/menu`}>{t.menu}</Link>
+            </section>
+          )}
+
+          <ProductRail
+            title={t.youMayLike}
+            products={related}
+            restaurantSlug={data.restaurant.slug}
+            t={t}
+            fillPlaceholders={false}
+            showPrices={showPrices}
+            onAddToCart={addToCart}
+          />
+        </>
       ) : (
-        <section className="cart-empty">
-          <ShoppingBag size={34} />
-          <b>{t.emptyCart}</b>
-          <Link href={`/m/${data.restaurant.slug}/menu`}>{t.menu}</Link>
+        <section className="cart-confirm-form">
+          <div className="fulfillment-toggle">
+            <button type="button" className={fulfillment === "delivery" ? "active" : ""} onClick={() => setFulfillment("delivery")}>
+              <Truck size={18} />
+              توصيل دليفري
+            </button>
+            <button type="button" className={fulfillment === "pickup" ? "active" : ""} onClick={() => setFulfillment("pickup")}>
+              <ShoppingBag size={18} />
+              استلام من المطعم
+            </button>
+          </div>
+          {fulfillment === "delivery" ? (
+            <>
+              <label>
+                <span>المنطقة</span>
+                <input placeholder="حلب الجديدة" />
+              </label>
+              <label>
+                <span>قريب من</span>
+                <input placeholder="مشفى الشهباء" />
+              </label>
+              <label>
+                <span>جانب</span>
+                <input placeholder="صيدلية باسل" />
+              </label>
+              <label>
+                <span>ملاحظة للطلب</span>
+                <input placeholder="ملاحظة" />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>ملاحظة</span>
+                <input placeholder="ملاحظة" />
+              </label>
+              <label>
+                <span>وقت الاستلام</span>
+                <input placeholder="اسرع وقت" />
+              </label>
+            </>
+          )}
         </section>
       )}
 
@@ -1402,16 +1494,18 @@ function CartView({
           <span>{t.selectedItems} <b>{cartCount}</b></span>
           <span>{t.orderNumber}: {orderNumber}</span>
         </div>
-        <h2>{t.cartReview}</h2>
+        <h2>{cartStep === "review" ? t.finalTotal : t.cartReview}</h2>
         <dl>
           <div>
             <dt>{t.subtotal}</dt>
             <dd>{subtotal}{data.restaurant.currency ?? "ل.س"}</dd>
           </div>
-          <div>
-            <dt>{t.deliveryFee}</dt>
-            <dd>{deliveryFee}{data.restaurant.currency ?? "ل.س"}</dd>
-          </div>
+          {fulfillment === "delivery" ? (
+            <div>
+              <dt>{t.deliveryFee}</dt>
+              <dd>{deliveryFee}{data.restaurant.currency ?? "ل.س"}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>{t.finalTotal}</dt>
             <dd>{total}{data.restaurant.currency ?? "ل.س"}</dd>
@@ -1421,14 +1515,34 @@ function CartView({
         <button
           type="button"
           className="cart-whatsapp"
-          onClick={sendWhatsappOrder}
+          onClick={cartStep === "review" ? goToConfirmStep : sendWhatsappOrder}
           disabled={!cart.length || orderSubmitting}
         >
           {orderSubmitting ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
-          {orderSubmitting ? t.preparingOrder : t.sendViaWhatsapp}
+          {orderSubmitting ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
         </button>
       </section>
     </main>
+  );
+}
+
+function CheckoutSteps({ active }: { active: "review" | "confirm" }) {
+  const steps = [
+    { number: 1, label: "إنشاء طلب" },
+    { number: 2, label: "تفقد السلة" },
+    { number: 3, label: "التحقق" }
+  ];
+  const activeNumber = active === "review" ? 2 : 3;
+
+  return (
+    <section className="checkout-steps" aria-label="خطوات الطلب">
+      {steps.map((step) => (
+        <div key={step.number} className={step.number <= activeNumber ? "active" : ""}>
+          <b>{step.number}</b>
+          <span>{step.label}</span>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -1438,6 +1552,7 @@ function ProductView({
   addToCart,
   setProductQuantity,
   getCartQuantity,
+  cartCount,
   t,
   showPrices
 }: {
@@ -1446,6 +1561,7 @@ function ProductView({
   addToCart: (product: PublicProduct) => void;
   setProductQuantity: (product: PublicProduct, quantity: number) => void;
   getCartQuantity: (slug: string) => number;
+  cartCount: number;
   t: PublicTranslations;
   showPrices: boolean;
 }) {
@@ -1508,6 +1624,12 @@ function ProductView({
     }
   }
 
+  function moveImage(direction: -1 | 1) {
+    if (gallery.length <= 1) return;
+    setMediaMode("image");
+    setActiveImageIndex((current) => (current + direction + gallery.length) % gallery.length);
+  }
+
   return (
     <main className="product-detail">
       <div className="product-photo">
@@ -1568,6 +1690,16 @@ function ProductView({
         <Link href={`/m/${data.restaurant.slug}/menu`} aria-label="الرجوع إلى القائمة">
           <ChevronRight size={18} />
         </Link>
+        {mediaMode === "image" && gallery.length > 1 ? (
+          <>
+            <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label="Previous image">
+              <ChevronRight size={18} />
+            </button>
+            <button type="button" className="product-gallery-arrow product-gallery-next" onClick={() => moveImage(1)} aria-label="Next image">
+              <ChevronLeft size={18} />
+            </button>
+          </>
+        ) : null}
         {mediaMode === "image" ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
       </div>
       {gallery.length > 1 ? (
@@ -1667,7 +1799,8 @@ function ProductView({
         />
         <Link href={`/m/${data.restaurant.slug}/cart`} className="product-cart-link">
           <ShoppingBag size={20} />
-          {t.viewCart}
+          <span>{t.viewCart}</span>
+          <b>{cartCount}</b>
         </Link>
       </div>
     </main>
@@ -1681,7 +1814,8 @@ function ProductRail({
   t,
   badgeLabel,
   fillPlaceholders = true,
-  showPrices
+  showPrices,
+  onAddToCart
 }: {
   title: string;
   products: PublicProduct[];
@@ -1690,6 +1824,7 @@ function ProductRail({
   badgeLabel?: string;
   fillPlaceholders?: boolean;
   showPrices: boolean;
+  onAddToCart?: (product: PublicProduct) => void;
 }) {
   if (!products.length && !fillPlaceholders) {
     return null;
@@ -1710,13 +1845,18 @@ function ProductRail({
         {railSlots.map((_, index) => {
           const product = products[index];
           return product ? (
-          <article key={product.slug} className="rail-product">
+          <article key={product.slug} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
             <Link href={`/m/${restaurantSlug}/product/${product.slug}`}>
               <img src={productImage(product)} alt={product.name} />
             </Link>
             <b>{product.name}</b>
             {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" /> : null}
+            {onAddToCart ? (
+              <button type="button" onClick={() => onAddToCart(product)} aria-label={`${t.addToCart} ${product.name}`}>
+                <ShoppingCart size={14} />
+              </button>
+            ) : null}
           </article>
           ) : (
             <article key={`rail-placeholder-${index}`} className="rail-product rail-product-placeholder" aria-hidden="true" />
