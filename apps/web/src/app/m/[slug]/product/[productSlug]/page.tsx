@@ -2,6 +2,23 @@ import type { Metadata } from "next";
 import { getPublicMenu } from "@/lib/api";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
+function normalizeRouteKey(value?: string | null) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value).trim().toLowerCase().replace(/\s+/g, "-");
+  } catch {
+    return value.trim().toLowerCase().replace(/\s+/g, "-");
+  }
+}
+
+function productMatchesRoute(product: { id?: string; slug: string }, value: string) {
+  const decoded = normalizeRouteKey(value);
+  return product.id === value
+    || product.slug === value
+    || normalizeRouteKey(product.id) === decoded
+    || normalizeRouteKey(product.slug) === decoded;
+}
+
 export async function generateMetadata({
   params
 }: {
@@ -9,7 +26,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug, productSlug } = await params;
   const data = await getPublicMenu(slug, { track: false });
-  const product = data.products.find((item) => item.slug === productSlug);
+  const product = data.products.find((item) => productMatchesRoute(item, productSlug));
   const title = product ? `${product.name} | ${data.restaurant.name}` : `${data.restaurant.name} | المنتج`;
   const description = product?.description ?? `تفاصيل المنتج من ${data.restaurant.name}`;
   const image = product?.imageUrl ?? product?.images?.[0]?.url ?? data.restaurant.heroImageUrl ?? undefined;
@@ -23,7 +40,7 @@ export async function generateMetadata({
       images: image ? [image] : undefined
     },
     alternates: {
-      canonical: `/m/${slug}/product/${productSlug}`
+      canonical: `/m/${slug}/product/${product?.id ?? productSlug}`
     }
   };
 }

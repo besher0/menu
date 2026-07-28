@@ -86,12 +86,14 @@ export class ProductsService {
       });
     }
 
+    const productSlug = await this.uniqueProductSlug(restaurantId, dto.slug || dto.name);
+
     const product = await this.prisma.product.create({
       data: {
         restaurantId,
         categoryId: dto.categoryId,
         name: dto.name,
-        slug: dto.slug ? slugify(dto.slug) : slugify(dto.name),
+        slug: productSlug,
         description: dto.description,
         basePrice: dto.basePrice,
         currency: dto.currency ?? "ل.س",
@@ -170,12 +172,14 @@ export class ProductsService {
       throw new NotFoundException("Product not found");
     }
 
+    const productSlug = dto.slug ? await this.uniqueProductSlug(restaurantId, dto.slug, id) : existing.slug;
+
     const product = await this.prisma.product.update({
       where: { id },
       data: {
         categoryId: dto.categoryId || null,
         name: dto.name,
-        slug: dto.slug ? slugify(dto.slug) : existing.slug,
+        slug: productSlug,
         description: dto.description,
         basePrice: dto.basePrice,
         currency: dto.currency ?? existing.currency,
@@ -364,6 +368,26 @@ export class ProductsService {
         seen.add(image.url);
         return true;
       });
+  }
+
+  private async uniqueProductSlug(restaurantId: string, value: string, excludeId?: string) {
+    const base = slugify(value) || "product";
+    let candidate = base;
+    let suffix = 2;
+
+    while (await this.prisma.product.findFirst({
+      where: {
+        restaurantId,
+        slug: candidate,
+        ...(excludeId ? { id: { not: excludeId } } : {})
+      },
+      select: { id: true }
+    })) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
   }
 
   private async syncProductImages(productId: string, dto: CreateProductDto) {

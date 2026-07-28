@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createElement, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Star, Trash2, Truck, Utensils, Wheat, X } from "lucide-react";
 import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
@@ -220,6 +220,32 @@ function moodMenuHref(restaurantSlug: string, label: string) {
   return `/m/${restaurantSlug}/menu?mood=${encodeURIComponent(label)}`;
 }
 
+function collectionMenuHref(restaurantSlug: string, collection: "popular" | "new") {
+  return `/m/${restaurantSlug}/menu?collection=${collection}`;
+}
+
+function productHref(restaurantSlug: string, product: PublicProduct) {
+  return `/m/${restaurantSlug}/product/${encodeURIComponent(product.id || product.slug)}`;
+}
+
+function isProductRouteMatch(product: PublicProduct, value?: string) {
+  if (!value) return false;
+  const decoded = normalizeMenuKey(value);
+  return product.id === value
+    || product.slug === value
+    || normalizeMenuKey(product.id) === decoded
+    || normalizeMenuKey(product.slug) === decoded;
+}
+
+function normalizeMenuKey(value?: string | null) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value).trim().toLowerCase().replace(/\s+/g, "-");
+  } catch {
+    return value.trim().toLowerCase().replace(/\s+/g, "-");
+  }
+}
+
 function visualBackgroundStyle(input: Pick<PublicCategory, "backgroundType" | "backgroundValue" | "backgroundCss" | "color">): React.CSSProperties {
   const value = input.backgroundValue ?? input.color ?? "#e51f2a";
 
@@ -365,7 +391,9 @@ export function PublicMenuClient({
   const languageStorageKey = `language:${data.restaurant.slug}`;
   const splashStorageKey = `splash:${data.restaurant.slug}`;
   const products = data.products;
-  const activeProduct = products.find((product) => product.slug === productSlug) ?? products[0];
+  const activeProduct = productSlug
+    ? products.find((product) => isProductRouteMatch(product, productSlug))
+    : products[0];
   const t = translations[language];
   const showPrices = data.restaurant.showPrices ?? true;
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
@@ -580,7 +608,7 @@ export function PublicMenuClient({
   }
 
   return (
-    <div className={`public-screen ${showPrices ? "" : "prices-hidden"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`} dir={language === "ar" ? "rtl" : "ltr"} style={cssVars(data.theme)}>
+    <div className={`public-screen view-${activeView} ${showPrices ? "" : "prices-hidden"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`} dir={language === "ar" ? "rtl" : "ltr"} style={cssVars(data.theme)}>
       {splashVisible ? (
         <div
           className="public-splash"
@@ -662,7 +690,7 @@ export function PublicMenuClient({
 
       {cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
         <Link href={`/m/${data.restaurant.slug}/cart`} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
-          <ShoppingBag size={20} />
+          <ShoppingCart size={20} />
           <span>{t.viewCart}</span>
           <b>{cartCount}</b>
         </Link>
@@ -862,6 +890,7 @@ function HomeView({
         fillPlaceholders={false}
         showPrices={showPrices}
         onAddToCart={addToCart}
+        viewAllHref={collectionMenuHref(data.restaurant.slug, "popular")}
       />
 
       <section className="new-grid">
@@ -870,13 +899,13 @@ function HomeView({
             <Star size={16} />
             {t.newItems}
           </h2>
-          <Link href={`/m/${data.restaurant.slug}/menu`}>{t.viewAll}</Link>
+          <Link href={collectionMenuHref(data.restaurant.slug, "new")}>{t.viewAll}</Link>
         </div>
         <div>
           {featuredSlots.map((_, index) => {
             const product = featured[index];
             return product ? (
-            <Link key={product.slug} href={`/m/${data.restaurant.slug}/product/${product.slug}`} className="wide-product">
+            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product)} className="wide-product">
               <img src={productImage(product)} alt={product.name} />
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
@@ -913,6 +942,9 @@ function MenuView({
 }) {
   const searchParams = useSearchParams();
   const selectedMood = searchParams.get("mood")?.trim() || "";
+  const selectedCollection = searchParams.get("collection") === "popular" || searchParams.get("collection") === "new"
+    ? searchParams.get("collection")
+    : "";
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const categoryGridSection = allPages
     .flatMap((page) => page.sections ?? [])
@@ -920,18 +952,37 @@ function MenuView({
   const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
   const showCategoryLanding = categoryControlsEnabled && categoryGridSection?.settings?.showLandingCategories !== false;
   const showNestedCategoryStrip = categoryControlsEnabled && categoryGridSection?.settings?.showNestedCategoryStrip !== false;
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood || !showCategoryLanding ? "all" : "");
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood || selectedCollection || !showCategoryLanding ? "all" : "");
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
+  const spotlightTouchStartX = useRef<number | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("list");
   const lastMenuBackSignal = useRef(menuBackSignal);
-  const moodProducts = selectedMood
-    ? data.products.filter((product) => product.moodKey === selectedMood)
-    : data.products;
-  const visibleProducts = selectedMood && moodProducts.length ? moodProducts : data.products;
-  const categoryProductsSource = selectedMood ? data.products : visibleProducts;
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
+  const selectedMoodKey = normalizeMenuKey(selectedMood);
+  const moodProducts = selectedMood
+    ? data.products.filter((product) => {
+      const productCategorySlug = product.category?.slug ?? product.categorySlug ?? "";
+      const category = regularCategories.find((item) => item.slug === productCategorySlug);
+      return [
+        product.moodKey,
+        productCategorySlug,
+        product.category?.name,
+        category?.slug,
+        category?.name
+      ].some((value) => normalizeMenuKey(value) === selectedMoodKey);
+    })
+    : [];
+  const collectionProducts = selectedCollection === "popular"
+    ? data.products.filter(isPopular)
+    : selectedCollection === "new"
+      ? data.products.filter(isFeatured).length ? data.products.filter(isFeatured) : data.products.filter(isNew)
+      : [];
+  const contextTitle = selectedMood || (selectedCollection === "popular" ? t.mostPopular : selectedCollection === "new" ? t.newItems : "");
+  const contextProducts = selectedMood ? moodProducts : collectionProducts;
+  const visibleProducts = data.products;
+  const categoryProductsSource = data.products;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
@@ -945,10 +996,10 @@ function MenuView({
     : [];
 
   useEffect(() => {
-    if (selectedMood) {
+    if (selectedMood || selectedCollection) {
       setSelectedCategorySlug("all");
     }
-  }, [selectedMood]);
+  }, [selectedCollection, selectedMood]);
 
   useEffect(() => {
     if (!showCategoryLanding && !selectedCategorySlug) {
@@ -971,13 +1022,13 @@ function MenuView({
       return;
     }
 
-    if (selectedMood) {
+    if (selectedMood || selectedCollection) {
       window.location.href = `/m/${data.restaurant.slug}`;
       return;
     }
 
     setSelectedCategorySlug("");
-  }, [data.restaurant.slug, menuBackSignal, selectedCategorySlug, selectedMood]);
+  }, [data.restaurant.slug, menuBackSignal, selectedCategorySlug, selectedCollection, selectedMood]);
 
   useEffect(() => {
     setActiveSpotlightIndex(0);
@@ -1005,11 +1056,27 @@ function MenuView({
     setActiveSpotlightIndex((current) => (current + direction + activeProducts.length) % activeProducts.length);
   }
 
+  function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
+    spotlightTouchStartX.current = event.touches[0]?.clientX ?? null;
+  }
+
+  function handleSpotlightTouchEnd(event: TouchEvent<HTMLElement>) {
+    if (spotlightTouchStartX.current === null) return;
+    const endX = event.changedTouches[0]?.clientX ?? spotlightTouchStartX.current;
+    const deltaX = endX - spotlightTouchStartX.current;
+    spotlightTouchStartX.current = null;
+    if (Math.abs(deltaX) < 40) return;
+    moveSpotlight(deltaX > 0 ? -1 : 1);
+  }
+
   function renderCategoryLanding() {
     return (
       <section className="category-banner-list category-landing-list" id="menu-categories">
         {data.categories.map((category) => {
           const position = parseIconPosition(category.imagePosition);
+          const productsCount = category.slug === "all"
+            ? visibleProducts.length
+            : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
           return (
             <button
               type="button"
@@ -1032,6 +1099,7 @@ function MenuView({
               ) : null}
               <div className="category-banner-copy">
                 <span>{category.name}</span>
+                <b>{productsCount} {t.itemCount}</b>
               </div>
               <svg className="category-banner-arrow" viewBox="0 0 38 24" aria-hidden="true">
                 <path d="M34 11 C24 8 15 9 6 14" />
@@ -1061,13 +1129,13 @@ function MenuView({
     );
 
     return (
-      <article key={product.slug} className={productClassName}>
+      <article key={`${product.id}-${product.slug}`} className={productClassName}>
         {productListLayout === "double" ? (
           <button type="button" className="menu-product-open" onClick={() => setSelectedProduct(product)}>
             {productContent}
           </button>
         ) : (
-          <Link href={`/m/${data.restaurant.slug}/product/${product.slug}`} className="menu-product-open">
+          <Link href={productHref(data.restaurant.slug, product)} className="menu-product-open">
             {productContent}
           </Link>
         )}
@@ -1088,6 +1156,21 @@ function MenuView({
     <main className="public-content">
       {!selectedCategorySlug && showCategoryLanding ? renderCategoryLanding() : (
         <>
+          {contextTitle && contextProducts.length ? (
+            <section className="menu-context-products">
+              <ProductRail
+                title={contextTitle}
+                products={contextProducts}
+                restaurantSlug={data.restaurant.slug}
+                t={t}
+                fillPlaceholders={false}
+                showPrices={showPrices}
+                showViewAll={false}
+                onAddToCart={addToCart}
+              />
+            </section>
+          ) : null}
+
           {showNestedCategoryStrip ? <section className="menu-category-strip" id="menu-categories">
             {data.categories.map((category) => {
               const isAllCategory = category.slug === "all";
@@ -1136,13 +1219,17 @@ function MenuView({
 
           {menuDisplayMode === "large" && spotlightProduct ? (
             <section className="category-spotlight" id="menu-products-start">
-              <article className="category-spotlight-card">
+              <article
+                className="category-spotlight-card"
+                onTouchStart={handleSpotlightTouchStart}
+                onTouchEnd={handleSpotlightTouchEnd}
+              >
                 <button type="button" className="category-spotlight-open" onClick={() => setSelectedProduct(spotlightProduct)}>
                   <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
                     {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
-                    <p>{spotlightProduct.description}</p>
+                    <p>{productIngredients(spotlightProduct).map((ingredient) => ingredient.name).filter(Boolean).join("، ") || spotlightProduct.description}</p>
                   </div>
                 </button>
                 <div className="category-spotlight-controls">
@@ -1350,6 +1437,7 @@ function CartView({
 }) {
   const [cartStep, setCartStep] = useState<"review" | "confirm">("review");
   const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
   const related = data.products.filter((product) => !cartSlugs.has(product.slug)).slice(0, 8);
@@ -1374,6 +1462,26 @@ function CartView({
   function goToConfirmStep() {
     window.history.pushState({ cartStep: "confirm" }, "", window.location.href);
     setCartStep("confirm");
+  }
+
+  function handleCheckoutAction() {
+    if (cartStep === "review") {
+      goToConfirmStep();
+      return;
+    }
+
+    if (fulfillment === "delivery") {
+      const requiredInputs = Array.from(document.querySelectorAll<HTMLInputElement>(".cart-confirm-form input")).slice(0, 3);
+      const firstEmpty = requiredInputs.find((input) => !input.value.trim());
+      if (firstEmpty) {
+        setCheckoutError("يرجى تعبئة المنطقة وقريب من وجانب قبل إرسال الطلب.");
+        firstEmpty.focus();
+        return;
+      }
+    }
+
+    setCheckoutError(null);
+    sendWhatsappOrder();
   }
 
   return (
@@ -1436,7 +1544,7 @@ function CartView({
           />
         </>
       ) : (
-        <section className="cart-confirm-form">
+        <section className={`cart-confirm-form ${fulfillment === "pickup" ? "pickup-mode" : "delivery-mode"}`}>
           <div className="fulfillment-toggle">
             <button type="button" className={fulfillment === "delivery" ? "active" : ""} onClick={() => setFulfillment("delivery")}>
               <Truck size={18} />
@@ -1447,7 +1555,7 @@ function CartView({
               استلام من المطعم
             </button>
           </div>
-          {fulfillment === "delivery" ? (
+          {cartStep === "confirm" && fulfillment === "delivery" ? (
             <>
               <label>
                 <span>المنطقة</span>
@@ -1486,28 +1594,28 @@ function CartView({
           <span>{t.selectedItems} <b>{cartCount}</b></span>
           <span>{t.orderNumber}: {orderNumber}</span>
         </div>
-        <h2>{t.finalTotal}</h2>
         <dl>
           <div>
             <dt>{t.subtotal}</dt>
             <dd>{subtotal}{data.restaurant.currency ?? "ل.س"}</dd>
           </div>
           {fulfillment === "delivery" ? (
-            <div>
+          <div>
               <dt>{t.deliveryFee}</dt>
               <dd>{deliveryFee}{data.restaurant.currency ?? "ل.س"}</dd>
-            </div>
+          </div>
           ) : null}
           <div>
-            <dt>{t.finalTotal}</dt>
+            <dt />
             <dd>{total}{data.restaurant.currency ?? "ل.س"}</dd>
           </div>
         </dl>
+        {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
         <button
           type="button"
           className="cart-whatsapp"
-          onClick={cartStep === "review" ? goToConfirmStep : sendWhatsappOrder}
+          onClick={handleCheckoutAction}
           disabled={!cart.length || orderSubmitting}
         >
           {orderSubmitting ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
@@ -1566,6 +1674,7 @@ function ProductView({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [mediaMode, setMediaMode] = useState<ProductMediaMode>("image");
   const activeImage = gallery[activeImageIndex] ?? gallery[0];
+  const touchStartX = useRef<number | null>(null);
   const quantity = getCartQuantity(product.slug);
 
   useEffect(() => {
@@ -1622,6 +1731,19 @@ function ProductView({
     setActiveImageIndex((current) => (current + direction + gallery.length) % gallery.length);
   }
 
+  function handleGalleryTouchStart(event: TouchEvent<HTMLDivElement>) {
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  }
+
+  function handleGalleryTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    if (touchStartX.current === null || mediaMode !== "image") return;
+    const endX = event.changedTouches[0]?.clientX ?? touchStartX.current;
+    const deltaX = endX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(deltaX) < 40) return;
+    moveImage(deltaX > 0 ? -1 : 1);
+  }
+
   function openAr() {
     setMediaMode("3d");
     void trackMediaOpen();
@@ -1633,7 +1755,7 @@ function ProductView({
 
   return (
     <main className="product-detail">
-      <div className="product-photo">
+      <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}>
         <div className="product-media-tabs" role="group" aria-label={t.photos}>
           <button
             type="button"
@@ -1700,33 +1822,15 @@ function ProductView({
         {mediaMode === "image" && gallery.length > 1 ? (
           <>
             <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label="Previous image">
-              <ChevronRight size={18} />
+              <ChevronLeft size={18} />
             </button>
             <button type="button" className="product-gallery-arrow product-gallery-next" onClick={() => moveImage(1)} aria-label="Next image">
-              <ChevronLeft size={18} />
+              <ChevronRight size={18} />
             </button>
           </>
         ) : null}
         {mediaMode === "image" ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
       </div>
-      {gallery.length > 1 ? (
-        <div className="product-thumbnails" aria-label={t.photos}>
-          {gallery.map((image, index) => (
-            <button
-              key={`${image.url}-${index}`}
-              type="button"
-              className={mediaMode === "image" && index === activeImageIndex ? "active" : ""}
-              onClick={() => {
-                setActiveImageIndex(index);
-                setMediaMode("image");
-              }}
-              aria-label={`${t.photo} ${index + 1}`}
-            >
-              <img src={image.url} alt="" aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-      ) : null}
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
@@ -1796,6 +1900,7 @@ function ProductView({
           fillPlaceholders={false}
           showPrices={showPrices}
           showViewAll={false}
+          onAddToCart={addToCart}
         />
       </section>
       <div className="product-bottom-cart">
@@ -1824,7 +1929,8 @@ function ProductRail({
   fillPlaceholders = true,
   showPrices,
   onAddToCart,
-  showViewAll = true
+  showViewAll = true,
+  viewAllHref
 }: {
   title: string;
   products: PublicProduct[];
@@ -1835,6 +1941,7 @@ function ProductRail({
   showPrices: boolean;
   onAddToCart?: (product: PublicProduct) => void;
   showViewAll?: boolean;
+  viewAllHref?: string;
 }) {
   if (!products.length && !fillPlaceholders) {
     return null;
@@ -1849,15 +1956,15 @@ function ProductRail({
           <Flame size={18} />
           {title}
         </h2>
-        {showViewAll ? <Link href={`/m/${restaurantSlug}/menu`}>{t.viewAll}</Link> : null}
+        {showViewAll ? <Link href={viewAllHref ?? `/m/${restaurantSlug}/menu`}>{t.viewAll}</Link> : null}
       </div>
       <div className="rail-scroll">
         {railSlots.map((_, index) => {
           const product = products[index];
           return product ? (
-          <article key={product.slug} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
+          <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
-            <Link href={`/m/${restaurantSlug}/product/${product.slug}`}>
+            <Link href={productHref(restaurantSlug, product)}>
               <img src={productImage(product)} alt={product.name} />
             </Link>
             <b>{product.name}</b>
