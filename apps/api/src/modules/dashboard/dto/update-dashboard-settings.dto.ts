@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 export class DashboardOpeningHourDto {
@@ -16,6 +16,38 @@ export class DashboardOpeningHourDto {
   @IsOptional()
   @IsBoolean()
   isClosed?: boolean;
+}
+
+export class SplashScreenSettingsDto {
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsIn(["COLOR", "IMAGE"])
+  backgroundType?: "COLOR" | "IMAGE";
+
+  @IsOptional()
+  @IsString()
+  backgroundColor?: string;
+
+  @IsOptional()
+  @IsString()
+  backgroundImageUrl?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  logoX?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  logoY?: number;
 }
 
 export class UpdateDashboardSettingsDto {
@@ -66,6 +98,11 @@ export class UpdateDashboardSettingsDto {
   @IsOptional()
   @IsBoolean()
   showPrices?: boolean;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SplashScreenSettingsDto)
+  splashScreen?: SplashScreenSettingsDto;
 
   @IsOptional()
   @IsArray()

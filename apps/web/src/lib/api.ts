@@ -74,6 +74,14 @@ export type PublicMenuData = {
     description?: string | null;
     logoUrl?: string | null;
     heroImageUrl?: string | null;
+    splashScreen?: {
+      logoUrl?: string | null;
+      backgroundType: "COLOR" | "IMAGE";
+      backgroundColor?: string | null;
+      backgroundImageUrl?: string | null;
+      logoX: number;
+      logoY: number;
+    };
     currency?: string | null;
     showPrices?: boolean;
     branches?: Array<{

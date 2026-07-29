@@ -324,6 +324,12 @@ export class PublicMenuService {
       phone: dashboardSettings.phone ?? null,
       email: dashboardSettings.email ?? null,
       showPrices: dashboardSettings.showPrices ?? true,
+      splashScreen: this.serializeSplashScreenSettings(
+        dashboardSettings.splashScreen,
+        restaurant.logoUrl,
+        restaurant.heroImageUrl,
+        restaurant.themeSettings?.settings
+      ),
       currency: restaurant.currency,
       branches: restaurant.branches.map((branch: any) => ({
         id: branch.id,
@@ -418,6 +424,36 @@ export class PublicMenuService {
     return settings && typeof settings === "object" && !Array.isArray(settings) && settings.dashboardSettings
       ? settings.dashboardSettings
       : {};
+  }
+
+  private serializeSplashScreenSettings(settings: unknown, restaurantLogoUrl?: string | null, heroImageUrl?: string | null, themeSettings?: any) {
+    const splash = settings && typeof settings === "object" && !Array.isArray(settings) ? settings as Record<string, any> : {};
+    const logoUrl = typeof splash.logoUrl === "string" && splash.logoUrl ? splash.logoUrl : restaurantLogoUrl;
+    const configuredBackgroundType = splash.backgroundType === "COLOR" || splash.backgroundType === "IMAGE" ? splash.backgroundType : null;
+    const configuredImageUrl = typeof splash.backgroundImageUrl === "string" && splash.backgroundImageUrl ? splash.backgroundImageUrl : null;
+    const fallbackImageUrl = heroImageUrl || null;
+    const effectiveImageUrl = configuredBackgroundType === "IMAGE" ? configuredImageUrl ?? fallbackImageUrl : configuredBackgroundType ? null : configuredImageUrl ?? fallbackImageUrl;
+    const backgroundType = effectiveImageUrl ? "IMAGE" : "COLOR";
+    const themePrimary = themeSettings && typeof themeSettings === "object" && !Array.isArray(themeSettings)
+      ? themeSettings.colors?.primary
+      : null;
+
+    return {
+      logoUrl: this.publicAssetUrl(logoUrl),
+      backgroundType,
+      backgroundColor: typeof splash.backgroundColor === "string" && splash.backgroundColor ? splash.backgroundColor : themePrimary ?? "#e51f2a",
+      backgroundImageUrl: this.publicAssetUrl(effectiveImageUrl),
+      logoX: this.clampPercent(splash.logoX, 50),
+      logoY: this.clampPercent(splash.logoY, 50)
+    };
+  }
+
+  private clampPercent(value: unknown, fallback: number) {
+    const parsed = Number(value ?? fallback);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.min(100, Math.max(0, parsed));
   }
 
   private async ensureAllCategory(restaurantId: string) {

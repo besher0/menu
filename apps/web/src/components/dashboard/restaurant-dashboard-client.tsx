@@ -90,6 +90,14 @@ type Banner = {
 };
 
 type OpeningHour = { day: number; opensAt: string; closesAt: string; isClosed: boolean };
+type SplashScreenSettings = {
+  logoUrl?: string | null;
+  backgroundType: "COLOR" | "IMAGE";
+  backgroundColor: string;
+  backgroundImageUrl?: string | null;
+  logoX: number;
+  logoY: number;
+};
 type DashboardSettings = {
   restaurant: {
     name: string;
@@ -104,12 +112,21 @@ type DashboardSettings = {
     logoUrl?: string | null;
     currency: string;
     showPrices: boolean;
+    splashScreen: SplashScreenSettings;
   };
   branch: { id: string; name: string; openingHours: OpeningHour[] } | null;
 };
 
 const days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const fallbackBanner = "/assets/public/menu-home.png";
+const defaultSplashScreenSettings: SplashScreenSettings = {
+  logoUrl: "",
+  backgroundType: "COLOR",
+  backgroundColor: "#e51f2a",
+  backgroundImageUrl: "",
+  logoX: 50,
+  logoY: 50
+};
 const texturedBackground =
   "radial-gradient(circle at 18% 20%, rgba(255,255,255,.18), transparent 18%), linear-gradient(135deg, #b91c12, #e53322 58%, #7f120b)";
 
@@ -657,6 +674,7 @@ function SettingsForm() {
   const [status, setStatus] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
   const form = settings?.restaurant;
+  const splash = form?.splashScreen ?? defaultSplashScreenSettings;
   const hours = settings?.branch?.openingHours ?? [];
 
   useEffect(() => {
@@ -675,6 +693,27 @@ function SettingsForm() {
 
   function updateField<K extends keyof DashboardSettings["restaurant"]>(key: K, value: DashboardSettings["restaurant"][K]) {
     setSettings((current) => current ? { ...current, restaurant: { ...current.restaurant, [key]: value } } : current);
+  }
+
+  function updateSplash(patch: Partial<SplashScreenSettings>) {
+    setSettings((current) => current
+      ? {
+          ...current,
+          restaurant: {
+            ...current.restaurant,
+            splashScreen: {
+              ...defaultSplashScreenSettings,
+              ...current.restaurant.splashScreen,
+              ...patch
+            }
+          }
+        }
+      : current);
+  }
+
+  function updateSplashPercent(key: "logoX" | "logoY", value: string) {
+    const parsed = Number(value);
+    updateSplash({ [key]: Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 50 });
   }
 
   function updateHour(day: number, key: keyof OpeningHour, value: string | boolean) {
@@ -704,6 +743,25 @@ function SettingsForm() {
       setMessage("تم رفع الشعار. اضغط حفظ التغييرات لتثبيته.");
     } else {
       setMessage(payload?.message ?? "تعذر رفع الشعار.");
+    }
+    event.target.value = "";
+  }
+
+  async function uploadSplashAsset(event: ChangeEvent<HTMLInputElement>, key: "logoUrl" | "backgroundImageUrl") {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const body = new FormData();
+    body.append("file", file);
+    body.append("type", "IMAGE");
+    body.append("altText", form?.name ?? file.name);
+    const response = await fetch(`${API_URL}/dashboard/media/upload`, { method: "POST", headers: authHeaders(), body });
+    const payload = await response.json().catch(() => null);
+    if (response.ok) {
+      const url = payload?.data?.url ?? payload?.url ?? "";
+      updateSplash(key === "backgroundImageUrl" ? { backgroundImageUrl: url, backgroundType: "IMAGE" } : { logoUrl: url });
+      setMessage("تم رفع صورة السبلاش. اضغط حفظ التغييرات لتثبيتها.");
+    } else {
+      setMessage(payload?.message ?? "تعذر رفع صورة السبلاش.");
     }
     event.target.value = "";
   }
@@ -759,6 +817,59 @@ function SettingsForm() {
           </div>
           <Field label="نبذة عن المطعم" value={form.description ?? ""} textarea onChange={(value) => updateField("description", value)} />
         </article>
+      </section>
+      <section className="settings-card splash-settings-card">
+        <h2>سبلاش سكرين</h2>
+        <div className="splash-settings-layout">
+          <div
+            className="splash-settings-preview"
+            style={{
+              "--admin-splash-bg-color": splash.backgroundColor,
+              "--admin-splash-bg-image": splash.backgroundType === "IMAGE" && splash.backgroundImageUrl ? `url(${dashboardAssetUrl(splash.backgroundImageUrl)})` : "none",
+              "--admin-splash-logo-x": `${splash.logoX}%`,
+              "--admin-splash-logo-y": `${splash.logoY}%`
+            } as React.CSSProperties}
+          >
+            {splash.logoUrl || form.logoUrl ? (
+              <img src={dashboardAssetUrl(splash.logoUrl || form.logoUrl)} alt="Splash logo preview" />
+            ) : (
+              <ImagePlus size={42} />
+            )}
+          </div>
+          <div className="form-grid two">
+            <label className="field full">
+              <span>لوغو السبلاش</span>
+              <input accept="image/*" type="file" onChange={(event) => void uploadSplashAsset(event, "logoUrl")} />
+              <input value={splash.logoUrl ?? ""} onChange={(event) => updateSplash({ logoUrl: event.target.value })} placeholder="يستخدم لوغو المطعم إذا تركته فارغاً" />
+            </label>
+            <label className="field">
+              <span>نوع الخلفية</span>
+              <select value={splash.backgroundType} onChange={(event) => updateSplash({ backgroundType: event.target.value as SplashScreenSettings["backgroundType"] })}>
+                <option value="COLOR">لون</option>
+                <option value="IMAGE">صورة</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>لون الخلفية</span>
+              <input type="color" value={splash.backgroundColor} onChange={(event) => updateSplash({ backgroundColor: event.target.value, backgroundType: "COLOR" })} />
+            </label>
+            <label className="field full">
+              <span>صورة الخلفية</span>
+              <input accept="image/*" type="file" onChange={(event) => void uploadSplashAsset(event, "backgroundImageUrl")} />
+              <input value={splash.backgroundImageUrl ?? ""} onChange={(event) => updateSplash({ backgroundImageUrl: event.target.value })} placeholder="ارفع صورة أو الصق رابط الصورة" />
+            </label>
+            <label className="field range-field">
+              <span>X: {Math.round(splash.logoX)}%</span>
+              <input min="0" max="100" type="range" value={splash.logoX} onChange={(event) => updateSplashPercent("logoX", event.target.value)} />
+              <input min="0" max="100" type="number" value={splash.logoX} onChange={(event) => updateSplashPercent("logoX", event.target.value)} />
+            </label>
+            <label className="field range-field">
+              <span>Y: {Math.round(splash.logoY)}%</span>
+              <input min="0" max="100" type="range" value={splash.logoY} onChange={(event) => updateSplashPercent("logoY", event.target.value)} />
+              <input min="0" max="100" type="number" value={splash.logoY} onChange={(event) => updateSplashPercent("logoY", event.target.value)} />
+            </label>
+          </div>
+        </div>
       </section>
       <section className="settings-card">
         <h2>معلومات تواصل</h2>

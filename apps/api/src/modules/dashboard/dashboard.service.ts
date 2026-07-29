@@ -674,7 +674,11 @@ export class DashboardService {
         email: dashboardSettings.email ?? "",
         logoUrl: restaurant.logoUrl,
         currency: restaurant.currency,
-        showPrices: dashboardSettings.showPrices ?? true
+        showPrices: dashboardSettings.showPrices ?? true,
+        splashScreen: this.normalizeSplashScreenSettings(
+          dashboardSettings.splashScreen,
+          this.defaultSplashScreenSettings(restaurant.heroImageUrl, restaurant.themeSettings?.settings)
+        )
       },
       branch: branch
         ? {
@@ -735,28 +739,34 @@ export class DashboardService {
     }
 
     const existingSettings = this.asJsonObject(current.themeSettings?.settings);
+    const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
+    const nextDashboardSettings = {
+      ...existingDashboardSettings,
+      ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
+      ...(dto.email !== undefined ? { email: dto.email } : { email: existingDashboardSettings.email ?? "" }),
+      ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
+      ...(dto.splashScreen !== undefined
+        ? {
+            splashScreen: this.normalizeSplashScreenSettings(dto.splashScreen, existingDashboardSettings.splashScreen)
+          }
+        : existingDashboardSettings.splashScreen !== undefined
+          ? { splashScreen: this.normalizeSplashScreenSettings(existingDashboardSettings.splashScreen) }
+          : {})
+    };
+
     await this.prisma.restaurantThemeSettings.upsert({
       where: { restaurantId },
       create: {
         restaurantId,
         settings: {
           ...existingSettings,
-          dashboardSettings: {
-            phone: dto.phone ?? "",
-            email: dto.email ?? "",
-            showPrices: dto.showPrices ?? true
-          }
+          dashboardSettings: nextDashboardSettings
         }
       },
       update: {
         settings: {
           ...existingSettings,
-          dashboardSettings: {
-            ...this.dashboardSettingsFromTheme(existingSettings),
-            ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
-            ...(dto.email !== undefined ? { email: dto.email } : {}),
-            ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : {})
-          }
+          dashboardSettings: nextDashboardSettings
         }
       }
     });
@@ -989,6 +999,48 @@ export class DashboardService {
     return this.asJsonObject(json.dashboardSettings);
   }
 
+  private normalizeSplashScreenSettings(value: unknown, fallback?: unknown) {
+    const base = this.asJsonObject(fallback as Prisma.JsonValue);
+    const next = this.asJsonObject(value as Prisma.JsonValue);
+    const backgroundType =
+      next.backgroundType === "IMAGE" || next.backgroundType === "COLOR"
+        ? next.backgroundType
+        : base.backgroundType === "IMAGE"
+          ? "IMAGE"
+          : "COLOR";
+
+    return {
+      logoUrl: typeof next.logoUrl === "string" ? next.logoUrl : typeof base.logoUrl === "string" ? base.logoUrl : "",
+      backgroundType,
+      backgroundColor:
+        typeof next.backgroundColor === "string"
+          ? next.backgroundColor
+          : typeof base.backgroundColor === "string"
+            ? base.backgroundColor
+            : "#e51f2a",
+      backgroundImageUrl:
+        typeof next.backgroundImageUrl === "string"
+          ? next.backgroundImageUrl
+          : typeof base.backgroundImageUrl === "string"
+            ? base.backgroundImageUrl
+            : "",
+      logoX: this.clampPercent(next.logoX ?? base.logoX, 50),
+      logoY: this.clampPercent(next.logoY ?? base.logoY, 50)
+    };
+  }
+
+  private defaultSplashScreenSettings(heroImageUrl?: string | null, themeSettings?: Prisma.JsonValue | null) {
+    const theme = this.asJsonObject(themeSettings);
+    const colors = this.asJsonObject(theme.colors);
+    return {
+      backgroundType: heroImageUrl ? "IMAGE" : "COLOR",
+      backgroundColor: typeof colors.primary === "string" ? colors.primary : "#e51f2a",
+      backgroundImageUrl: heroImageUrl ?? "",
+      logoX: 50,
+      logoY: 50
+    };
+  }
+
   private asJsonObject(value: Prisma.JsonValue | undefined | null): Record<string, any> {
     return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {};
   }
@@ -1002,6 +1054,14 @@ export class DashboardService {
   private clampPositiveInt(value: unknown, fallback: number) {
     const parsed = Number(value ?? fallback);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private clampPercent(value: unknown, fallback: number) {
+    const parsed = Number(value ?? fallback);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.min(100, Math.max(0, parsed));
   }
 
   private async ensureAllCategory(restaurantId: string) {

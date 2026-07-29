@@ -404,6 +404,12 @@ export function PublicMenuClient({
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
   );
   const activeView = view === "home" && !hasHomeSections ? "menu" : view;
+  const splashSettings = data.restaurant.splashScreen;
+  const splashLogoUrl = splashSettings?.logoUrl ?? data.restaurant.logoUrl;
+  const splashBackgroundImageUrl = splashSettings?.backgroundType === "IMAGE" ? splashSettings.backgroundImageUrl : null;
+  const splashBackgroundColor = splashSettings?.backgroundColor ?? data.theme?.colors?.primary ?? "#e51f2a";
+  const splashLogoX = splashSettings?.logoX ?? 50;
+  const splashLogoY = splashSettings?.logoY ?? 50;
 
   useEffect(() => {
     setCartLoaded(false);
@@ -454,7 +460,7 @@ export function PublicMenuClient({
 
     window.sessionStorage.setItem(splashStorageKey, "1");
     setSplashVisible(true);
-    const timer = window.setTimeout(() => setSplashVisible(false), 10000);
+    const timer = window.setTimeout(() => setSplashVisible(false), 3000);
 
     return () => window.clearTimeout(timer);
   }, [splashStorageKey]);
@@ -612,13 +618,25 @@ export function PublicMenuClient({
       {splashVisible ? (
         <div
           className="public-splash"
-          role="status"
+          role="button"
+          tabIndex={0}
           aria-label={data.restaurant.name}
+          onClick={() => setSplashVisible(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " " || event.key === "Escape") {
+              setSplashVisible(false);
+            }
+          }}
+          onPointerDown={() => setSplashVisible(false)}
           style={{
-            "--splash-bg-image": data.restaurant.heroImageUrl ? `url(${data.restaurant.heroImageUrl})` : "none"
+            "--splash-bg-color": splashBackgroundColor,
+            "--splash-bg-overlay": splashBackgroundImageUrl ? "linear-gradient(180deg, rgb(0 0 0 / 46%), rgb(0 0 0 / 18%) 42%, rgb(0 0 0 / 58%))" : "none",
+            "--splash-bg-image": splashBackgroundImageUrl ? `url(${splashBackgroundImageUrl})` : "none",
+            "--splash-logo-x": `${splashLogoX}%`,
+            "--splash-logo-y": `${splashLogoY}%`
           } as React.CSSProperties}
         >
-          {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
+          {splashLogoUrl ? <img src={splashLogoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
         </div>
       ) : null}
       <header className="public-header">
