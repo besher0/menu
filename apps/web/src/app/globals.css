@@ -3467,7 +3467,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 20px;
   box-shadow: 0 8px 20px rgb(16 24 40 / 14%);
   box-sizing: border-box;
-  color: #ed1f2b;
+  color: var(--color-primary);
   gap: 10.96px;
   height: 32px;
   opacity: 1;
@@ -3672,7 +3672,7 @@ body:has(.public-page)::-webkit-scrollbar {
   width: 100%;
 }
 
-.hero-promo a {
+.hero-promo-slide {
   border-radius: 18px;
   display: block;
   height: 100%;
@@ -3685,13 +3685,13 @@ body:has(.public-page)::-webkit-scrollbar {
   width: 100%;
 }
 
-.hero-promo a.active {
+.hero-promo-slide.active {
   opacity: 1;
   transform: scale(1);
   z-index: 1;
 }
 
-.hero-promo a > span {
+.hero-promo-slide > span {
   background: #ed1f2b;
   border-radius: 0 0 8px 0;
   color: white;
@@ -4937,7 +4937,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .product-photo > .product-back-link {
   border: 1px solid rgb(16 24 40 / 5%);
   box-shadow: 0 8px 20px rgb(16 24 40 / 14%);
-  color: #ed1f2b;
+  color: var(--color-primary);
   height: 42px;
   left: auto;
   right: 16px;
@@ -5204,16 +5204,15 @@ body:has(.public-page)::-webkit-scrollbar {
   border-right: 3px solid var(--color-primary);
   color: #555b66;
   display: block;
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1.45;
   margin: 0;
   max-width: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   padding-right: 12px;
-  text-overflow: ellipsis;
   width: 100%;
-  white-space: nowrap;
+  word-break: normal;
 }
 
 .product-sheet h2,
@@ -5223,7 +5222,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .product-sheet h2 {
-  margin-bottom: -8px;
+  margin: 0 0 -4px;
 }
 
 .product-sheet h2 svg,
@@ -5331,7 +5330,8 @@ body:has(.public-page)::-webkit-scrollbar {
   justify-content: space-between;
   overflow-x: auto;
   overflow-y: visible;
-  padding: 2px 0 4px;
+  margin-bottom: -6px;
+  padding: 2px 0 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -5586,11 +5586,11 @@ body:has(.public-page)::-webkit-scrollbar {
   justify-content: center;
   left: max(16px, calc((100vw - 430px) / 2 + 16px));
   opacity: 1;
-  padding: 7.48px 14.96px;
+  padding: 7.48px 10px;
   position: fixed;
   text-decoration: none;
   transform: none;
-  width: 67px;
+  width: 53px;
   z-index: 7;
 }
 

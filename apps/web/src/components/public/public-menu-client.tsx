@@ -937,16 +937,14 @@ function HomeView({
           <>
             <div className="hero-promo-track">
               {bannerSlides.map((banner, index) => (
-                <Link
+                <div
                   key={`${banner.imageUrl}-${index}`}
-                  href={banner.targetUrl || `/m/${data.restaurant.slug}/menu`}
-                  className={index === activeBanner ? "active" : ""}
+                  className={index === activeBanner ? "hero-promo-slide active" : "hero-promo-slide"}
                   aria-hidden={index === activeBanner ? undefined : true}
-                  tabIndex={index === activeBanner ? undefined : -1}
                 >
                   <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
                   {banner.badge ? <span>{banner.badge}</span> : null}
-                </Link>
+                </div>
               ))}
             </div>
             <div className="hero-promo-dots" aria-label="بنرات الإعلان">
@@ -1067,7 +1065,6 @@ function MenuView({
   const visibleProducts = data.products;
   const categoryProductsSource = data.products;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
-  const productOpenMode = data.restaurant.productOpenMode ?? "MODAL";
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
@@ -1196,22 +1193,12 @@ function MenuView({
   }
 
   function openProduct(product: PublicProduct) {
-    if (menuDisplayMode === "large") {
-      window.location.assign(productHref(data.restaurant.slug, product));
-      return;
-    }
-
     if (productListLayout === "double") {
       setSelectedProduct(product);
       return;
     }
 
-    if (productOpenMode === "PAGE") {
-      window.location.assign(productHref(data.restaurant.slug, product));
-      return;
-    }
-
-    setSelectedProduct(product);
+    window.location.assign(productHref(data.restaurant.slug, product));
   }
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
@@ -1318,7 +1305,7 @@ function MenuView({
                 fillPlaceholders={false}
                 showPrices={showPrices}
                 showViewAll={false}
-                onAddToCart={addToCart}
+                onAddToCart={productListLayout === "double" ? undefined : addToCart}
               />
             </section>
           ) : null}
