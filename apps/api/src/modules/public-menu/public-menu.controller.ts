@@ -27,6 +27,11 @@ export class PublicMenuController {
     return this.publicMenuService.theme(restaurantSlug);
   }
 
+  @Get(":restaurantSlug/orders/next-number")
+  nextWhatsappOrderNumber(@Param("restaurantSlug") restaurantSlug: string) {
+    return this.publicMenuService.nextWhatsappOrderNumber(restaurantSlug);
+  }
+
   @Post(":restaurantSlug/track")
   track(
     @Param("restaurantSlug") restaurantSlug: string,

@@ -84,6 +84,7 @@ export type PublicMenuData = {
     };
     currency?: string | null;
     showPrices?: boolean;
+    productOpenMode?: "MODAL" | "PAGE";
     branches?: Array<{
       id: string;
       name: string;

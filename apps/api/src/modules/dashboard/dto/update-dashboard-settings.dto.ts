@@ -100,6 +100,10 @@ export class UpdateDashboardSettingsDto {
   showPrices?: boolean;
 
   @IsOptional()
+  @IsIn(["MODAL", "PAGE"])
+  productOpenMode?: "MODAL" | "PAGE";
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => SplashScreenSettingsDto)
   splashScreen?: SplashScreenSettingsDto;

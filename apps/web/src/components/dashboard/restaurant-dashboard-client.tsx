@@ -112,6 +112,7 @@ type DashboardSettings = {
     logoUrl?: string | null;
     currency: string;
     showPrices: boolean;
+    productOpenMode?: "MODAL" | "PAGE";
     splashScreen: SplashScreenSettings;
   };
   branch: { id: string; name: string; openingHours: OpeningHour[] } | null;
@@ -884,6 +885,13 @@ function SettingsForm() {
         <button className="bare price-switch" type="button" onClick={() => updateField("showPrices", !form.showPrices)}>
           <StatusPill active={form.showPrices} label="اظهار الاسعار" />
         </button>
+        <label className="field">
+          <span>طريقة فتح المنتج</span>
+          <select value={form.productOpenMode ?? "MODAL"} onChange={(event) => updateField("productOpenMode", event.target.value as "MODAL" | "PAGE")}>
+            <option value="MODAL">بوب أب</option>
+            <option value="PAGE">صفحة تفاصيل المنتج</option>
+          </select>
+        </label>
         <Field label="العملة" value={form.currency} onChange={(value) => updateField("currency", value)} />
       </section>
       <section className="settings-card working-hours">

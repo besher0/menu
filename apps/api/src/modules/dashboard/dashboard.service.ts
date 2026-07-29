@@ -675,6 +675,7 @@ export class DashboardService {
         logoUrl: restaurant.logoUrl,
         currency: restaurant.currency,
         showPrices: dashboardSettings.showPrices ?? true,
+        productOpenMode: this.normalizeProductOpenMode(dashboardSettings.productOpenMode),
         splashScreen: this.normalizeSplashScreenSettings(
           dashboardSettings.splashScreen,
           this.defaultSplashScreenSettings(restaurant.heroImageUrl, restaurant.themeSettings?.settings)
@@ -745,6 +746,9 @@ export class DashboardService {
       ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
       ...(dto.email !== undefined ? { email: dto.email } : { email: existingDashboardSettings.email ?? "" }),
       ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
+      ...(dto.productOpenMode !== undefined
+        ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }
+        : { productOpenMode: this.normalizeProductOpenMode(existingDashboardSettings.productOpenMode) }),
       ...(dto.splashScreen !== undefined
         ? {
             splashScreen: this.normalizeSplashScreenSettings(dto.splashScreen, existingDashboardSettings.splashScreen)
@@ -997,6 +1001,10 @@ export class DashboardService {
   private dashboardSettingsFromTheme(settings: Prisma.JsonValue | undefined | null) {
     const json = this.asJsonObject(settings);
     return this.asJsonObject(json.dashboardSettings);
+  }
+
+  private normalizeProductOpenMode(value: unknown): "MODAL" | "PAGE" {
+    return value === "PAGE" ? "PAGE" : "MODAL";
   }
 
   private normalizeSplashScreenSettings(value: unknown, fallback?: unknown) {

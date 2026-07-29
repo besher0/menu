@@ -195,9 +195,11 @@ export class PublicMenuService {
     const totalAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
     const dashboardSettings = this.dashboardSettingsFromTheme(restaurant.themeSettings?.settings);
     const showPrices = dashboardSettings.showPrices ?? true;
+    const orderNumber = this.formatDailyOrderNumber(await this.nextDailyOrderSequence(restaurant.id));
     const message = this.buildWhatsappMessage({
       restaurantName: restaurant.name,
       branchName: branch?.name,
+      orderNumber,
       customerName: dto.customerName,
       customerPhone: dto.customerPhone,
       orderNote: dto.orderNote,
@@ -217,7 +219,7 @@ export class PublicMenuService {
         currency: restaurant.currency,
         status: "PENDING_WHATSAPP",
         whatsappMessage: message,
-        cartSnapshot: dto as unknown as Prisma.InputJsonValue,
+        cartSnapshot: { ...dto, orderNumber } as unknown as Prisma.InputJsonValue,
         items: {
           create: items.map((item) => ({
             productId: item.product.id,
@@ -237,15 +239,30 @@ export class PublicMenuService {
         restaurantId: restaurant.id,
         branchId: branch?.id,
         type: "WHATSAPP_ORDER_CLICKED",
-        metadata: { orderId: order.id, totalAmount }
+        metadata: { orderId: order.id, orderNumber, totalAmount }
       }
     });
 
     return {
       orderId: order.id,
+      orderNumber,
       message,
       whatsappUrl: `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`
     };
+  }
+
+  async nextWhatsappOrderNumber(restaurantSlug: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
+      select: { id: true }
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException("Restaurant not found");
+    }
+
+    const sequence = await this.nextDailyOrderSequence(restaurant.id);
+    return { orderNumber: this.formatDailyOrderNumber(sequence) };
   }
 
   private async findPublicRestaurant(restaurantSlug: string) {
@@ -324,6 +341,7 @@ export class PublicMenuService {
       phone: dashboardSettings.phone ?? null,
       email: dashboardSettings.email ?? null,
       showPrices: dashboardSettings.showPrices ?? true,
+      productOpenMode: dashboardSettings.productOpenMode === "PAGE" ? "PAGE" : "MODAL",
       splashScreen: this.serializeSplashScreenSettings(
         dashboardSettings.splashScreen,
         restaurant.logoUrl,
@@ -516,6 +534,7 @@ export class PublicMenuService {
   private buildWhatsappMessage(input: {
     restaurantName: string;
     branchName?: string;
+    orderNumber: string;
     customerName?: string;
     customerPhone?: string;
     orderNote?: string;
@@ -533,6 +552,7 @@ export class PublicMenuService {
   }) {
     const lines = [
       `طلب جديد من ${input.restaurantName}`,
+      `رقم الطلب: ${input.orderNumber}`,
       "",
       input.branchName ? `الفرع: ${input.branchName}` : null,
       input.customerName ? `الزبون: ${input.customerName}` : null,
@@ -555,5 +575,32 @@ export class PublicMenuService {
     ];
 
     return lines.filter(Boolean).join("\n");
+  }
+
+  private async nextDailyOrderSequence(restaurantId: string) {
+    const { start, end } = this.currentServerDayRange();
+    const existingOrdersToday = await this.prisma.order.count({
+      where: {
+        restaurantId,
+        createdAt: {
+          gte: start,
+          lt: end
+        }
+      }
+    });
+
+    return existingOrdersToday + 1;
+  }
+
+  private currentServerDayRange() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }
+
+  private formatDailyOrderNumber(sequence: number) {
+    return String(Math.max(1, sequence)).padStart(3, "0");
   }
 }

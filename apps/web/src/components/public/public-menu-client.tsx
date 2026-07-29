@@ -22,6 +22,8 @@ type MenuDisplayMode = "large" | "list";
 type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
 
+const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+
 const translations = {
   ar: {
     chooseCategory: "اختر أحد الأصناف وتصفح..",
@@ -89,7 +91,7 @@ const translations = {
     deliveryFee: "رسوم التوصيل",
     finalTotal: "المجموع النهائي",
     sendViaWhatsapp: "ارسال عبر الوتس",
-    selectedItems: "العناصر المجتازة",
+    selectedItems: "العناصر المختارة",
     orderNumber: "رقم الطلب"
   },
   en: {
@@ -226,6 +228,15 @@ function collectionMenuHref(restaurantSlug: string, collection: "popular" | "new
 
 function productHref(restaurantSlug: string, product: PublicProduct) {
   return `/m/${restaurantSlug}/product/${encodeURIComponent(product.id || product.slug)}`;
+}
+
+function navigateBack(fallbackHref: string) {
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+
+  window.location.assign(fallbackHref);
 }
 
 function isProductRouteMatch(product: PublicProduct, value?: string) {
@@ -471,6 +482,15 @@ export function PublicMenuClient({
     }
   }, [activeView]);
 
+  useEffect(() => {
+    if (activeView !== "product") {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeView, productSlug]);
+
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -587,7 +607,7 @@ export function PublicMenuClient({
     setOrderMessage(null);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"}/public/menus/${data.restaurant.slug}/orders/whatsapp`, {
+      const response = await fetch(`${PUBLIC_API_BASE_URL}/public/menus/${data.restaurant.slug}/orders/whatsapp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -614,7 +634,12 @@ export function PublicMenuClient({
   }
 
   return (
-    <div className={`public-screen view-${activeView} ${showPrices ? "" : "prices-hidden"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`} dir={language === "ar" ? "rtl" : "ltr"} style={cssVars(data.theme)}>
+    <div
+      className={`public-screen view-${activeView} ${showPrices ? "" : "prices-hidden"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
+      dir={language === "ar" ? "rtl" : "ltr"}
+      onContextMenu={(event) => event.preventDefault()}
+      style={cssVars(data.theme)}
+    >
       {splashVisible ? (
         <div
           className="public-splash"
@@ -641,7 +666,7 @@ export function PublicMenuClient({
       ) : null}
       <header className="public-header">
         {activeView === "cart" ? (
-          <button onClick={() => window.history.length > 1 ? window.history.back() : window.location.assign(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
+          <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
             <ChevronLeft size={22} />
           </button>
         ) : activeView === "menu" && menuNested ? (
@@ -649,9 +674,9 @@ export function PublicMenuClient({
             <ArrowLeft size={22} />
           </button>
         ) : activeView === "menu" ? (
-          <Link href={`/m/${data.restaurant.slug}`} aria-label="الرجوع">
+          <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
             <ArrowLeft size={22} />
-          </Link>
+          </button>
         ) : (
           <button onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
             <Menu size={24} />
@@ -818,6 +843,7 @@ function HomeView({
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
   const [activeBanner, setActiveBanner] = useState(0);
+  const bannerTouchStartX = useRef<number | null>(null);
 
   useEffect(() => {
     setActiveBanner(0);
@@ -830,10 +856,40 @@ function HomeView({
 
     const timer = window.setInterval(() => {
       setActiveBanner((current) => (current + 1) % bannerSlides.length);
-    }, 2000);
+    }, 3000);
 
     return () => window.clearInterval(timer);
   }, [bannerSlides.length]);
+
+  function moveBanner(direction: -1 | 1) {
+    if (bannerSlides.length <= 1) {
+      return;
+    }
+
+    setActiveBanner((current) => (current + direction + bannerSlides.length) % bannerSlides.length);
+  }
+
+  function handleBannerTouchStart(event: TouchEvent<HTMLElement>) {
+    bannerTouchStartX.current = event.touches[0]?.clientX ?? null;
+  }
+
+  function handleBannerTouchEnd(event: TouchEvent<HTMLElement>) {
+    const startX = bannerTouchStartX.current;
+    bannerTouchStartX.current = null;
+
+    if (startX === null) {
+      return;
+    }
+
+    const endX = event.changedTouches[0]?.clientX ?? startX;
+    const deltaX = startX - endX;
+
+    if (Math.abs(deltaX) < 40) {
+      return;
+    }
+
+    moveBanner(deltaX > 0 ? 1 : -1);
+  }
 
   return (
     <main className="public-content">
@@ -849,6 +905,8 @@ function HomeView({
                 <Link
                   key={`${item.label}-${index}`}
                   href={item.href}
+                  scroll
+                  onClick={() => window.scrollTo(0, 0)}
                   className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
                   style={{
                     ...visualBackgroundStyle(item),
@@ -868,7 +926,11 @@ function HomeView({
           </div>
       </section>
 
-      <section className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}>
+      <section
+        className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}
+        onTouchStart={handleBannerTouchStart}
+        onTouchEnd={handleBannerTouchEnd}
+      >
         {bannerSlides.length ? (
           <>
             <div className="hero-promo-track">
@@ -908,7 +970,7 @@ function HomeView({
         fillPlaceholders={false}
         showPrices={showPrices}
         onAddToCart={addToCart}
-        viewAllHref={collectionMenuHref(data.restaurant.slug, "popular")}
+        showViewAll={false}
       />
 
       <section className="new-grid">
@@ -917,7 +979,6 @@ function HomeView({
             <Star size={16} />
             {t.newItems}
           </h2>
-          <Link href={collectionMenuHref(data.restaurant.slug, "new")}>{t.viewAll}</Link>
         </div>
         <div>
           {featuredSlots.map((_, index) => {
@@ -974,6 +1035,8 @@ function MenuView({
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
+  const scrollSpyUpdate = useRef(false);
+  const contextEntryScrollPending = useRef(Boolean(selectedMood || selectedCollection));
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("list");
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = data.categories.find((category) => category.slug === "all");
@@ -1002,6 +1065,7 @@ function MenuView({
   const visibleProducts = data.products;
   const categoryProductsSource = data.products;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
+  const productOpenMode = data.restaurant.productOpenMode ?? "MODAL";
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
@@ -1015,6 +1079,7 @@ function MenuView({
 
   useEffect(() => {
     if (selectedMood || selectedCollection) {
+      contextEntryScrollPending.current = true;
       setSelectedCategorySlug("all");
     }
   }, [selectedCollection, selectedMood]);
@@ -1057,21 +1122,84 @@ function MenuView({
       return;
     }
 
+    if (contextEntryScrollPending.current) {
+      contextEntryScrollPending.current = false;
+      const frame = window.requestAnimationFrame(() => window.scrollTo(0, 0));
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    if (scrollSpyUpdate.current) {
+      scrollSpyUpdate.current = false;
+      return;
+    }
+
     const targetId = menuDisplayMode === "large" || selectedCategorySlug === "all" ? "menu-products-start" : `category-section-${selectedCategorySlug}`;
     const frame = window.requestAnimationFrame(() => {
       document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [menuDisplayMode, selectedCategorySlug]);
+  }, [menuDisplayMode, selectedCategorySlug, selectedCollection, selectedMood]);
+
+  useEffect(() => {
+    if (!showNestedCategoryStrip || menuDisplayMode !== "list" || !selectedCategorySlug) {
+      return;
+    }
+
+    const categorySections = regularCategories
+      .filter((category) => categoryProductsSource.some((product) => (product.category?.slug ?? product.categorySlug) === category.slug))
+      .map((category) => ({ slug: category.slug, id: `category-section-${category.slug}` }));
+
+    function syncActiveCategoryToScroll() {
+      const threshold = 132;
+      let nextSlug = "all";
+
+      for (const section of categorySections) {
+        const element = document.getElementById(section.id);
+        if (!element) continue;
+
+        if (element.getBoundingClientRect().top <= threshold) {
+          nextSlug = section.slug;
+        }
+      }
+
+      setSelectedCategorySlug((current) => {
+        if (current === nextSlug) {
+          return current;
+        }
+
+        scrollSpyUpdate.current = true;
+        return nextSlug;
+      });
+    }
+
+    syncActiveCategoryToScroll();
+    window.addEventListener("scroll", syncActiveCategoryToScroll, { passive: true });
+    window.addEventListener("resize", syncActiveCategoryToScroll);
+
+    return () => {
+      window.removeEventListener("scroll", syncActiveCategoryToScroll);
+      window.removeEventListener("resize", syncActiveCategoryToScroll);
+    };
+  }, [categoryProductsSource, menuDisplayMode, regularCategories, selectedCategorySlug, showNestedCategoryStrip]);
 
   function selectCategory(slug: string) {
+    scrollSpyUpdate.current = false;
     setSelectedCategorySlug(slug);
   }
 
   function moveSpotlight(direction: -1 | 1) {
     if (activeProducts.length <= 1) return;
     setActiveSpotlightIndex((current) => (current + direction + activeProducts.length) % activeProducts.length);
+  }
+
+  function openProduct(product: PublicProduct) {
+    if (productOpenMode === "PAGE") {
+      window.location.assign(productHref(data.restaurant.slug, product));
+      return;
+    }
+
+    setSelectedProduct(product);
   }
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
@@ -1148,15 +1276,9 @@ function MenuView({
 
     return (
       <article key={`${product.id}-${product.slug}`} className={productClassName}>
-        {productListLayout === "double" ? (
-          <button type="button" className="menu-product-open" onClick={() => setSelectedProduct(product)}>
-            {productContent}
-          </button>
-        ) : (
-          <Link href={productHref(data.restaurant.slug, product)} className="menu-product-open">
-            {productContent}
-          </Link>
-        )}
+        <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
+          {productContent}
+        </button>
         {productListLayout === "single" ? (
           <QuantityControl
             className="menu-product-quantity"
@@ -1242,7 +1364,7 @@ function MenuView({
                 onTouchStart={handleSpotlightTouchStart}
                 onTouchEnd={handleSpotlightTouchEnd}
               >
-                <button type="button" className="category-spotlight-open" onClick={() => setSelectedProduct(spotlightProduct)}>
+                <button type="button" className="category-spotlight-open" onClick={() => openProduct(spotlightProduct)}>
                   <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
@@ -1463,10 +1585,39 @@ function CartView({
   const deliveryFee = fulfillment === "delivery" ? 0 : 0;
   const total = subtotal + deliveryFee;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const orderNumber = useMemo(() => {
-    const hash = data.restaurant.slug.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-    return 300 + (hash % 700);
-  }, [data.restaurant.slug]);
+  const [orderNumber, setOrderNumber] = useState("001");
+
+  useEffect(() => {
+    if (!cart.length) {
+      setOrderNumber("001");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadOrderNumber() {
+      try {
+        const response = await fetch(`${PUBLIC_API_BASE_URL}/public/menus/${encodeURIComponent(data.restaurant.slug)}/orders/next-number`);
+        const payload = await response.json().catch(() => null) as { data?: { orderNumber?: string | number }; orderNumber?: string | number } | null;
+        const rawOrderNumber = payload?.data?.orderNumber ?? payload?.orderNumber;
+        const nextOrderNumber = typeof rawOrderNumber === "number" ? String(rawOrderNumber).padStart(3, "0") : rawOrderNumber;
+
+        if (!cancelled && nextOrderNumber) {
+          setOrderNumber(nextOrderNumber);
+        }
+      } catch {
+        if (!cancelled) {
+          setOrderNumber("001");
+        }
+      }
+    }
+
+    loadOrderNumber();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cart.length, data.restaurant.slug]);
 
   useEffect(() => {
     function restoreReviewStep() {
@@ -1513,23 +1664,27 @@ function CartView({
               {cart.map((item) => {
                 const product = productBySlug.get(item.slug);
                 const imageUrl = item.imageUrl ?? (product ? productImage(product) : "/assets/public/menu-products.png");
-                const description = item.description ?? product?.description ?? "";
+                const ingredientNames = product
+                  ? productIngredients(product).map((ingredient) => ingredient.name).filter(Boolean).join(" - ")
+                  : "";
 
                 return (
                   <article key={item.slug} className="cart-page-item">
                     <img src={imageUrl} alt={item.name} />
                     <div className="cart-page-copy">
                       <b>{item.name}</b>
-                      {description ? <p>{description}</p> : null}
+                      {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
                       {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
                     </div>
-                    <QuantityControl
-                      className="cart-page-quantity"
-                      quantity={item.quantity}
-                      onDecrease={() => updateCartItem(item.slug, item.quantity - 1)}
-                      onIncrease={() => updateCartItem(item.slug, item.quantity + 1)}
-                      label={item.name}
-                    />
+                    <div className="cart-page-stepper" aria-label={item.name}>
+                      <button type="button" onClick={() => updateCartItem(item.slug, item.quantity + 1)} aria-label={`+ ${item.name}`}>
+                        <Plus size={14} />
+                      </button>
+                      <strong>{item.quantity}</strong>
+                      <button type="button" onClick={() => updateCartItem(item.slug, item.quantity - 1)} disabled={item.quantity <= 0} aria-label={`- ${item.name}`}>
+                        <Minus size={14} />
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="cart-page-remove"
@@ -1832,11 +1987,11 @@ function ProductView({
         ) : (
           <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
         )}
-        <Link href={`/m/${data.restaurant.slug}/menu`} aria-label="الرجوع إلى القائمة">
+        <button type="button" className="product-back-link" onClick={() => navigateBack(`/m/${data.restaurant.slug}/menu`)} aria-label="الرجوع">
           <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
             <path d="M9 3.5 15.5 10 9 16.5" />
           </svg>
-        </Link>
+        </button>
         {mediaMode === "image" && gallery.length > 1 ? (
           <>
             <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label="Previous image">
@@ -1854,7 +2009,7 @@ function ProductView({
           <h1>{product.name}</h1>
           {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
         </div>
-        <p>{product.description}</p>
+        <p className="product-description" title={product.description ?? undefined}>{product.description}</p>
 
         {ingredients.length ? (
           <>
@@ -1864,7 +2019,7 @@ function ProductView({
             </h2>
             <div className="ingredients-row">
               {ingredients.map((ingredient, index) => (
-                <span key={`${ingredient.name}-${index}`}>
+                <span className={`ingredient-chip ${ingredient.imageUrl ? "has-image" : "text-only"}`} key={`${ingredient.name}-${index}`}>
                   <div className="ingredient-image-card">
                     {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : null}
                   </div>
@@ -1884,28 +2039,28 @@ function ProductView({
             <i aria-hidden="true">
               <Scale size={19} />
             </i>
-            {t.approximateWeight}
+            <small>{t.approximateWeight}</small>
             <b>{product.nutrition?.weight ?? "200 mg"}</b>
           </span>
           <span>
             <i aria-hidden="true">
               {(product.nutrition?.protein ?? t.chicken).toLowerCase().includes("لحم") ? <Beef size={19} /> : <Drumstick size={19} />}
             </i>
-            {t.meatType}
+            <small>{t.meatType}</small>
             <b>{product.nutrition?.protein ?? t.chicken}</b>
           </span>
           <span>
             <i aria-hidden="true">
               <Wheat size={19} />
             </i>
-            {t.breadType}
+            <small>{t.breadType}</small>
             <b>{product.nutrition?.breadType ?? t.plate}</b>
           </span>
           <span>
             <i aria-hidden="true">
               <Flame size={19} />
             </i>
-            {t.spiceLevel}
+            <small>{t.spiceLevel}</small>
             <b>{product.nutrition?.spice ?? t.medium}</b>
           </span>
         </div>
@@ -1982,7 +2137,7 @@ function ProductRail({
           return product ? (
           <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
-            <Link href={productHref(restaurantSlug, product)}>
+            <Link href={productHref(restaurantSlug, product)} scroll onClick={() => window.scrollTo(0, 0)}>
               <img src={productImage(product)} alt={product.name} />
             </Link>
             <b>{product.name}</b>
