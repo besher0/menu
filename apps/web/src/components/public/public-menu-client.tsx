@@ -415,6 +415,8 @@ export function PublicMenuClient({
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
   );
   const activeView = view === "home" && !hasHomeSections ? "menu" : view;
+  const showMenuNavItem = Boolean(data.products.length || data.categories.length);
+  const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
   const splashSettings = data.restaurant.splashScreen;
   const splashLogoUrl = splashSettings?.logoUrl ?? data.restaurant.logoUrl;
   const splashBackgroundImageUrl = splashSettings?.backgroundType === "IMAGE" ? splashSettings.backgroundImageUrl : null;
@@ -635,7 +637,7 @@ export function PublicMenuClient({
 
   return (
     <div
-      className={`public-screen view-${activeView} ${showPrices ? "" : "prices-hidden"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
+      className={`public-screen view-${activeView} ${showPrices ? "" : "prices-hidden"} ${showBottomNav ? "" : "no-bottom-nav"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
       dir={language === "ar" ? "rtl" : "ltr"}
       onContextMenu={(event) => event.preventDefault()}
       style={cssVars(data.theme)}
@@ -744,7 +746,7 @@ export function PublicMenuClient({
         active={activeView}
         t={t}
         showHome={hasHomeSections}
-        showMenu={Boolean(data.products.length || data.categories.length)}
+        showMenu={showMenuNavItem}
       />
 
       {drawerOpen ? (
@@ -1194,6 +1196,16 @@ function MenuView({
   }
 
   function openProduct(product: PublicProduct) {
+    if (menuDisplayMode === "large") {
+      window.location.assign(productHref(data.restaurant.slug, product));
+      return;
+    }
+
+    if (productListLayout === "double") {
+      setSelectedProduct(product);
+      return;
+    }
+
     if (productOpenMode === "PAGE") {
       window.location.assign(productHref(data.restaurant.slug, product));
       return;
@@ -1336,7 +1348,7 @@ function MenuView({
             })}
           </section> : null}
 
-          <div className="menu-view-switch" role="group" aria-label="تغيير شكل المنتجات">
+          {productListLayout === "single" ? <div className="menu-view-switch" role="group" aria-label="تغيير شكل المنتجات">
             <button
               type="button"
               className={menuDisplayMode === "large" ? "active" : ""}
@@ -1355,7 +1367,7 @@ function MenuView({
             >
               <List size={16} />
             </button>
-          </div>
+          </div> : null}
 
           {menuDisplayMode === "large" && spotlightProduct ? (
             <section className="category-spotlight" id="menu-products-start">
@@ -1369,7 +1381,7 @@ function MenuView({
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
                     {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
-                    <p>{productIngredients(spotlightProduct).map((ingredient) => ingredient.name).filter(Boolean).join("، ") || spotlightProduct.description}</p>
+                    {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
                   </div>
                 </button>
                 <div className="category-spotlight-controls">
@@ -2170,12 +2182,14 @@ function BottomNav({
   showHome: boolean;
   showMenu: boolean;
 }) {
-  if (!showHome && !showMenu) {
+  const itemCount = [showHome, showMenu].filter(Boolean).length;
+
+  if (itemCount <= 1) {
     return null;
   }
 
   return (
-    <nav className="public-bottom-nav" style={{ "--bottom-nav-count": showHome && showMenu ? 2 : 1 } as React.CSSProperties}>
+    <nav className="public-bottom-nav" style={{ "--bottom-nav-count": itemCount } as React.CSSProperties}>
       {showHome ? <Link href={`/m/${slug}`} className={active === "home" ? "active" : ""}>
         <Home size={20} />
         {t.home}
