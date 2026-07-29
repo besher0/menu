@@ -226,8 +226,18 @@ function collectionMenuHref(restaurantSlug: string, collection: "popular" | "new
   return `/m/${restaurantSlug}/menu?collection=${collection}`;
 }
 
-function productHref(restaurantSlug: string, product: PublicProduct) {
-  return `/m/${restaurantSlug}/product/${encodeURIComponent(product.id || product.slug)}`;
+function safeInternalHref(value?: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return null;
+  }
+
+  return value;
+}
+
+function productHref(restaurantSlug: string, product: PublicProduct, returnHref?: string | null) {
+  const href = `/m/${restaurantSlug}/product/${encodeURIComponent(product.id || product.slug)}`;
+  const safeReturnHref = safeInternalHref(returnHref);
+  return safeReturnHref ? `${href}?from=${encodeURIComponent(safeReturnHref)}` : href;
 }
 
 function navigateBack(fallbackHref: string) {
@@ -844,6 +854,7 @@ function HomeView({
   const moodSlots = moodItems;
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
+  const homeReturnHref = `/m/${data.restaurant.slug}`;
   const [activeBanner, setActiveBanner] = useState(0);
   const bannerTouchStartX = useRef<number | null>(null);
 
@@ -971,6 +982,7 @@ function HomeView({
         showPrices={showPrices}
         onAddToCart={addToCart}
         showViewAll={false}
+        returnHref={homeReturnHref}
       />
 
       <section className="new-grid">
@@ -984,7 +996,7 @@ function HomeView({
           {featuredSlots.map((_, index) => {
             const product = featured[index];
             return product ? (
-            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product)} className="wide-product">
+            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref)} className="wide-product">
               <img src={productImage(product)} alt={product.name} />
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
@@ -1020,10 +1032,12 @@ function MenuView({
   onNestedChange: (nested: boolean) => void;
 }) {
   const searchParams = useSearchParams();
+  const menuQuery = searchParams.toString();
   const selectedMood = searchParams.get("mood")?.trim() || "";
   const selectedCollection = searchParams.get("collection") === "popular" || searchParams.get("collection") === "new"
     ? searchParams.get("collection")
     : "";
+  const selectedCategoryParam = searchParams.get("category")?.trim() || "";
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const categoryGridSection = allPages
     .flatMap((page) => page.sections ?? [])
@@ -1031,7 +1045,9 @@ function MenuView({
   const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
   const showCategoryLanding = categoryControlsEnabled && categoryGridSection?.settings?.showLandingCategories !== false;
   const showNestedCategoryStrip = categoryControlsEnabled && categoryGridSection?.settings?.showNestedCategoryStrip !== false;
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState(selectedMood || selectedCollection || !showCategoryLanding ? "all" : "");
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState(
+    selectedCategoryParam || (selectedMood || selectedCollection || !showCategoryLanding ? "all" : "")
+  );
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
@@ -1065,6 +1081,16 @@ function MenuView({
   const visibleProducts = data.products;
   const categoryProductsSource = data.products;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
+  const menuReturnParams = new URLSearchParams(menuQuery);
+
+  if (selectedCategorySlug && !selectedMood && !selectedCollection) {
+    menuReturnParams.set("category", selectedCategorySlug);
+  } else {
+    menuReturnParams.delete("category");
+  }
+
+  const menuReturnQuery = menuReturnParams.toString();
+  const menuReturnHref = `/m/${data.restaurant.slug}/menu${menuReturnQuery ? `?${menuReturnQuery}` : ""}`;
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
@@ -1198,7 +1224,7 @@ function MenuView({
       return;
     }
 
-    window.location.assign(productHref(data.restaurant.slug, product));
+    window.location.assign(productHref(data.restaurant.slug, product, menuReturnHref));
   }
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
@@ -1306,6 +1332,7 @@ function MenuView({
                 showPrices={showPrices}
                 showViewAll={false}
                 onAddToCart={productListLayout === "double" ? undefined : addToCart}
+                returnHref={menuReturnHref}
               />
             </section>
           ) : null}
@@ -1713,6 +1740,7 @@ function CartView({
             showPrices={showPrices}
             onAddToCart={addToCart}
             showViewAll={false}
+            returnHref={`/m/${data.restaurant.slug}/cart`}
           />
         </>
       ) : (
@@ -1837,6 +1865,7 @@ function ProductView({
   t: PublicTranslations;
   showPrices: boolean;
 }) {
+  const searchParams = useSearchParams();
   const related = getRelatedProducts(data.products, product);
   const ingredients = productIngredients(product);
   const model3dUrl = product.media?.model3dUrl ?? null;
@@ -1846,6 +1875,9 @@ function ProductView({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [mediaMode, setMediaMode] = useState<ProductMediaMode>("image");
   const activeImage = gallery[activeImageIndex] ?? gallery[0];
+  const sourceReturnHref = safeInternalHref(searchParams.get("from"));
+  const productReturnHref = sourceReturnHref ?? `/m/${data.restaurant.slug}`;
+  const currentProductHref = productHref(data.restaurant.slug, product, productReturnHref);
   const touchStartX = useRef<number | null>(null);
   const quantity = getCartQuantity(product.slug);
 
@@ -1986,7 +2018,12 @@ function ProductView({
         ) : (
           <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
         )}
-        <button type="button" className="product-back-link" onClick={() => navigateBack(`/m/${data.restaurant.slug}/menu`)} aria-label="الرجوع">
+        <button
+          type="button"
+          className="product-back-link"
+          onClick={() => sourceReturnHref ? window.location.assign(sourceReturnHref) : navigateBack(productReturnHref)}
+          aria-label="الرجوع"
+        >
           <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
             <path d="M9 3.5 15.5 10 9 16.5" />
           </svg>
@@ -2073,6 +2110,7 @@ function ProductView({
           showPrices={showPrices}
           showViewAll={false}
           onAddToCart={addToCart}
+          returnHref={currentProductHref}
         />
       </section>
       <div className="product-bottom-cart">
@@ -2102,7 +2140,8 @@ function ProductRail({
   showPrices,
   onAddToCart,
   showViewAll = true,
-  viewAllHref
+  viewAllHref,
+  returnHref
 }: {
   title: string;
   products: PublicProduct[];
@@ -2114,6 +2153,7 @@ function ProductRail({
   onAddToCart?: (product: PublicProduct) => void;
   showViewAll?: boolean;
   viewAllHref?: string;
+  returnHref?: string;
 }) {
   if (!products.length && !fillPlaceholders) {
     return null;
@@ -2136,7 +2176,7 @@ function ProductRail({
           return product ? (
           <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
-            <Link href={productHref(restaurantSlug, product)} scroll onClick={() => window.scrollTo(0, 0)}>
+            <Link href={productHref(restaurantSlug, product, returnHref)} scroll onClick={() => window.scrollTo(0, 0)}>
               <img src={productImage(product)} alt={product.name} />
             </Link>
             <b>{product.name}</b>
