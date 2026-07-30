@@ -4060,7 +4060,8 @@ body:has(.public-page)::-webkit-scrollbar {
   width: calc(100% + 32px);
 }
 
-.public-screen.menu-nested .menu-category-strip {
+.public-screen.menu-nested .menu-category-strip,
+.public-screen.view-menu .menu-category-strip {
   background: #ffffff;
   box-shadow: 0 10px 18px rgb(255 255 255 / 94%);
   margin-top: -2px;
