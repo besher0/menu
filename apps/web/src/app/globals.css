@@ -3447,6 +3447,26 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: center;
 }
 
+.public-header-title {
+  align-items: center;
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.public-header-title .restaurant-name {
+  color: #16181d;
+  display: block;
+  font-size: 24px;
+  font-weight: 750;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .public-header button,
 .public-header a {
   align-items: center;
@@ -3458,8 +3478,14 @@ body:has(.public-page)::-webkit-scrollbar {
   text-decoration: none;
 }
 
+.public-header .public-header-menu-button {
+  color: #18181b;
+  height: 44px;
+  width: 44px;
+}
+
 .public-screen.menu-nested .public-header > button:first-child,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child,
+.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
 .public-screen.view-cart .public-header > button:first-child,
 .public-screen:not(.menu-nested) .public-header > a:first-child {
   background: white;
@@ -3477,14 +3503,14 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .public-screen.menu-nested .public-header > button:first-child svg,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child svg,
+.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button) svg,
 .public-screen.view-cart .public-header > button:first-child svg,
 .public-screen:not(.menu-nested) .public-header > a:first-child svg {
   display: none;
 }
 
 .public-screen.menu-nested .public-header > button:first-child::before,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child::before,
+.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button)::before,
 .public-screen.view-cart .public-header > button:first-child::before,
 .public-screen:not(.menu-nested) .public-header > a:first-child::before {
   border-bottom: 2.2px solid currentColor;
@@ -3500,7 +3526,7 @@ body:has(.public-page)::-webkit-scrollbar {
   transform: rotate(-135deg);
 }
 
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child::before {
+.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button)::before {
   transform: rotate(-135deg);
 }
 
@@ -4346,10 +4372,12 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .category-spotlight-copy {
   align-content: start;
+  direction: rtl;
   display: grid;
   grid-gap: 2px;
   gap: 2px;
   justify-items: start;
+  -webkit-margin-start: 0;
   margin-inline-start: 0;
   max-width: none;
   min-height: 82px;
@@ -4843,11 +4871,12 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .product-quick-body {
+  direction: rtl;
   display: grid;
   gap: 7px;
-  justify-items: end;
+  justify-items: start;
   padding: 20px 24px 22px;
-  text-align: right;
+  text-align: left;
 }
 
 .product-quick-body h2 {
@@ -4867,7 +4896,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .product-quick-body .product-price {
   color: var(--color-primary);
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .product-detail {
@@ -6409,12 +6438,12 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .public-drawer button:not(.drawer-close).active {
-  color: var(--color-primary);
+  color: #20242c;
   font-weight: 900;
 }
 
 .public-drawer button:not(.drawer-close) b {
-  color: var(--color-primary);
+  color: #20242c;
   font-size: 13px;
 }
 

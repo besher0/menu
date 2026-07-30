@@ -427,6 +427,7 @@ export function PublicMenuClient({
   const activeView = view === "home" && !hasHomeSections ? "menu" : view;
   const showMenuNavItem = Boolean(data.products.length || data.categories.length);
   const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
+  const isSingleMenuPage = activeView === "menu" && showMenuNavItem && !hasHomeSections;
   const splashSettings = data.restaurant.splashScreen;
   const splashLogoUrl = splashSettings?.logoUrl ?? data.restaurant.logoUrl;
   const splashBackgroundImageUrl = splashSettings?.backgroundType === "IMAGE" ? splashSettings.backgroundImageUrl : null;
@@ -585,6 +586,11 @@ export function PublicMenuClient({
     return cart.find((item) => item.slug === slug)?.quantity ?? 0;
   }
 
+  function requestMenuBack() {
+    setMenuNested(false);
+    setMenuBackSignal((current) => current + 1);
+  }
+
   const whatsappMessage = useMemo(() => {
     if (!showPrices) {
       return [
@@ -682,8 +688,12 @@ export function PublicMenuClient({
             <ChevronLeft size={22} />
           </button>
         ) : activeView === "menu" && menuNested ? (
-          <button onClick={() => setMenuBackSignal((current) => current + 1)} aria-label="الرجوع">
+          <button onClick={requestMenuBack} aria-label="الرجوع">
             <ArrowLeft size={22} />
+          </button>
+        ) : isSingleMenuPage ? (
+          <button className="public-header-menu-button" onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
+            <Menu size={24} />
           </button>
         ) : activeView === "menu" ? (
           <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
@@ -694,7 +704,15 @@ export function PublicMenuClient({
             <Menu size={24} />
           </button>
         )}
-        <p>{activeView === "cart" ? "تأكيد الطلب" : t.chooseCategory}</p>
+        <p className={isSingleMenuPage ? "public-header-title single-menu-title" : "public-header-title"}>
+          {activeView === "cart" ? (
+            "تأكيد الطلب"
+          ) : isSingleMenuPage ? (
+            <span className="restaurant-name">{data.restaurant.name.trim() || t.menu}</span>
+          ) : (
+            t.chooseCategory
+          )}
+        </p>
         {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
       </header>
 
@@ -1052,6 +1070,7 @@ function MenuView({
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
   const scrollSpyUpdate = useRef(false);
+  const manualCategoryScrollUntil = useRef(0);
   const contextEntryScrollPending = useRef(Boolean(selectedMood || selectedCollection));
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("list");
   const lastMenuBackSignal = useRef(menuBackSignal);
@@ -1116,8 +1135,8 @@ function MenuView({
   }, [selectedCategorySlug, showCategoryLanding]);
 
   useEffect(() => {
-    onNestedChange(Boolean(selectedCategorySlug));
-  }, [onNestedChange, selectedCategorySlug]);
+    onNestedChange(Boolean(selectedCategorySlug) && (showCategoryLanding || Boolean(selectedMood || selectedCollection)));
+  }, [onNestedChange, selectedCategorySlug, selectedCollection, selectedMood, showCategoryLanding]);
 
   useEffect(() => {
     if (lastMenuBackSignal.current === menuBackSignal) {
@@ -1135,8 +1154,18 @@ function MenuView({
       return;
     }
 
+    if (showCategoryLanding) {
+      manualCategoryScrollUntil.current = Date.now() + 500;
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("category");
+      window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
+      setSelectedCategorySlug("");
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+      return;
+    }
+
     setSelectedCategorySlug("");
-  }, [data.restaurant.slug, menuBackSignal, selectedCategorySlug, selectedCollection, selectedMood]);
+  }, [data.restaurant.slug, menuBackSignal, selectedCategorySlug, selectedCollection, selectedMood, showCategoryLanding]);
 
   useEffect(() => {
     setActiveSpotlightIndex(0);
@@ -1158,11 +1187,7 @@ function MenuView({
       return;
     }
 
-    const targetId = menuDisplayMode === "large" || selectedCategorySlug === "all" ? "menu-products-start" : `category-section-${selectedCategorySlug}`;
-    const frame = window.requestAnimationFrame(() => {
-      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-
+    const frame = scrollToCategory(selectedCategorySlug);
     return () => window.cancelAnimationFrame(frame);
   }, [menuDisplayMode, selectedCategorySlug, selectedCollection, selectedMood]);
 
@@ -1176,6 +1201,10 @@ function MenuView({
       .map((category) => ({ slug: category.slug, id: `category-section-${category.slug}` }));
 
     function syncActiveCategoryToScroll() {
+      if (Date.now() < manualCategoryScrollUntil.current) {
+        return;
+      }
+
       const threshold = 132;
       let nextSlug = "all";
 
@@ -1208,9 +1237,24 @@ function MenuView({
     };
   }, [categoryProductsSource, menuDisplayMode, regularCategories, selectedCategorySlug, showNestedCategoryStrip]);
 
+  function scrollToCategory(slug: string) {
+    const targetId = menuDisplayMode === "large" || slug === "all" ? "menu-products-start" : `category-section-${slug}`;
+    return window.requestAnimationFrame(() => {
+      const element = document.getElementById(targetId);
+      if (!element) {
+        return;
+      }
+
+      const top = element.getBoundingClientRect().top + window.scrollY - (showNestedCategoryStrip ? 92 : 16);
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    });
+  }
+
   function selectCategory(slug: string) {
+    manualCategoryScrollUntil.current = Date.now() + 900;
     scrollSpyUpdate.current = false;
     setSelectedCategorySlug(slug);
+    scrollToCategory(slug);
   }
 
   function moveSpotlight(direction: -1 | 1) {
