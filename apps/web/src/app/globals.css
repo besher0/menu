@@ -4052,7 +4052,6 @@ body:has(.public-page)::-webkit-scrollbar {
   box-sizing: border-box;
   direction: ltr;
   display: flex;
-  flex-direction: row-reverse;
   gap: 12px;
   height: 79px;
   max-height: 79px;

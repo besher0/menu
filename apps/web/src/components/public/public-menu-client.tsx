@@ -1119,6 +1119,7 @@ function MenuView({
   const productsWithoutCategory = selectedCategorySlug === "all"
     ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
     : [];
+  const headerCategories = useMemo(() => [...data.categories].reverse(), [data.categories]);
 
   useEffect(() => {
     if (selectedMood || selectedCollection) {
@@ -1387,7 +1388,7 @@ function MenuView({
           ) : null}
 
           {showNestedCategoryStrip ? <section className="menu-category-strip" id="menu-categories" ref={categoryStripRef}>
-            {data.categories.map((category) => {
+            {headerCategories.map((category) => {
               const isAllCategory = category.slug === "all";
               const isActive = category.slug === selectedCategorySlug;
               const productsCount = isAllCategory
