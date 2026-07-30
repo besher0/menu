@@ -1069,9 +1069,8 @@ function MenuView({
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
-  const scrollSpyUpdate = useRef(false);
   const manualCategoryScrollUntil = useRef(0);
-  const contextEntryScrollPending = useRef(Boolean(selectedMood || selectedCollection));
+  const categoryStripRef = useRef<HTMLElement | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("list");
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = data.categories.find((category) => category.slug === "all");
@@ -1123,7 +1122,6 @@ function MenuView({
 
   useEffect(() => {
     if (selectedMood || selectedCollection) {
-      contextEntryScrollPending.current = true;
       setSelectedCategorySlug("all");
     }
   }, [selectedCollection, selectedMood]);
@@ -1172,26 +1170,6 @@ function MenuView({
   }, [selectedCategorySlug, activeProducts.length]);
 
   useEffect(() => {
-    if (!selectedCategorySlug) {
-      return;
-    }
-
-    if (contextEntryScrollPending.current) {
-      contextEntryScrollPending.current = false;
-      const frame = window.requestAnimationFrame(() => window.scrollTo(0, 0));
-      return () => window.cancelAnimationFrame(frame);
-    }
-
-    if (scrollSpyUpdate.current) {
-      scrollSpyUpdate.current = false;
-      return;
-    }
-
-    const frame = scrollToCategory(selectedCategorySlug);
-    return () => window.cancelAnimationFrame(frame);
-  }, [menuDisplayMode, selectedCategorySlug, selectedCollection, selectedMood]);
-
-  useEffect(() => {
     if (!showNestedCategoryStrip || menuDisplayMode !== "list" || !selectedCategorySlug) {
       return;
     }
@@ -1217,14 +1195,11 @@ function MenuView({
         }
       }
 
-      setSelectedCategorySlug((current) => {
-        if (current === nextSlug) {
-          return current;
-        }
+      if (selectedCategorySlug !== nextSlug) {
+        setSelectedCategorySlug(nextSlug);
+      }
 
-        scrollSpyUpdate.current = true;
-        return nextSlug;
-      });
+      scrollCategoryChipIntoView(nextSlug);
     }
 
     syncActiveCategoryToScroll();
@@ -1236,6 +1211,15 @@ function MenuView({
       window.removeEventListener("resize", syncActiveCategoryToScroll);
     };
   }, [categoryProductsSource, menuDisplayMode, regularCategories, selectedCategorySlug, showNestedCategoryStrip]);
+
+  useEffect(() => {
+    if (!showNestedCategoryStrip || !selectedCategorySlug) {
+      return;
+    }
+
+    const frame = scrollCategoryChipIntoView(selectedCategorySlug);
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedCategorySlug, showNestedCategoryStrip]);
 
   function scrollToCategory(slug: string) {
     const targetId = menuDisplayMode === "large" || slug === "all" ? "menu-products-start" : `category-section-${slug}`;
@@ -1250,9 +1234,30 @@ function MenuView({
     });
   }
 
+  function scrollCategoryChipIntoView(slug: string) {
+    return window.requestAnimationFrame(() => {
+      const strip = categoryStripRef.current;
+      const chips = Array.from(strip?.querySelectorAll<HTMLButtonElement>("[data-category-slug]") ?? []);
+      const chip = chips.find((item) => item.dataset.categorySlug === slug);
+
+      if (!strip || !chip) {
+        return;
+      }
+
+      const nextLeft = chip.offsetLeft - ((strip.clientWidth - chip.clientWidth) / 2);
+      const maxLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+      const normalizedLeft = Math.min(maxLeft, Math.max(0, nextLeft));
+
+      if (Math.abs(strip.scrollLeft - normalizedLeft) < 2) {
+        return;
+      }
+
+      strip.scrollTo({ left: normalizedLeft, behavior: "smooth" });
+    });
+  }
+
   function selectCategory(slug: string) {
     manualCategoryScrollUntil.current = Date.now() + 900;
-    scrollSpyUpdate.current = false;
     setSelectedCategorySlug(slug);
     scrollToCategory(slug);
   }
@@ -1381,7 +1386,7 @@ function MenuView({
             </section>
           ) : null}
 
-          {showNestedCategoryStrip ? <section className="menu-category-strip" id="menu-categories">
+          {showNestedCategoryStrip ? <section className="menu-category-strip" id="menu-categories" ref={categoryStripRef}>
             {data.categories.map((category) => {
               const isAllCategory = category.slug === "all";
               const isActive = category.slug === selectedCategorySlug;
@@ -1394,6 +1399,7 @@ function MenuView({
                   type="button"
                   key={category.slug}
                   className={`menu-category-chip ${isActive ? "active" : ""} ${category.visualScrollEnabled ? "visual-scroll" : ""}`}
+                  data-category-slug={category.slug}
                   onClick={() => selectCategory(category.slug)}
                 >
                   <span className="menu-category-icon" style={categoryChipStyle(category)}>
