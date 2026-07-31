@@ -3372,6 +3372,11 @@ body:has(.public-page)::-webkit-scrollbar {
   z-index: 50;
 }
 
+.public-splash.closing {
+  animation: none;
+  opacity: 0;
+}
+
 .public-splash img,
 .public-splash .public-logo-fallback {
   animation: splash-logo-drop 3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -4050,7 +4055,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .menu-category-strip {
   align-self: start;
   box-sizing: border-box;
-  direction: ltr;
+  direction: rtl;
   display: flex;
   gap: 12px;
   height: 79px;
@@ -4332,8 +4337,15 @@ body:has(.public-page)::-webkit-scrollbar {
   gap: 28px;
 }
 
+.menu-category-strip + .product-list,
+.menu-category-strip + .menu-view-switch + .product-list,
+.menu-category-strip + .category-spotlight,
+.menu-category-strip + .menu-view-switch + .category-spotlight {
+  margin-top: -10px;
+}
+
 .product-list > div {
-  scroll-margin-top: 16px;
+  scroll-margin-top: 85px;
 }
 
 .category-spotlight {
@@ -4341,7 +4353,7 @@ body:has(.public-page)::-webkit-scrollbar {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr);
-  scroll-margin-top: 16px;
+  scroll-margin-top: 85px;
 }
 
 .category-spotlight-card {
@@ -4539,7 +4551,7 @@ body:has(.public-page)::-webkit-scrollbar {
   margin: 0;
   padding: 0 9px;
   position: fixed;
-  top: 185px;
+  top: 160px;
   width: max-content;
   z-index: 9;
 }
@@ -6448,8 +6460,16 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .public-drawer button:not(.drawer-close).active {
-  color: #20242c;
+  background: color-mix(in srgb, var(--color-primary) 12%, #fff);
+  border-radius: 12px;
+  color: var(--color-primary);
   font-weight: 900;
+  padding-inline: 12px;
+}
+
+.public-drawer button:not(.drawer-close).active b,
+.public-drawer button:not(.drawer-close).active svg {
+  color: var(--color-primary);
 }
 
 .public-drawer button:not(.drawer-close) b {

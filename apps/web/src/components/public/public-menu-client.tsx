@@ -23,6 +23,8 @@ type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
 
 const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const MENU_SECTION_SCROLL_GAP = 6;
+const BANNER_AUTO_ADVANCE_MS = 3000;
 
 const translations = {
   ar: {
@@ -267,6 +269,14 @@ function normalizeMenuKey(value?: string | null) {
   }
 }
 
+function menuSectionScrollOffset(strip: HTMLElement | null, showNestedCategoryStrip: boolean) {
+  if (!showNestedCategoryStrip) {
+    return 16;
+  }
+
+  return (strip?.getBoundingClientRect().height ?? 79) + MENU_SECTION_SCROLL_GAP;
+}
+
 function visualBackgroundStyle(input: Pick<PublicCategory, "backgroundType" | "backgroundValue" | "backgroundCss" | "color">): React.CSSProperties {
   const value = input.backgroundValue ?? input.color ?? "#e51f2a";
 
@@ -404,8 +414,9 @@ export function PublicMenuClient({
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
-  const [drawerTab, setDrawerTab] = useState<"info" | "hours">("info");
+  const [drawerTab, setDrawerTab] = useState<"info" | "hours" | null>(null);
   const [splashVisible, setSplashVisible] = useState(false);
+  const [splashClosing, setSplashClosing] = useState(false);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
   const storageKey = `cart:${data.restaurant.slug}:main`;
@@ -418,6 +429,7 @@ export function PublicMenuClient({
   const t = translations[language];
   const showPrices = data.restaurant.showPrices ?? true;
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
+  const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
   const openingHours = formatOpeningHours(firstBranch?.openingHours, language);
   const allBuilderSections = data.menus?.flatMap((menu) => menu.pages?.flatMap((page) => page.sections ?? []) ?? []) ?? [];
@@ -484,6 +496,7 @@ export function PublicMenuClient({
 
     window.sessionStorage.setItem(splashStorageKey, "1");
     setSplashVisible(true);
+    setSplashClosing(false);
     const timer = window.setTimeout(() => setSplashVisible(false), 3000);
 
     return () => window.clearTimeout(timer);
@@ -591,6 +604,35 @@ export function PublicMenuClient({
     setMenuBackSignal((current) => current + 1);
   }
 
+  function goToRestaurantHome() {
+    window.location.assign(`/m/${data.restaurant.slug}`);
+  }
+
+  function openDrawer() {
+    setDrawerTab(null);
+    setDrawerOpen(true);
+  }
+
+  function closeDrawer() {
+    setDrawerOpen(false);
+    setDrawerTab(null);
+  }
+
+  function dismissSplash(event?: React.SyntheticEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (splashClosing) {
+      return;
+    }
+
+    setSplashClosing(true);
+    window.setTimeout(() => {
+      setSplashVisible(false);
+      setSplashClosing(false);
+    }, 180);
+  }
+
   const whatsappMessage = useMemo(() => {
     if (!showPrices) {
       return [
@@ -660,17 +702,21 @@ export function PublicMenuClient({
     >
       {splashVisible ? (
         <div
-          className="public-splash"
+          className={splashClosing ? "public-splash closing" : "public-splash"}
           role="button"
           tabIndex={0}
           aria-label={data.restaurant.name}
-          onClick={() => setSplashVisible(false)}
+          onClick={dismissSplash}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " " || event.key === "Escape") {
-              setSplashVisible(false);
+              dismissSplash(event);
             }
           }}
-          onPointerDown={() => setSplashVisible(false)}
+          onPointerDown={dismissSplash}
+          onPointerUp={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           style={{
             "--splash-bg-color": splashBackgroundColor,
             "--splash-bg-overlay": splashBackgroundImageUrl ? "linear-gradient(180deg, rgb(0 0 0 / 46%), rgb(0 0 0 / 18%) 42%, rgb(0 0 0 / 58%))" : "none",
@@ -682,7 +728,7 @@ export function PublicMenuClient({
           {splashLogoUrl ? <img src={splashLogoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
         </div>
       ) : null}
-      <header className="public-header">
+      {activeView !== "product" ? <header className="public-header">
         {activeView === "cart" ? (
           <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
             <ChevronLeft size={22} />
@@ -692,15 +738,15 @@ export function PublicMenuClient({
             <ArrowLeft size={22} />
           </button>
         ) : isSingleMenuPage ? (
-          <button className="public-header-menu-button" onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
+          <button className="public-header-menu-button" onClick={openDrawer} aria-label={t.menu}>
             <Menu size={24} />
           </button>
         ) : activeView === "menu" ? (
-          <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
+          <button onClick={goToRestaurantHome} aria-label="الرجوع">
             <ArrowLeft size={22} />
           </button>
         ) : (
-          <button onClick={() => setDrawerOpen(true)} aria-label={t.menu}>
+          <button onClick={openDrawer} aria-label={t.menu}>
             <Menu size={24} />
           </button>
         )}
@@ -714,7 +760,7 @@ export function PublicMenuClient({
           )}
         </p>
         {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
-      </header>
+      </header> : null}
 
       {activeView === "home" ? (
         <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} />
@@ -778,8 +824,8 @@ export function PublicMenuClient({
       />
 
       {drawerOpen ? (
-        <aside className="public-drawer">
-          <button className="drawer-close" onClick={() => setDrawerOpen(false)} aria-label={t.close}>
+        <aside className="public-drawer" dir={language === "ar" ? "rtl" : "ltr"} lang={language}>
+          <button className="drawer-close" onClick={closeDrawer} aria-label={t.close}>
             <X size={24} />
           </button>
           {data.restaurant.logoUrl ? (
@@ -789,7 +835,7 @@ export function PublicMenuClient({
           )}
           <button type="button" onClick={() => setLanguage((current) => (current === "ar" ? "en" : "ar"))}>
             <span>{t.language}</span>
-            <b>{t.switchLanguage}</b>
+            <b>{currentLanguageLabel}</b>
           </button>
           <button type="button" className={drawerTab === "info" ? "active" : ""} onClick={() => setDrawerTab("info")}>
             <span>{t.settings}</span>
@@ -805,7 +851,7 @@ export function PublicMenuClient({
               <ArrowLeft size={18} />
             </button>
           ))}
-          <div className="drawer-restaurant-info">
+          {drawerTab ? <div className="drawer-restaurant-info">
             {drawerTab === "info" ? (
               <>
                 {data.restaurant.description ? <p>{data.restaurant.description}</p> : null}
@@ -819,7 +865,7 @@ export function PublicMenuClient({
                 {openingHours?.length ? openingHours.map((row) => <small key={row}>{row}</small>) : <small>لا توجد أوقات دوام محددة</small>}
               </div>
             )}
-          </div>
+          </div> : null}
           <small>Version 0.1.0+12</small>
         </aside>
       ) : null}
@@ -885,12 +931,12 @@ function HomeView({
       return;
     }
 
-    const timer = window.setInterval(() => {
+    const timer = window.setTimeout(() => {
       setActiveBanner((current) => (current + 1) % bannerSlides.length);
-    }, 3000);
+    }, BANNER_AUTO_ADVANCE_MS);
 
-    return () => window.clearInterval(timer);
-  }, [bannerSlides.length]);
+    return () => window.clearTimeout(timer);
+  }, [activeBanner, bannerSlides.length]);
 
   function moveBanner(direction: -1 | 1) {
     if (bannerSlides.length <= 1) {
@@ -913,7 +959,7 @@ function HomeView({
     }
 
     const endX = event.changedTouches[0]?.clientX ?? startX;
-    const deltaX = startX - endX;
+    const deltaX = endX - startX;
 
     if (Math.abs(deltaX) < 40) {
       return;
@@ -1119,7 +1165,7 @@ function MenuView({
   const productsWithoutCategory = selectedCategorySlug === "all"
     ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
     : [];
-  const headerCategories = useMemo(() => [...data.categories].reverse(), [data.categories]);
+  const headerCategories = useMemo(() => data.categories, [data.categories]);
 
   useEffect(() => {
     if (selectedMood || selectedCollection) {
@@ -1184,7 +1230,7 @@ function MenuView({
         return;
       }
 
-      const threshold = 132;
+      const threshold = menuSectionScrollOffset(categoryStripRef.current, showNestedCategoryStrip) + 8;
       let nextSlug = "all";
 
       for (const section of categorySections) {
@@ -1230,7 +1276,7 @@ function MenuView({
         return;
       }
 
-      const top = element.getBoundingClientRect().top + window.scrollY - (showNestedCategoryStrip ? 92 : 16);
+      const top = element.getBoundingClientRect().top + window.scrollY - menuSectionScrollOffset(categoryStripRef.current, showNestedCategoryStrip);
       window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
     });
   }
@@ -1245,15 +1291,7 @@ function MenuView({
         return;
       }
 
-      const nextLeft = chip.offsetLeft - ((strip.clientWidth - chip.clientWidth) / 2);
-      const maxLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
-      const normalizedLeft = Math.min(maxLeft, Math.max(0, nextLeft));
-
-      if (Math.abs(strip.scrollLeft - normalizedLeft) < 2) {
-        return;
-      }
-
-      strip.scrollTo({ left: normalizedLeft, behavior: "smooth" });
+      chip.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
     });
   }
 
