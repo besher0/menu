@@ -4071,7 +4071,8 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .public-screen.menu-nested .menu-category-strip,
 .public-screen.view-menu .menu-category-strip {
-  background: #ffffff;
+  background: #fff8f8;
+  border-bottom: 0;
   box-shadow: none;
   margin-top: -2px;
   padding-bottom: 4px;
@@ -4553,7 +4554,7 @@ body:has(.public-page)::-webkit-scrollbar {
   position: fixed;
   top: 160px;
   width: max-content;
-  z-index: 9;
+  z-index: 40;
 }
 
 .menu-view-switch button {
