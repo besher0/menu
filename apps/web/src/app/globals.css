@@ -4084,6 +4084,7 @@ body:has(.public-page)::-webkit-scrollbar {
   position: sticky;
   top: 0;
   z-index: 30;
+  margin-bottom: 12px;
 }
 
 .menu-category-strip::-webkit-scrollbar {
@@ -4556,9 +4557,10 @@ body:has(.public-page)::-webkit-scrollbar {
   margin: 0;
   padding: 0 9px;
   position: fixed;
-  top: 142px;
+  top: 140px;
   width: max-content;
   z-index: 40;
+  left: 0px;
 }
 
 .menu-view-switch button {

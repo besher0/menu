@@ -1102,6 +1102,7 @@ function MenuView({
     ? searchParams.get("collection")
     : "";
   const selectedCategoryParam = searchParams.get("category")?.trim() || "";
+  const selectedDisplayParam = searchParams.get("display") === "large" ? "large" : "list";
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const categoryGridSection = allPages
     .flatMap((page) => page.sections ?? [])
@@ -1117,7 +1118,7 @@ function MenuView({
   const spotlightTouchStartX = useRef<number | null>(null);
   const manualCategoryScrollUntil = useRef(0);
   const categoryStripRef = useRef<HTMLElement | null>(null);
-  const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>("list");
+  const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>(selectedDisplayParam);
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
@@ -1146,6 +1147,12 @@ function MenuView({
   const categoryProductsSource = data.products;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const menuReturnParams = new URLSearchParams(menuQuery);
+
+  if (productListLayout === "single") {
+    menuReturnParams.set("display", menuDisplayMode);
+  } else {
+    menuReturnParams.delete("display");
+  }
 
   if (selectedCategorySlug && !selectedMood && !selectedCollection) {
     menuReturnParams.set("category", selectedCategorySlug);
@@ -1306,6 +1313,14 @@ function MenuView({
     setActiveSpotlightIndex((current) => (current + direction + activeProducts.length) % activeProducts.length);
   }
 
+  function changeMenuDisplayMode(mode: MenuDisplayMode) {
+    setMenuDisplayMode(mode);
+
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("display", mode);
+    window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
+  }
+
   function openProduct(product: PublicProduct) {
     if (productListLayout === "double") {
       setSelectedProduct(product);
@@ -1455,7 +1470,7 @@ function MenuView({
             <button
               type="button"
               className={menuDisplayMode === "large" ? "active" : ""}
-              onClick={() => setMenuDisplayMode("large")}
+              onClick={() => changeMenuDisplayMode("large")}
               aria-label="عرض المنتج الكبير"
               title="عرض المنتج الكبير"
             >
@@ -1464,7 +1479,7 @@ function MenuView({
             <button
               type="button"
               className={menuDisplayMode === "list" ? "active" : ""}
-              onClick={() => setMenuDisplayMode("list")}
+              onClick={() => changeMenuDisplayMode("list")}
               aria-label="عرض المنتجات"
               title="عرض المنتجات"
             >
