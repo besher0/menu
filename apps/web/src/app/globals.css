@@ -5385,7 +5385,7 @@ body:has(.public-page)::-webkit-scrollbar {
   gap: 5px;
   grid-auto-columns: 72px;
   grid-auto-flow: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   overflow-x: auto;
   overflow-y: visible;
   margin-bottom: -6px;
