@@ -4551,16 +4551,17 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 13px;
   box-shadow: 0 12px 28px rgb(16 24 40 / 16%);
   display: inline-flex;
+  flex-direction: row-reverse;
   gap: 8px;
   height: 38px;
-  left: max(16px, calc((100vw - 430px) / 2 + 16px));
-  margin: 0;
+  justify-self: end;
+  margin: 0 0 -50px;
   padding: 0 9px;
-  position: fixed;
-  top: 140px;
+  position: sticky;
+  top: 54px;
+  transform: translateY(-10px);
   width: max-content;
   z-index: 40;
-  left: 0px;
 }
 
 .menu-view-switch button {
