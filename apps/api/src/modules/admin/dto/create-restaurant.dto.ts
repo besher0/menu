@@ -36,6 +36,10 @@ export class CreateRestaurantDto {
   @IsString()
   planKey?: string;
 
+  @IsOptional()
+  @IsString()
+  copyFromRestaurantId?: string;
+
   @IsEmail()
   ownerEmail: string;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Save } from "lucide-react";
 import { adminAuthHeaders, setStoredRestaurant } from "@/lib/session";
@@ -18,12 +18,21 @@ type RestaurantFormState = {
   ownerName: string;
   ownerEmail: string;
   ownerPassword: string;
+  copyFromRestaurantId: string;
+};
+
+type RestaurantOption = {
+  id: string;
+  name: string;
+  slug: string;
 };
 
 export function RestaurantForm() {
   const [status, setStatus] = useState<"idle" | "saving" | "error" | "success">("idle");
   const [message, setMessage] = useState("");
   const [publicUrl, setPublicUrl] = useState("");
+  const [restaurants, setRestaurants] = useState<RestaurantOption[]>([]);
+  const [restaurantsStatus, setRestaurantsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [form, setForm] = useState<RestaurantFormState>({
     name: "",
     slug: "",
@@ -34,8 +43,44 @@ export function RestaurantForm() {
     planKey: "BASIC",
     ownerName: "",
     ownerEmail: "",
-    ownerPassword: "password123"
+    ownerPassword: "password123",
+    copyFromRestaurantId: ""
   });
+  const sourceRestaurant = restaurants.find((restaurant) => restaurant.id === form.copyFromRestaurantId);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadRestaurants() {
+      try {
+        const response = await fetch(`${API_URL}/admin/restaurants`, {
+          headers: adminAuthHeaders(),
+          cache: "no-store"
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.message ?? "Could not load restaurants.");
+        }
+
+        if (mounted) {
+          setRestaurants(payload?.data ?? payload ?? []);
+          setRestaurantsStatus("ready");
+        }
+      } catch {
+        if (mounted) {
+          setRestaurants([]);
+          setRestaurantsStatus("error");
+        }
+      }
+    }
+
+    void loadRestaurants();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   function update<K extends keyof RestaurantFormState>(key: K, value: RestaurantFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -57,6 +102,7 @@ export function RestaurantForm() {
         body: JSON.stringify({
           ...form,
           slug: form.slug || undefined,
+          copyFromRestaurantId: form.copyFromRestaurantId || undefined,
           ownerPassword: form.ownerPassword || undefined
         })
       });
@@ -161,6 +207,22 @@ export function RestaurantForm() {
             <input value={form.ownerPassword} onChange={(event) => update("ownerPassword", event.target.value)} />
           </label>
 
+          <label>
+            <span>نسخ التصميم من</span>
+            <select
+              value={form.copyFromRestaurantId}
+              disabled={restaurantsStatus === "loading" || restaurants.length === 0}
+              onChange={(event) => update("copyFromRestaurantId", event.target.value)}
+            >
+              <option value="">بدون نسخ</option>
+              {restaurants.map((restaurant) => (
+                <option key={restaurant.id} value={restaurant.id}>
+                  {restaurant.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
           {message ? <p className={status === "success" ? "form-message success" : "form-message"}>{message}</p> : null}
           {publicUrl ? (
             <Link className="created-link" href={publicUrl}>
@@ -176,6 +238,7 @@ export function RestaurantForm() {
           </div>
           <h2>{form.name || "مطعم جديد"}</h2>
           <p>فرع رئيسي في {form.city || "المدينة"}، باقة {planName(form.planKey)}، وثيم أحمر افتراضي.</p>
+          {sourceRestaurant ? <p>سيتم نسخ التصميم والصفحات من {sourceRestaurant.name}.</p> : null}
           <b>{form.slug ? `/m/${form.slug}` : "/m/auto-slug"}</b>
         </aside>
       </section>

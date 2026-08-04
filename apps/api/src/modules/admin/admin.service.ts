@@ -1,10 +1,33 @@
-import { ConflictException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ABO_MALEK_THEME, FEATURE_KEYS } from "@menu/shared";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { slugify } from "../../common/slugify";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateRestaurantDto } from "./dto/create-restaurant.dto";
+
+const restaurantDesignSourceInclude = {
+  themeSettings: true,
+  categories: {
+    where: { deletedAt: null },
+    orderBy: { sortOrder: "asc" }
+  },
+  menus: {
+    orderBy: { createdAt: "asc" },
+    include: {
+      pages: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          sections: {
+            orderBy: { sortOrder: "asc" }
+          }
+        }
+      }
+    }
+  }
+} satisfies Prisma.RestaurantInclude;
+
+type RestaurantDesignSource = Prisma.RestaurantGetPayload<{ include: typeof restaurantDesignSourceInclude }>;
 
 @Injectable()
 export class AdminService {
@@ -139,6 +162,9 @@ export class AdminService {
     const plan = await this.prisma.subscriptionPlan.findUnique({
       where: { key: dto.planKey ?? "BASIC" }
     });
+    const designSource = dto.copyFromRestaurantId
+      ? await this.loadRestaurantDesignSource(dto.copyFromRestaurantId)
+      : null;
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -182,20 +208,7 @@ export class AdminService {
                 isActive: true
               }
             },
-            categories: {
-              create: {
-                name: "الكل",
-                slug: "all",
-                description: "كل الأصناف",
-                imagePosition: "78,50",
-                color: "#ed1f2b",
-                backgroundType: "GRADIENT",
-                backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
-                visualScrollEnabled: false,
-                sortOrder: 0,
-                isActive: true
-              }
-            }
+            ...(designSource ? {} : { categories: { create: this.defaultAllCategoryData() } })
           },
           include: {
             branches: true
@@ -213,60 +226,17 @@ export class AdminService {
           });
         }
 
-        await tx.restaurantThemeSettings.create({
-          data: {
-            restaurantId: restaurant.id,
-            settings: ABO_MALEK_THEME
-          }
-        });
-
-        const menu = await tx.menu.create({
-          data: {
-            restaurantId: restaurant.id,
-            branchId: restaurant.branches[0]?.id,
-            name: "القائمة الرئيسية",
-            slug: "main-menu",
-            status: "PUBLISHED"
-          }
-        });
-
-        const page = await tx.menuPage.create({
-          data: {
-            menuId: menu.id,
-            title: "الرئيسية",
-            slug: "home",
-            isHome: true,
-            status: "PUBLISHED",
-            sortOrder: 0
-          }
-        });
-
-        await tx.menuSection.createMany({
-          data: [
-            {
-              pageId: page.id,
-              type: "HERO",
-              sortOrder: 0,
-              settings: {
-                title: `أهلا بك في ${dto.name}`,
-                subtitle: "اختر أحد الأصناف وتصفح",
-                backgroundImageUrl: dto.heroImageUrl
-              }
-            },
-            {
-              pageId: page.id,
-              type: "CATEGORY_GRID",
-              sortOrder: 1,
-              settings: { layout: "horizontal-chips" }
-            },
-            {
-              pageId: page.id,
-              type: "FEATURED_PRODUCTS",
-              sortOrder: 2,
-              settings: { title: "الأكثر طلبا" }
-            }
-          ]
-        });
+        if (designSource) {
+          await this.copyRestaurantDesign(tx, designSource, restaurant.id, restaurant.branches[0]?.id ?? null);
+        } else {
+          await this.createDefaultRestaurantDesign(
+            tx,
+            restaurant.id,
+            restaurant.branches[0]?.id ?? null,
+            dto.name,
+            dto.heroImageUrl
+          );
+        }
 
         await tx.qrCode.create({
           data: {
@@ -288,6 +258,9 @@ export class AdminService {
             defaultPassword: dto.ownerPassword ? undefined : ownerPassword
           }
         };
+      }, {
+        maxWait: 10000,
+        timeout: 30000
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -438,6 +411,245 @@ export class AdminService {
       planKey: subscription.plan.key,
       status: subscription.status
     };
+  }
+
+  private async loadRestaurantDesignSource(restaurantId: string) {
+    const source = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      include: restaurantDesignSourceInclude
+    });
+
+    if (!source) {
+      throw new BadRequestException("Source restaurant was not found.");
+    }
+
+    return source;
+  }
+
+  private async copyRestaurantDesign(
+    tx: Prisma.TransactionClient,
+    source: RestaurantDesignSource,
+    restaurantId: string,
+    branchId: string | null
+  ) {
+    await tx.restaurantThemeSettings.create({
+      data: {
+        restaurantId,
+        themeId: source.themeSettings?.themeId,
+        settings: this.sanitizeCopiedThemeSettings(source.themeSettings?.settings),
+        iconSettings: this.cloneJsonValue(source.themeSettings?.iconSettings),
+        customCss: source.themeSettings?.customCss
+      }
+    });
+
+    if (source.categories.length) {
+      await tx.category.createMany({
+        data: source.categories.map((category) => ({
+          restaurantId,
+          name: category.name,
+          slug: category.slug,
+          description: category.description,
+          imageUrl: category.imageUrl,
+          imagePosition: category.imagePosition,
+          imageWidth: category.imageWidth,
+          imageHeight: category.imageHeight,
+          color: category.color,
+          backgroundType: category.backgroundType,
+          backgroundValue: category.backgroundValue,
+          backgroundOverlay: category.backgroundOverlay,
+          backgroundCss: category.backgroundCss,
+          visualScrollEnabled: category.visualScrollEnabled,
+          sortOrder: category.sortOrder,
+          isActive: category.isActive
+        }))
+      });
+    } else {
+      await tx.category.create({
+        data: {
+          restaurantId,
+          ...this.defaultAllCategoryData()
+        }
+      });
+    }
+
+    if (!source.menus.length) {
+      await this.createDefaultMenu(tx, restaurantId, branchId);
+      return;
+    }
+
+    for (const sourceMenu of source.menus) {
+      const menu = await tx.menu.create({
+        data: {
+          restaurantId,
+          branchId,
+          name: sourceMenu.name,
+          slug: sourceMenu.slug,
+          status: sourceMenu.status
+        }
+      });
+
+      for (const sourcePage of sourceMenu.pages) {
+        const page = await tx.menuPage.create({
+          data: {
+            menuId: menu.id,
+            title: sourcePage.title,
+            slug: sourcePage.slug,
+            sortOrder: sourcePage.sortOrder,
+            isHome: sourcePage.isHome,
+            status: sourcePage.status,
+            seoTitle: sourcePage.seoTitle,
+            seoDescription: sourcePage.seoDescription
+          }
+        });
+
+        if (sourcePage.sections.length) {
+          await tx.menuSection.createMany({
+            data: sourcePage.sections.map((section) => ({
+              pageId: page.id,
+              type: section.type,
+              sortOrder: section.sortOrder,
+              isActive: section.isActive,
+              settings: this.sanitizeCopiedSectionSettings(section.type, section.settings)
+            }))
+          });
+        }
+      }
+    }
+  }
+
+  private async createDefaultRestaurantDesign(
+    tx: Prisma.TransactionClient,
+    restaurantId: string,
+    branchId: string | null,
+    restaurantName: string,
+    heroImageUrl?: string
+  ) {
+    await tx.restaurantThemeSettings.create({
+      data: {
+        restaurantId,
+        settings: ABO_MALEK_THEME
+      }
+    });
+
+    await this.createDefaultMenu(tx, restaurantId, branchId, restaurantName, heroImageUrl);
+  }
+
+  private async createDefaultMenu(
+    tx: Prisma.TransactionClient,
+    restaurantId: string,
+    branchId: string | null,
+    restaurantName?: string,
+    heroImageUrl?: string
+  ) {
+    const menu = await tx.menu.create({
+      data: {
+        restaurantId,
+        branchId,
+        name: "القائمة الرئيسية",
+        slug: "main-menu",
+        status: "PUBLISHED"
+      }
+    });
+
+    const page = await tx.menuPage.create({
+      data: {
+        menuId: menu.id,
+        title: "الرئيسية",
+        slug: "home",
+        isHome: true,
+        status: "PUBLISHED",
+        sortOrder: 0
+      }
+    });
+
+    await tx.menuSection.createMany({
+      data: [
+        {
+          pageId: page.id,
+          type: "HERO",
+          sortOrder: 0,
+          settings: {
+            title: restaurantName ? `أهلا بك في ${restaurantName}` : "أهلا بك",
+            subtitle: "اختر أحد الأصناف وتصفح",
+            backgroundImageUrl: heroImageUrl
+          }
+        },
+        {
+          pageId: page.id,
+          type: "CATEGORY_GRID",
+          sortOrder: 1,
+          settings: { layout: "horizontal-chips" }
+        },
+        {
+          pageId: page.id,
+          type: "FEATURED_PRODUCTS",
+          sortOrder: 2,
+          settings: { title: "الأكثر طلبا" }
+        }
+      ]
+    });
+  }
+
+  private defaultAllCategoryData() {
+    return {
+      name: "الكل",
+      slug: "all",
+      description: "كل الأصناف",
+      imagePosition: "78,50",
+      color: "#ed1f2b",
+      backgroundType: "GRADIENT" as const,
+      backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
+      visualScrollEnabled: false,
+      sortOrder: 0,
+      isActive: true
+    };
+  }
+
+  private sanitizeCopiedThemeSettings(settings: Prisma.JsonValue | null | undefined) {
+    const cloned = this.cloneJsonObject(settings ?? ABO_MALEK_THEME);
+    const dashboardSettings = this.cloneJsonObject(cloned.dashboardSettings);
+
+    delete dashboardSettings.phone;
+    delete dashboardSettings.email;
+
+    const splashScreen = this.cloneJsonObject(dashboardSettings.splashScreen);
+    if (Object.keys(splashScreen).length) {
+      delete splashScreen.logoUrl;
+      delete splashScreen.backgroundImageUrl;
+      if (splashScreen.backgroundType === "IMAGE") {
+        splashScreen.backgroundType = "COLOR";
+      }
+      dashboardSettings.splashScreen = splashScreen;
+    }
+
+    if (Object.keys(dashboardSettings).length) {
+      cloned.dashboardSettings = dashboardSettings;
+    }
+
+    return cloned as Prisma.InputJsonObject;
+  }
+
+  private sanitizeCopiedSectionSettings(type: string, settings: Prisma.JsonValue) {
+    const cloned = this.cloneJsonObject(settings);
+
+    if (type === "HERO") {
+      delete cloned.adBanners;
+    }
+
+    return cloned as Prisma.InputJsonObject;
+  }
+
+  private cloneJsonObject(value: unknown): Record<string, any> {
+    const cloned = this.cloneJsonValue(value);
+    return cloned && typeof cloned === "object" && !Array.isArray(cloned) ? cloned as Record<string, any> : {};
+  }
+
+  private cloneJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 
   private async nextRestaurantSlug(baseSlug: string) {
