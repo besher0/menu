@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FEATURE_KEYS } from "@menu/shared";
 import { Check, Download, Edit3, Loader2, Plus, Save, X } from "lucide-react";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/client-api";
 
 type PlanFeature = {
@@ -254,10 +255,7 @@ export function SubscriptionsClient() {
 
       <section className="data-card full">
         {status === "loading" ? (
-          <div className="empty-state">
-            <Loader2 className="spin" size={28} />
-            <b>يتم تحميل الباقات</b>
-          </div>
+          <SkeletonTable rows={6} columns={8} />
         ) : null}
         {status === "error" && !plans.length ? <EmptyState title="تعذر تحميل الباقات" text={message} /> : null}
         {message && plans.length ? <p className="form-message">{message}</p> : null}

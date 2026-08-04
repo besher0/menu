@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/client-api";
+import { SkeletonTable } from "@/components/ui/skeleton";
 
 type Order = {
   id: string;
@@ -58,10 +58,7 @@ export function OrdersClient() {
       </section>
       <section className="data-card full">
         {status === "loading" ? (
-          <div className="empty-state">
-            <Loader2 className="spin" size={28} />
-            <b>يتم تحميل الطلبات</b>
-          </div>
+          <SkeletonTable rows={7} columns={6} />
         ) : null}
         {status === "error" ? <EmptyState title="تعذر تحميل الطلبات" text={message} /> : null}
         {status === "ready" && orders.length === 0 ? (

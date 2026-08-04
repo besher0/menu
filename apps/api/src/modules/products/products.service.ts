@@ -71,7 +71,7 @@ export class ProductsService {
     };
   }
 
-  async create(restaurantId: string, dto: CreateProductDto) {
+  async create(restaurantId: string, dto: CreateProductDto, allowAdvancedMedia = false) {
     const limit = await this.featureFlags.getFeatureLimit(restaurantId, "MAX_PRODUCTS");
     const currentCount = await this.prisma.product.count({
       where: { restaurantId, deletedAt: null }
@@ -97,13 +97,13 @@ export class ProductsService {
         description: dto.description,
         basePrice: dto.basePrice,
         currency: dto.currency ?? "ل.س",
-        moodKey: dto.moodKey || null,
+        moodKey: this.serializeMoodKeyValue(this.normalizeMoodKeysInput(dto)),
         ingredients: dto.ingredients as Prisma.InputJsonValue | undefined,
         nutrition: dto.nutrition as Prisma.InputJsonValue | undefined,
         isFeatured: dto.isFeatured ?? false,
         isNew: dto.isNew ?? dto.isFeatured ?? false,
         isPopular: dto.isPopular ?? false,
-        media3d: dto.model3dUrl
+        media3d: allowAdvancedMedia && dto.model3dUrl
           ? {
               create: {
                 url: dto.model3dUrl,
@@ -111,7 +111,7 @@ export class ProductsService {
               }
             }
           : undefined,
-        vrMedia: dto.vrUrl
+        vrMedia: allowAdvancedMedia && dto.vrUrl
           ? {
               create: {
                 panoramaUrl: dto.vrUrl,
@@ -160,7 +160,72 @@ export class ProductsService {
     return this.serializeProduct(product);
   }
 
-  async update(restaurantId: string, id: string, dto: CreateProductDto) {
+  async ingredients(restaurantId: string) {
+    const products = await this.prisma.product.findMany({
+      where: { restaurantId, deletedAt: null },
+      select: { ingredients: true },
+      orderBy: { updatedAt: "desc" },
+      take: 500
+    });
+    const ingredients = new Map<string, { name: string; imageUrl: string; usageCount: number }>();
+
+    for (const product of products) {
+      if (!Array.isArray(product.ingredients)) continue;
+
+      for (const item of product.ingredients) {
+        const normalized = this.normalizeIngredientItem(item);
+        if (!normalized) continue;
+
+        const key = normalized.name.toLocaleLowerCase();
+        const imageUrl = this.publicAssetUrl(normalized.imageUrl) ?? "";
+        const existing = ingredients.get(key);
+        if (existing) {
+          existing.usageCount += 1;
+          if (!existing.imageUrl && imageUrl) {
+            existing.imageUrl = imageUrl;
+          }
+        } else {
+          ingredients.set(key, { name: normalized.name, imageUrl, usageCount: 1 });
+        }
+      }
+    }
+
+    return {
+      data: Array.from(ingredients.values())
+        .sort((left, right) => right.usageCount - left.usageCount || left.name.localeCompare(right.name, "ar"))
+        .slice(0, 200)
+    };
+  }
+
+  async mealDetails(restaurantId: string) {
+    const products = await this.prisma.product.findMany({
+      where: { restaurantId, deletedAt: null },
+      select: { nutrition: true },
+      orderBy: { updatedAt: "desc" },
+      take: 500
+    });
+    const details = new Map<string, { label: string; value: string; icon: string; usageCount: number }>();
+
+    for (const product of products) {
+      for (const detail of this.normalizeMealDetails(product.nutrition)) {
+        const key = `${detail.label.toLocaleLowerCase()}|${detail.value.toLocaleLowerCase()}|${detail.icon}|${detail.iconUrl.toLocaleLowerCase()}`;
+        const existing = details.get(key);
+        if (existing) {
+          existing.usageCount += 1;
+        } else {
+          details.set(key, { ...detail, usageCount: 1 });
+        }
+      }
+    }
+
+    return {
+      data: Array.from(details.values())
+        .sort((left, right) => right.usageCount - left.usageCount || left.label.localeCompare(right.label, "ar"))
+        .slice(0, 200)
+    };
+  }
+
+  async update(restaurantId: string, id: string, dto: CreateProductDto, allowAdvancedMedia = false) {
     const existing = await this.prisma.product.findFirst({
       where: { id, restaurantId, deletedAt: null },
       include: {
@@ -183,7 +248,7 @@ export class ProductsService {
         description: dto.description,
         basePrice: dto.basePrice,
         currency: dto.currency ?? existing.currency,
-        moodKey: dto.moodKey || null,
+        moodKey: this.serializeMoodKeyValue(this.normalizeMoodKeysInput(dto)),
         ingredients: dto.ingredients as Prisma.InputJsonValue | undefined,
         nutrition: dto.nutrition as Prisma.InputJsonValue | undefined,
         isFeatured: dto.isFeatured ?? dto.isNew ?? existing.isFeatured,
@@ -203,7 +268,9 @@ export class ProductsService {
       await this.syncProductImages(id, dto);
     }
 
-    await this.sync3dMedia(id, dto);
+    if (allowAdvancedMedia) {
+      await this.sync3dMedia(id, dto);
+    }
 
     return this.findOne(restaurantId, id);
   }
@@ -301,6 +368,8 @@ export class ProductsService {
   }
 
   private serializeProduct(product: any, views = 0) {
+    const moodKeys = this.parseStoredMoodKeys(product.moodKey);
+
     return {
       id: product.id,
       slug: product.slug,
@@ -313,11 +382,12 @@ export class ProductsService {
       isFeatured: product.isFeatured,
       isNew: product.isNew,
       isPopular: product.isPopular,
-      moodKey: product.moodKey ?? null,
+      moodKey: moodKeys[0] ?? null,
+      moodKeys,
       sortOrder: product.sortOrder,
       views,
       ingredients: product.ingredients ?? [],
-      nutrition: product.nutrition ?? null,
+      nutrition: this.serializeNutrition(product.nutrition),
       category: product.category
         ? {
             id: product.category.id,
@@ -370,6 +440,42 @@ export class ProductsService {
       });
   }
 
+  private normalizeMoodKeysInput(dto: CreateProductDto) {
+    const source = dto.moodKeys?.length ? dto.moodKeys : this.parseStoredMoodKeys(dto.moodKey);
+    const seen = new Set<string>();
+
+    return source
+      .map((key) => key.trim())
+      .filter((key) => {
+        const normalized = key.toLocaleLowerCase();
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      });
+  }
+
+  private serializeMoodKeyValue(keys: string[]) {
+    if (!keys.length) return null;
+    if (keys.length === 1) return keys[0];
+    return JSON.stringify(keys);
+  }
+
+  private parseStoredMoodKeys(value?: string | null) {
+    const fallback = value?.trim();
+    if (!fallback) return [];
+
+    try {
+      const parsed = JSON.parse(fallback);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+      }
+    } catch {
+      // Existing products store a single mood label directly.
+    }
+
+    return [fallback];
+  }
+
   private async uniqueProductSlug(restaurantId: string, value: string, excludeId?: string) {
     const base = slugify(value) || "product";
     let candidate = base;
@@ -407,6 +513,82 @@ export class ProductsService {
         sortOrder: index
       }))
     });
+  }
+
+  private normalizeIngredientItem(item: Prisma.JsonValue) {
+    if (typeof item === "string") {
+      const name = item.trim();
+      return name ? { name, imageUrl: "" } : null;
+    }
+
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return null;
+    }
+
+    const record = item as Record<string, Prisma.JsonValue>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const imageUrl = typeof record.imageUrl === "string" ? record.imageUrl.trim() : "";
+
+    return name ? { name, imageUrl } : null;
+  }
+
+  private normalizeMealDetails(nutrition: Prisma.JsonValue | null) {
+    if (!nutrition || typeof nutrition !== "object" || Array.isArray(nutrition)) {
+      return [];
+    }
+
+    const record = nutrition as Record<string, Prisma.JsonValue>;
+    if (Array.isArray(record.details)) {
+      return record.details
+        .map((item) => this.normalizeMealDetailItem(item))
+        .filter((item): item is { label: string; value: string; icon: string; iconUrl: string } => Boolean(item));
+    }
+
+    return [
+      this.legacyMealDetail(record.weight, "الوزن التقريبي", "scale"),
+      this.legacyMealDetail(record.protein, "نوع البروتين", "drumstick"),
+      this.legacyMealDetail(record.breadType, "نوع الخبز", "wheat"),
+      this.legacyMealDetail(record.spice, "مستوى الحدة", "flame")
+    ].filter((item): item is { label: string; value: string; icon: string; iconUrl: string } => Boolean(item));
+  }
+
+  private normalizeMealDetailItem(item: Prisma.JsonValue) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return null;
+    }
+
+    const record = item as Record<string, Prisma.JsonValue>;
+    const label = typeof record.label === "string" ? record.label.trim() : "";
+    const value = typeof record.value === "string" ? record.value.trim() : "";
+    const icon = typeof record.icon === "string" && record.icon.trim() ? record.icon.trim() : "utensils";
+    const iconUrl = typeof record.iconUrl === "string" && record.iconUrl.trim() ? this.publicAssetUrl(record.iconUrl.trim()) ?? "" : "";
+
+    return label || value ? { label, value, icon, iconUrl } : null;
+  }
+
+  private legacyMealDetail(value: Prisma.JsonValue | undefined, label: string, icon: string) {
+    const normalizedValue = typeof value === "string" ? value.trim() : "";
+    return normalizedValue ? { label, value: normalizedValue, icon, iconUrl: "" } : null;
+  }
+
+  private serializeNutrition(nutrition: Prisma.JsonValue | null) {
+    if (!nutrition || typeof nutrition !== "object" || Array.isArray(nutrition)) {
+      return nutrition ?? null;
+    }
+
+    const record = { ...(nutrition as Record<string, Prisma.JsonValue>) };
+    if (Array.isArray(record.details)) {
+      record.details = record.details.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+        const detail = { ...(item as Record<string, Prisma.JsonValue>) };
+        if (typeof detail.iconUrl === "string") {
+          detail.iconUrl = this.publicAssetUrl(detail.iconUrl) ?? "";
+        }
+        return detail;
+      }) as Prisma.JsonArray;
+    }
+
+    return record;
   }
 
   private clampPositiveInt(value: unknown, fallback: number) {

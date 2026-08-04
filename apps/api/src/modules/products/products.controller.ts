@@ -20,12 +20,22 @@ export class ProductsController {
 
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateProductDto) {
-    return this.productsService.create(request.restaurant!.id, dto);
+    return this.productsService.create(request.restaurant!.id, dto, request.user?.role === "SUPER_ADMIN");
   }
 
   @Patch("reorder")
   reorder(@Req() request: AppRequest, @Body() dto: ReorderProductsDto) {
     return this.productsService.reorder(request.restaurant!.id, dto.items);
+  }
+
+  @Get("ingredients")
+  ingredients(@Req() request: AppRequest) {
+    return this.productsService.ingredients(request.restaurant!.id);
+  }
+
+  @Get("meal-details")
+  mealDetails(@Req() request: AppRequest) {
+    return this.productsService.mealDetails(request.restaurant!.id);
   }
 
   @Get(":id")
@@ -35,7 +45,7 @@ export class ProductsController {
 
   @Patch(":id")
   update(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: CreateProductDto) {
-    return this.productsService.update(request.restaurant!.id, id, dto);
+    return this.productsService.update(request.restaurant!.id, id, dto, request.user?.role === "SUPER_ADMIN");
   }
 
   @Patch(":id/toggle-availability")

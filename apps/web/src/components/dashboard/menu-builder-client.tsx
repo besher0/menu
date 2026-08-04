@@ -22,6 +22,7 @@ import {
   defaultSectionSettings
 } from "@menu/shared";
 import { authHeaders, getBrowserSession } from "@/lib/session";
+import { SkeletonForm } from "@/components/ui/skeleton";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 type MoodBackgroundType = "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
@@ -714,10 +715,7 @@ export function MenuBuilderClient() {
 
         <section className="section-editor-panel">
           {status === "loading" ? (
-            <div className="empty-state">
-              <Loader2 className="spin" size={28} />
-              <b>يتم تحميل الأقسام</b>
-            </div>
+            <SkeletonForm fields={7} />
           ) : null}
 
           {selected && status !== "loading" ? (

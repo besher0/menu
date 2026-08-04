@@ -69,11 +69,12 @@ export function AdminShell({
 }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const isDashboard = active.startsWith("/dashboard");
+  const ownerNavItems = restaurantOwnerNavItems.filter((item) => item.href !== "/dashboard/categories");
   const navItems = active.startsWith("/admin")
     ? adminNavItems
     : isSuperAdmin
       ? adminNavItems
-      : restaurantOwnerNavItems;
+      : ownerNavItems;
 
   useEffect(() => {
     setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");

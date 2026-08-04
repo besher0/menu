@@ -139,6 +139,6 @@ export class DashboardController {
 
   @Patch("settings")
   updateSettings(@Req() request: AppRequest, @Body() dto: UpdateDashboardSettingsDto) {
-    return this.dashboardService.updateSettings(request.restaurant!.id, dto);
+    return this.dashboardService.updateSettings(request.restaurant!.id, dto, request.user?.role === "SUPER_ADMIN");
   }
 }

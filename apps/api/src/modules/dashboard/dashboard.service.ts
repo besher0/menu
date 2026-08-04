@@ -691,7 +691,7 @@ export class DashboardService {
     };
   }
 
-  async updateSettings(restaurantId: string, dto: UpdateDashboardSettingsDto) {
+  async updateSettings(restaurantId: string, dto: UpdateDashboardSettingsDto, allowSplashScreen = false) {
     const current = await this.prisma.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       include: {
@@ -749,7 +749,7 @@ export class DashboardService {
       ...(dto.productOpenMode !== undefined
         ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }
         : { productOpenMode: this.normalizeProductOpenMode(existingDashboardSettings.productOpenMode) }),
-      ...(dto.splashScreen !== undefined
+      ...(allowSplashScreen && dto.splashScreen !== undefined
         ? {
             splashScreen: this.normalizeSplashScreenSettings(dto.splashScreen, existingDashboardSettings.splashScreen)
           }

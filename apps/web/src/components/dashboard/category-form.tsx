@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ImagePlus, Loader2, Save } from "lucide-react";
+import { SkeletonForm } from "@/components/ui/skeleton";
 import { API_URL } from "@/lib/client-api";
 import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 import type * as React from "react";
@@ -212,10 +213,7 @@ export function CategoryForm({ categoryId }: { categoryId?: string }) {
   if (status === "loading") {
     return (
       <div className="restaurant-dashboard-page">
-        <div className="restaurant-empty">
-          <Loader2 className="spin" size={28} />
-          <b>يتم تحميل القسم</b>
-        </div>
+        <SkeletonForm fields={8} />
       </div>
     );
   }

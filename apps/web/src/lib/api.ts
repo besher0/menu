@@ -24,6 +24,13 @@ export type PublicIngredient = string | {
   imageUrl?: string | null;
 };
 
+export type PublicMealDetail = {
+  label: string;
+  value: string;
+  icon?: string | null;
+  iconUrl?: string | null;
+};
+
 export type PublicProduct = {
   id?: string;
   slug: string;
@@ -41,8 +48,10 @@ export type PublicProduct = {
   new?: boolean;
   popular?: boolean;
   moodKey?: string | null;
+  moodKeys?: string[];
   ingredients?: PublicIngredient[];
   nutrition?: {
+    details?: PublicMealDetail[];
     calories?: string;
     protein?: string;
     weight?: string;

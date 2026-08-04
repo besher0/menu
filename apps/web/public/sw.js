@@ -1,7 +1,6 @@
-const CACHE_NAME = "menu-builder-v4";
+const CACHE_NAME = "menu-builder-v5";
 const ASSETS = [
   "/offline",
-  "/assets/brand/abo-malek-logo.png",
   "/assets/public/menu-home.png",
   "/assets/public/menu-products.png"
 ];
@@ -32,14 +31,24 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/admin") ||
     url.pathname.startsWith("/dashboard") ||
     url.pathname.startsWith("/login") ||
-    url.pathname.startsWith("/m/") ||
-    url.pathname.startsWith("/_next") ||
-    url.pathname.startsWith("/manifest") ||
     url.pathname === "/sw.js";
 
   if (shouldBypassCache) {
     event.respondWith(
       fetch(event.request).catch(() => new Response("Network unavailable", { status: 503, statusText: "Service Unavailable" }))
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith("/m/") || url.pathname.startsWith("/_next") || url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/offline")))
     );
     return;
   }

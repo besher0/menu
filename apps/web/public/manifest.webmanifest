@@ -1,7 +1,7 @@
 {
-  "name": "Abo Malek Menu",
-  "short_name": "Abo Malek",
-  "start_url": "/m/abo-malek",
+  "name": "Restaurant Menu",
+  "short_name": "Menu",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#fff8f8",
   "theme_color": "#e51f2a",
@@ -9,8 +9,8 @@
   "lang": "ar",
   "icons": [
     {
-      "src": "/assets/brand/abo-malek-logo.png",
-      "sizes": "402x874",
+      "src": "/assets/public/menu-home.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     }

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Banknote, Clock, Loader2, ShoppingBag, Store } from "lucide-react";
+import { Banknote, Clock, ShoppingBag, Store } from "lucide-react";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/client-api";
 import { BarChart, DonutChart } from "./charts";
 import { StatCard } from "./stat-card";
@@ -221,12 +222,7 @@ function formatDate(value?: string) {
 }
 
 function LoadingState() {
-  return (
-    <div className="empty-state">
-      <Loader2 className="spin" size={28} />
-      <b>يتم تحميل البيانات</b>
-    </div>
-  );
+  return <SkeletonTable rows={5} columns={5} />;
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {

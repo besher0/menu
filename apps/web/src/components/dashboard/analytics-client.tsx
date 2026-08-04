@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BarChart3, Loader2, MousePointerClick, ShoppingCart, TrendingUp } from "lucide-react";
+import { BarChart3, MousePointerClick, ShoppingCart, TrendingUp } from "lucide-react";
 import { apiFetch } from "@/lib/client-api";
 import { StatCard } from "@/components/admin/stat-card";
+import { SkeletonStats, SkeletonTable } from "@/components/ui/skeleton";
 
 type Analytics = {
   visits: number;
@@ -55,10 +56,12 @@ export function AnalyticsClient() {
       </section>
 
       {status === "loading" ? (
-        <div className="empty-state">
-          <Loader2 className="spin" size={28} />
-          <b>يتم تحميل التحليلات</b>
-        </div>
+        <>
+          <SkeletonStats />
+          <section className="data-card full">
+            <SkeletonTable rows={5} columns={2} />
+          </section>
+        </>
       ) : null}
       {status === "error" ? <EmptyState title="تعذر تحميل التحليلات" text={message} /> : null}
       {status === "ready" && analytics ? (

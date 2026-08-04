@@ -48,11 +48,16 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  moodKeys?: string[];
+
+  @IsOptional()
+  @IsArray()
   ingredients?: IngredientInput[];
 
   @IsOptional()
   @IsObject()
-  nutrition?: Record<string, string>;
+  nutrition?: Record<string, unknown>;
 
   @IsOptional()
   @IsString()

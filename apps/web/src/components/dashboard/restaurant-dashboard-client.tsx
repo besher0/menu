@@ -18,6 +18,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { API_URL, apiFetch } from "@/lib/client-api";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
 type LoadState = "loading" | "ready" | "saving" | "error";
@@ -674,11 +675,13 @@ function SettingsForm() {
   const [settings, setSettings] = useState<DashboardSettings | null>(null);
   const [status, setStatus] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const form = settings?.restaurant;
   const splash = form?.splashScreen ?? defaultSplashScreenSettings;
   const hours = settings?.branch?.openingHours ?? [];
 
   useEffect(() => {
+    setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");
     void load();
 
     async function load() {
@@ -772,10 +775,14 @@ function SettingsForm() {
     if (!settings) return;
     setStatus("saving");
     try {
+      const { splashScreen: _splashScreen, ...restaurantSettings } = settings.restaurant;
       const next = await apiFetch<DashboardSettings>("/dashboard/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings.restaurant, openingHours: settings.branch?.openingHours ?? [] })
+        body: JSON.stringify({
+          ...(isSuperAdmin ? settings.restaurant : restaurantSettings),
+          openingHours: settings.branch?.openingHours ?? []
+        })
       });
       setSettings(next);
       setMessage("تم حفظ التغييرات بنجاح.");
@@ -819,7 +826,7 @@ function SettingsForm() {
           <Field label="نبذة عن المطعم" value={form.description ?? ""} textarea onChange={(value) => updateField("description", value)} />
         </article>
       </section>
-      <section className="settings-card splash-settings-card">
+      {isSuperAdmin ? <section className="settings-card splash-settings-card">
         <h2>سبلاش سكرين</h2>
         <div className="splash-settings-layout">
           <div
@@ -871,7 +878,7 @@ function SettingsForm() {
             </label>
           </div>
         </div>
-      </section>
+      </section> : null}
       <section className="settings-card">
         <h2>معلومات تواصل</h2>
         <div className="form-grid three">
@@ -1030,7 +1037,7 @@ function Field({ label, value, textarea, onChange }: { label: string; value: str
 }
 
 function LoadingState({ label }: { label: string }) {
-  return <div className="restaurant-empty"><Loader2 className="spin" size={28} /><b>{label}</b></div>;
+  return <div aria-label={label}><SkeletonTable rows={6} columns={5} /></div>;
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {

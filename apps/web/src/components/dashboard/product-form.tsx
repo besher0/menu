@@ -1,8 +1,26 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ImagePlus, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import {
+  Beef,
+  Clock3,
+  Drumstick,
+  Flame,
+  Heart,
+  ImagePlus,
+  Plus,
+  Save,
+  Scale,
+  Sparkles,
+  Star,
+  Trash2,
+  Utensils,
+  Wheat,
+  ArrowRight,
+  Loader2,
+  type LucideIcon
+} from "lucide-react";
 import Link from "next/link";
 import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
@@ -16,12 +34,9 @@ type FormState = {
   currency: string;
   imageUrl: string;
   imageUrls: string[];
-  moodKey: string;
+  moodKeys: string[];
   ingredients: IngredientFormItem[];
-  weight: string;
-  protein: string;
-  breadType: string;
-  spice: string;
+  mealDetails: MealDetailFormItem[];
   model3dUrl: string;
   model3dFormat: string;
   vrUrl: string;
@@ -32,6 +47,21 @@ type FormState = {
 type IngredientFormItem = {
   name: string;
   imageUrl: string;
+};
+
+type IngredientSuggestion = IngredientFormItem & {
+  usageCount: number;
+};
+
+type MealDetailFormItem = {
+  label: string;
+  value: string;
+  icon: string;
+  iconUrl?: string;
+};
+
+type MealDetailSuggestion = MealDetailFormItem & {
+  usageCount: number;
 };
 
 type RestaurantOption = {
@@ -51,6 +81,26 @@ type MoodOption = {
   label: string;
 };
 
+const DETAIL_ICON_OPTIONS: Array<{ key: string; label: string; icon: LucideIcon }> = [
+  { key: "scale", label: "وزن", icon: Scale },
+  { key: "drumstick", label: "دجاج", icon: Drumstick },
+  { key: "beef", label: "لحم", icon: Beef },
+  { key: "wheat", label: "خبز", icon: Wheat },
+  { key: "flame", label: "حدة", icon: Flame },
+  { key: "utensils", label: "وجبة", icon: Utensils },
+  { key: "clock", label: "وقت", icon: Clock3 },
+  { key: "star", label: "مميز", icon: Star },
+  { key: "heart", label: "مفضل", icon: Heart },
+  { key: "sparkles", label: "خاص", icon: Sparkles }
+];
+
+const DEFAULT_MEAL_DETAILS: MealDetailFormItem[] = [
+  { label: "الوزن التقريبي", value: "", icon: "scale" },
+  { label: "نوع البروتين", value: "", icon: "drumstick" },
+  { label: "نوع الخبز", value: "", icon: "wheat" },
+  { label: "مستوى الحدة", value: "", icon: "flame" }
+];
+
 type ProductDetails = {
   id: string;
   name: string;
@@ -61,8 +111,10 @@ type ProductDetails = {
   isFeatured?: boolean;
   isPopular?: boolean;
   moodKey?: string | null;
+  moodKeys?: string[];
   ingredients?: Array<string | { name?: string; imageUrl?: string | null }>;
   nutrition?: {
+    details?: MealDetailFormItem[];
     weight?: string;
     protein?: string;
     breadType?: string;
@@ -87,17 +139,88 @@ function normalizeIngredients(items?: Array<string | { name?: string; imageUrl?:
     .filter((item) => item.name || item.imageUrl);
 }
 
+function normalizeMealDetails(nutrition?: ProductDetails["nutrition"]): MealDetailFormItem[] {
+  if (Array.isArray(nutrition?.details)) {
+    const details = nutrition.details
+      .map((item) => ({
+        label: item.label?.trim() ?? "",
+        value: item.value?.trim() ?? "",
+        icon: DETAIL_ICON_OPTIONS.some((option) => option.key === item.icon) ? item.icon : "utensils",
+        iconUrl: item.iconUrl?.trim() ?? ""
+      }))
+      .filter((item) => item.label || item.value);
+
+    return details.length ? details : [];
+  }
+
+  const legacyDetails = [
+    { ...DEFAULT_MEAL_DETAILS[0], value: nutrition?.weight ?? "" },
+    { ...DEFAULT_MEAL_DETAILS[1], value: nutrition?.protein ?? "" },
+    { ...DEFAULT_MEAL_DETAILS[2], value: nutrition?.breadType ?? "" },
+    { ...DEFAULT_MEAL_DETAILS[3], value: nutrition?.spice ?? "" }
+  ];
+
+  return legacyDetails;
+}
+
+function detailIconComponent(iconKey: string) {
+  return DETAIL_ICON_OPTIONS.find((option) => option.key === iconKey)?.icon ?? Utensils;
+}
+
+function normalizeMoodKeys(items?: string[] | string | null): string[] {
+  const source = Array.isArray(items) ? items : items ? parseStoredMoodKeys(items) : [];
+  const seen = new Set<string>();
+
+  return source
+    .map((item) => item.trim())
+    .filter((item) => {
+      const key = item.toLocaleLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function parseStoredMoodKeys(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string");
+    }
+  } catch {
+    return [value];
+  }
+
+  return [value];
+}
+
+function ingredientKey(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function mealDetailKey(detail: Pick<MealDetailFormItem, "label" | "value" | "icon" | "iconUrl">) {
+  return `${detail.label.trim().toLocaleLowerCase()}|${detail.value.trim().toLocaleLowerCase()}|${detail.icon}|${detail.iconUrl?.trim().toLocaleLowerCase() ?? ""}`;
+}
+
 export function ProductForm({ productId }: { productId?: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "saving" | "error" | "success">("idle");
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
   const [modelUploadStatus, setModelUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [restaurants, setRestaurants] = useState<RestaurantOption[]>([]);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [selectedRestaurantName, setSelectedRestaurantName] = useState("");
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [moodOptions, setMoodOptions] = useState<MoodOption[]>([]);
+  const [ingredientSuggestions, setIngredientSuggestions] = useState<IngredientSuggestion[]>([]);
+  const [ingredientSearch, setIngredientSearch] = useState("");
+  const [ingredientLibraryStatus, setIngredientLibraryStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [mealDetailSuggestions, setMealDetailSuggestions] = useState<MealDetailSuggestion[]>([]);
+  const [mealDetailSearch, setMealDetailSearch] = useState("");
+  const [mealDetailLibraryStatus, setMealDetailLibraryStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [detailIconSearch, setDetailIconSearch] = useState("");
   const [form, setForm] = useState<FormState>({
     name: "",
     categoryId: "",
@@ -106,12 +229,9 @@ export function ProductForm({ productId }: { productId?: string }) {
     currency: "ل.س",
     imageUrl: "",
     imageUrls: [],
-    moodKey: "",
+    moodKeys: [],
     ingredients: [],
-    weight: "",
-    protein: "",
-    breadType: "",
-    spice: "",
+    mealDetails: DEFAULT_MEAL_DETAILS,
     model3dUrl: "",
     model3dFormat: "GLB",
     vrUrl: "",
@@ -181,11 +301,26 @@ export function ProductForm({ productId }: { productId?: string }) {
     });
   }
 
-  function addIngredient() {
+  function addIngredient(ingredient: IngredientFormItem = { name: "", imageUrl: "" }) {
     setForm((current) => ({
       ...current,
-      ingredients: [...current.ingredients, { name: "", imageUrl: "" }]
+      ingredients: [...current.ingredients, ingredient]
     }));
+  }
+
+  function addExistingIngredient(ingredient: IngredientFormItem) {
+    setForm((current) => {
+      const nextKey = ingredientKey(ingredient.name);
+      if (nextKey && current.ingredients.some((item) => ingredientKey(item.name) === nextKey)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        ingredients: [...current.ingredients, { name: ingredient.name, imageUrl: ingredient.imageUrl }]
+      };
+    });
+    setIngredientSearch("");
   }
 
   function updateIngredient(index: number, patch: Partial<IngredientFormItem>) {
@@ -204,6 +339,54 @@ export function ProductForm({ productId }: { productId?: string }) {
     }));
   }
 
+  function addMealDetail() {
+    setForm((current) => ({
+      ...current,
+      mealDetails: [...current.mealDetails, { label: "", value: "", icon: "utensils", iconUrl: "" }]
+    }));
+  }
+
+  function addExistingMealDetail(detail: MealDetailFormItem) {
+    setForm((current) => {
+      const nextKey = mealDetailKey(detail);
+      if (current.mealDetails.some((item) => mealDetailKey(item) === nextKey)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        mealDetails: [...current.mealDetails, { label: detail.label, value: detail.value, icon: detail.icon, iconUrl: detail.iconUrl ?? "" }]
+      };
+    });
+    setMealDetailSearch("");
+  }
+
+  function updateMealDetail(index: number, patch: Partial<MealDetailFormItem>) {
+    setForm((current) => ({
+      ...current,
+      mealDetails: current.mealDetails.map((detail, itemIndex) =>
+        itemIndex === index ? { ...detail, ...patch } : detail
+      )
+    }));
+  }
+
+  function removeMealDetail(index: number) {
+    setForm((current) => ({
+      ...current,
+      mealDetails: current.mealDetails.filter((_, itemIndex) => itemIndex !== index)
+    }));
+  }
+
+  function toggleMoodKey(key: string) {
+    setForm((current) => {
+      const exists = current.moodKeys.includes(key);
+      return {
+        ...current,
+        moodKeys: exists ? current.moodKeys.filter((item) => item !== key) : [...current.moodKeys, key]
+      };
+    });
+  }
+
   function inferModelFormat(filename: string) {
     const extension = filename.split("?")[0].split(".").pop()?.toUpperCase();
     return extension && ["GLB", "GLTF", "USDZ"].includes(extension) ? extension : "GLB";
@@ -215,6 +398,7 @@ export function ProductForm({ productId }: { productId?: string }) {
 
   useEffect(() => {
     const session = getBrowserSession();
+    setIsSuperAdmin(session?.user.role === "SUPER_ADMIN");
     const membershipRestaurants =
       session?.memberships.map((membership) => membership.restaurant) ?? [];
     const queryRestaurantId = new URLSearchParams(window.location.search).get("restaurantId");
@@ -322,6 +506,110 @@ export function ProductForm({ productId }: { productId?: string }) {
   }, [selectedRestaurantId, restaurants]);
 
   useEffect(() => {
+    if (!selectedRestaurantId) {
+      setIngredientSuggestions([]);
+      setIngredientLibraryStatus("idle");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadIngredientSuggestions() {
+      setIngredientLibraryStatus("loading");
+      try {
+        const response = await fetch(`${API_URL}/dashboard/products/ingredients`, {
+          headers: selectedRestaurantHeaders(),
+          cache: "no-store"
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error("Unable to load ingredients");
+        }
+
+        const body = payload?.data ?? payload ?? [];
+        const nextSuggestions = (Array.isArray(body) ? body : body.data ?? []) as IngredientSuggestion[];
+        if (!cancelled) {
+          setIngredientSuggestions(
+            nextSuggestions
+              .map((item) => ({
+                name: item.name?.trim() ?? "",
+                imageUrl: item.imageUrl ?? "",
+                usageCount: Number(item.usageCount ?? 0)
+              }))
+              .filter((item) => item.name)
+          );
+          setIngredientLibraryStatus("idle");
+        }
+      } catch {
+        if (!cancelled) {
+          setIngredientSuggestions([]);
+          setIngredientLibraryStatus("error");
+        }
+      }
+    }
+
+    void loadIngredientSuggestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRestaurantId, restaurants]);
+
+  useEffect(() => {
+    if (!selectedRestaurantId) {
+      setMealDetailSuggestions([]);
+      setMealDetailLibraryStatus("idle");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadMealDetailSuggestions() {
+      setMealDetailLibraryStatus("loading");
+      try {
+        const response = await fetch(`${API_URL}/dashboard/products/meal-details`, {
+          headers: selectedRestaurantHeaders(),
+          cache: "no-store"
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error("Unable to load meal details");
+        }
+
+        const body = payload?.data ?? payload ?? [];
+        const nextSuggestions = (Array.isArray(body) ? body : body.data ?? []) as MealDetailSuggestion[];
+        if (!cancelled) {
+          setMealDetailSuggestions(
+            nextSuggestions
+              .map((item) => ({
+                label: item.label?.trim() ?? "",
+                value: item.value?.trim() ?? "",
+                icon: DETAIL_ICON_OPTIONS.some((option) => option.key === item.icon) ? item.icon : "utensils",
+                iconUrl: item.iconUrl?.trim() ?? "",
+                usageCount: Number(item.usageCount ?? 0)
+              }))
+              .filter((item) => item.label || item.value)
+          );
+          setMealDetailLibraryStatus("idle");
+        }
+      } catch {
+        if (!cancelled) {
+          setMealDetailSuggestions([]);
+          setMealDetailLibraryStatus("error");
+        }
+      }
+    }
+
+    void loadMealDetailSuggestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRestaurantId, restaurants]);
+
+  useEffect(() => {
     if (!productId || !selectedRestaurantId) {
       return;
     }
@@ -348,12 +636,9 @@ export function ProductForm({ productId }: { productId?: string }) {
           currency: product.currency ?? "ل.س",
           imageUrl: imageUrls[0] ?? "",
           imageUrls,
-          moodKey: product.moodKey ?? "",
+          moodKeys: normalizeMoodKeys(product.moodKeys?.length ? product.moodKeys : product.moodKey),
           ingredients: normalizeIngredients(product.ingredients),
-          weight: product.nutrition?.weight ?? "",
-          protein: product.nutrition?.protein ?? "",
-          breadType: product.nutrition?.breadType ?? "",
-          spice: product.nutrition?.spice ?? "",
+          mealDetails: normalizeMealDetails(product.nutrition),
           model3dUrl: product.media?.model3dUrl ?? "",
           model3dFormat: product.media?.model3dFormat ?? "GLB",
           vrUrl: product.media?.vrUrl ?? "",
@@ -389,7 +674,8 @@ export function ProductForm({ productId }: { productId?: string }) {
           basePrice: Number(form.basePrice),
           currency: form.currency,
           categoryId: form.categoryId || undefined,
-          moodKey: form.moodKey || undefined,
+          moodKey: form.moodKeys[0] || undefined,
+          moodKeys: form.moodKeys,
           imageUrl: form.imageUrl,
           images: (form.imageUrls.length ? form.imageUrls : [form.imageUrl])
             .map((url) => url.trim())
@@ -405,15 +691,23 @@ export function ProductForm({ productId }: { productId?: string }) {
             }))
             .filter((item) => item.name || item.imageUrl),
           nutrition: {
-            weight: form.weight,
-            protein: form.protein,
-            breadType: form.breadType,
-            spice: form.spice
+            details: form.mealDetails
+              .map((item) => ({
+                label: item.label.trim(),
+                value: item.value.trim(),
+                icon: item.icon,
+                iconUrl: item.iconUrl?.trim() || undefined
+              }))
+              .filter((item) => item.label || item.value)
           },
-          model3dUrl: form.model3dUrl,
-          model3dFormat: form.model3dFormat,
-          vrUrl: form.vrUrl,
-          vrType: form.vrUrl ? "PANORAMA" : "",
+          ...(isSuperAdmin
+            ? {
+                model3dUrl: form.model3dUrl,
+                model3dFormat: form.model3dFormat,
+                vrUrl: form.vrUrl,
+                vrType: form.vrUrl ? "PANORAMA" : ""
+              }
+            : {}),
           isFeatured: form.isNew,
           isNew: form.isNew,
           isPopular: form.isPopular
@@ -543,6 +837,40 @@ export function ProductForm({ productId }: { productId?: string }) {
     }
   }
 
+  async function handleMealDetailIconUpload(index: number, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadStatus("uploading");
+    setMessage("");
+
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("type", "PNG_ICON");
+      body.append("altText", form.mealDetails[index]?.label || form.name || file.name);
+
+      const response = await fetch(`${API_URL}/dashboard/media/upload`, {
+        method: "POST",
+        headers: selectedRestaurantHeaders(),
+        body
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "تعذر رفع أيقونة التفصيل.");
+      }
+
+      updateMealDetail(index, { iconUrl: payload?.data?.url ?? payload?.url ?? "" });
+      setUploadStatus("idle");
+    } catch (error) {
+      setUploadStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع أيقونة التفصيل.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   async function handleModelUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -579,9 +907,52 @@ export function ProductForm({ productId }: { productId?: string }) {
   }
 
   const productGalleryUrls = form.imageUrls.length ? form.imageUrls : form.imageUrl ? [form.imageUrl] : [];
+  const selectedIngredientKeys = useMemo(
+    () => new Set(form.ingredients.map((ingredient) => ingredientKey(ingredient.name)).filter(Boolean)),
+    [form.ingredients]
+  );
+  const filteredIngredientSuggestions = useMemo(() => {
+    const query = ingredientKey(ingredientSearch);
+
+    return ingredientSuggestions
+      .filter((ingredient) => {
+        const key = ingredientKey(ingredient.name);
+        return key && !selectedIngredientKeys.has(key) && (!query || key.includes(query));
+      })
+      .slice(0, 8);
+  }, [ingredientSearch, ingredientSuggestions, selectedIngredientKeys]);
+  const searchedIngredientName = ingredientSearch.trim();
+  const searchedIngredientKey = ingredientKey(searchedIngredientName);
+  const canAddSearchedIngredient =
+    Boolean(searchedIngredientKey) &&
+    !selectedIngredientKeys.has(searchedIngredientKey) &&
+    !ingredientSuggestions.some((ingredient) => ingredientKey(ingredient.name) === searchedIngredientKey);
+  const selectedMealDetailKeys = useMemo(
+    () => new Set(form.mealDetails.map((detail) => mealDetailKey(detail)).filter((key) => key !== "||")),
+    [form.mealDetails]
+  );
+  const filteredMealDetailSuggestions = useMemo(() => {
+    const query = mealDetailSearch.trim().toLocaleLowerCase();
+
+    return mealDetailSuggestions
+      .filter((detail) => {
+        const key = mealDetailKey(detail);
+        const searchable = `${detail.label} ${detail.value} ${detail.icon}`.toLocaleLowerCase();
+        return key !== "||" && !selectedMealDetailKeys.has(key) && (!query || searchable.includes(query));
+      })
+      .slice(0, 8);
+  }, [mealDetailSearch, mealDetailSuggestions, selectedMealDetailKeys]);
+  const filteredDetailIconOptions = useMemo(() => {
+    const query = detailIconSearch.trim().toLocaleLowerCase();
+
+    return DETAIL_ICON_OPTIONS.filter((option) => {
+      const searchable = `${option.key} ${option.label}`.toLocaleLowerCase();
+      return !query || searchable.includes(query);
+    });
+  }, [detailIconSearch]);
 
   return (
-    <form className="product-form-page" onSubmit={handleSubmit}>
+    <form className={`product-form-page ${isSuperAdmin ? "" : "owner-product-form"}`} onSubmit={handleSubmit}>
       <section className="products-header">
         <div>
           <Link className="back-link" href="/dashboard/products">
@@ -621,17 +992,27 @@ export function ProductForm({ productId }: { productId?: string }) {
             </select>
           </label>
 
-          <label>
-            <span>شو مزاجك اليوم</span>
-            <select value={form.moodKey} onChange={(event) => update("moodKey", event.target.value)}>
-              <option value="">لا يظهر ضمن شو مزاجك اليوم</option>
-              {moodOptions.map((mood) => (
-                <option key={mood.key} value={mood.key}>
-                  {mood.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <fieldset className="product-mood-picker">
+            <legend>شو مزاجك اليوم</legend>
+            {moodOptions.length ? (
+              <div className="product-mood-options">
+                {moodOptions.map((mood) => (
+                  <button
+                    key={mood.key}
+                    type="button"
+                    className={`product-mood-chip ${form.moodKeys.includes(mood.key) ? "selected" : ""}`}
+                    onClick={() => toggleMoodKey(mood.key)}
+                    aria-pressed={form.moodKeys.includes(mood.key)}
+                  >
+                    <span className="product-mood-chip-mark" aria-hidden="true" />
+                    <span>{mood.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="product-mood-empty">لا توجد خيارات مزاج مفعلة في الـ builder.</span>
+            )}
+          </fieldset>
 
           <label className="full">
             <span>الوصف</span>
@@ -645,10 +1026,51 @@ export function ProductForm({ productId }: { productId?: string }) {
           <div className="product-ingredients-editor full">
             <div className="field-row-head">
               <span>مكونات الوجبة</span>
-              <button type="button" onClick={addIngredient}>
+              <button type="button" onClick={() => addIngredient()}>
                 <Plus size={16} />
                 إضافة مكون
               </button>
+            </div>
+            <div className="ingredient-library-picker">
+              <label className="ingredient-search-field">
+                <span>إضافة مكون موجود</span>
+                <input
+                  value={ingredientSearch}
+                  onChange={(event) => setIngredientSearch(event.target.value)}
+                  placeholder="ابحث عن مكون محفوظ..."
+                />
+              </label>
+              {ingredientSearch || filteredIngredientSuggestions.length || ingredientLibraryStatus !== "idle" ? (
+                <div className="ingredient-suggestion-list">
+                  {ingredientLibraryStatus === "loading" ? <span className="ingredient-suggestion-note">جاري تحميل المكونات...</span> : null}
+                  {ingredientLibraryStatus === "error" ? <span className="ingredient-suggestion-note">تعذر تحميل المكونات الحالية.</span> : null}
+                  {filteredIngredientSuggestions.map((ingredient) => (
+                    <button
+                      key={ingredientKey(ingredient.name)}
+                      type="button"
+                      className="ingredient-suggestion"
+                      onClick={() => addExistingIngredient(ingredient)}
+                    >
+                      {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : <span className="ingredient-suggestion-image" />}
+                      <span>{ingredient.name}</span>
+                      <small>{ingredient.usageCount}x</small>
+                    </button>
+                  ))}
+                  {canAddSearchedIngredient ? (
+                    <button
+                      type="button"
+                      className="ingredient-suggestion ingredient-suggestion-create"
+                      onClick={() => addExistingIngredient({ name: searchedIngredientName, imageUrl: "" })}
+                    >
+                      <Plus size={16} />
+                      <span>إضافة "{searchedIngredientName}" كمكون جديد</span>
+                    </button>
+                  ) : null}
+                  {ingredientSearch && !filteredIngredientSuggestions.length && !canAddSearchedIngredient && ingredientLibraryStatus === "idle" ? (
+                    <span className="ingredient-suggestion-note">لا يوجد مكون مطابق أو تمت إضافته مسبقاً.</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {form.ingredients.length ? (
               <div className="ingredient-form-list">
@@ -687,7 +1109,7 @@ export function ProductForm({ productId }: { productId?: string }) {
                 ))}
               </div>
             ) : (
-              <button type="button" className="ingredient-empty-add" onClick={addIngredient}>
+              <button type="button" className="ingredient-empty-add" onClick={() => addIngredient()}>
                 <Plus size={16} />
                 إضافة أول مكون
               </button>
@@ -710,25 +1132,134 @@ export function ProductForm({ productId }: { productId?: string }) {
             <input value={form.currency} onChange={(event) => update("currency", event.target.value)} />
           </label>
 
-          <label>
-            <span>الوزن التقريبي</span>
-            <input value={form.weight} onChange={(event) => update("weight", event.target.value)} placeholder="350 غ" />
-          </label>
+          <section className="meal-details-editor full">
+            <div className="field-row-head">
+              <span>تفاصيل الوجبة</span>
+              <button type="button" onClick={addMealDetail}>
+                <Plus size={16} />
+                إضافة تفصيل
+              </button>
+            </div>
+            <div className="meal-detail-library-picker">
+              <label className="ingredient-search-field">
+                <span>بحث في التفاصيل المحفوظة</span>
+                <input
+                  value={mealDetailSearch}
+                  onChange={(event) => setMealDetailSearch(event.target.value)}
+                  placeholder="ابحث باسم التفصيل أو قيمته..."
+                />
+              </label>
+              {mealDetailSearch || filteredMealDetailSuggestions.length || mealDetailLibraryStatus !== "idle" ? (
+                <div className="meal-detail-suggestion-list">
+                  {mealDetailLibraryStatus === "loading" ? <span className="ingredient-suggestion-note">جاري تحميل التفاصيل...</span> : null}
+                  {mealDetailLibraryStatus === "error" ? <span className="ingredient-suggestion-note">تعذر تحميل التفاصيل المحفوظة.</span> : null}
+                  {filteredMealDetailSuggestions.map((detail) => {
+                    const DetailIcon = detailIconComponent(detail.icon);
 
-          <label>
-            <span>نوع البروتين</span>
-            <input value={form.protein} onChange={(event) => update("protein", event.target.value)} placeholder="دجاج / لحم" />
-          </label>
+                    return (
+                      <button
+                        key={mealDetailKey(detail)}
+                        type="button"
+                        className="meal-detail-suggestion"
+                        onClick={() => addExistingMealDetail(detail)}
+                      >
+                        {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={16} />}
+                        <span>{detail.label}</span>
+                        {detail.value ? <b>{detail.value}</b> : null}
+                        <small>{detail.usageCount}x</small>
+                      </button>
+                    );
+                  })}
+                  {mealDetailSearch && !filteredMealDetailSuggestions.length && mealDetailLibraryStatus === "idle" ? (
+                    <span className="ingredient-suggestion-note">لا يوجد تفصيل مطابق أو تمت إضافته مسبقاً.</span>
+                  ) : null}
+                </div>
+              ) : null}
+              <label className="ingredient-search-field">
+                <span>بحث في مكتبة الأيقونات</span>
+                <input
+                  value={detailIconSearch}
+                  onChange={(event) => setDetailIconSearch(event.target.value)}
+                  placeholder="مثال: وزن، لحم، وقت..."
+                />
+              </label>
+            </div>
+            {form.mealDetails.length ? (
+              <div className="meal-detail-form-list">
+                {form.mealDetails.map((detail, index) => {
+                  const DetailIcon = detailIconComponent(detail.icon);
 
-          <label>
-            <span>نوع الخبز</span>
-            <input value={form.breadType} onChange={(event) => update("breadType", event.target.value)} placeholder="صمون / تورتيلا" />
-          </label>
+                  return (
+                    <div className="meal-detail-form-row" key={`meal-detail-${index}`}>
+                      <span className="meal-detail-icon-preview" aria-hidden="true">
+                        {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={18} />}
+                      </span>
+                      <label>
+                        <span>اسم التفصيل</span>
+                        <input
+                          value={detail.label}
+                          onChange={(event) => updateMealDetail(index, { label: event.target.value })}
+                          placeholder="الوزن التقريبي"
+                        />
+                      </label>
+                      <label>
+                        <span>القيمة</span>
+                        <input
+                          value={detail.value}
+                          onChange={(event) => updateMealDetail(index, { value: event.target.value })}
+                          placeholder="350 غ"
+                        />
+                      </label>
+                      <div className="meal-detail-icon-library">
+                        <span>الأيقونة</span>
+                        <div>
+                          {filteredDetailIconOptions.map((option) => {
+                            const Icon = option.icon;
 
-          <label>
-            <span>مستوى الحدة</span>
-            <input value={form.spice} onChange={(event) => update("spice", event.target.value)} placeholder="خفيف / متوسط / حار" />
-          </label>
+                            return (
+                              <button
+                                key={option.key}
+                                type="button"
+                                className={detail.icon === option.key ? "selected" : ""}
+                                onClick={() => updateMealDetail(index, { icon: option.key, iconUrl: "" })}
+                                title={option.label}
+                                aria-label={option.label}
+                              >
+                                <Icon size={16} />
+                              </button>
+                            );
+                          })}
+                          {!filteredDetailIconOptions.length ? <small>لا توجد أيقونة مطابقة.</small> : null}
+                        </div>
+                        <label className="meal-detail-custom-icon">
+                          <span>أيقونة مخصصة</span>
+                          <input
+                            accept="image/*"
+                            disabled={!selectedRestaurantId || uploadStatus === "uploading"}
+                            onChange={(event) => handleMealDetailIconUpload(index, event)}
+                            type="file"
+                          />
+                          <input
+                            value={detail.iconUrl ?? ""}
+                            onChange={(event) => updateMealDetail(index, { iconUrl: event.target.value })}
+                            placeholder="https://..."
+                          />
+                        </label>
+                      </div>
+                      <button type="button" className="ingredient-remove" onClick={() => removeMealDetail(index)} aria-label="حذف التفصيل">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <button type="button" className="ingredient-empty-add" onClick={addMealDetail}>
+                <Plus size={16} />
+                إضافة أول تفصيل
+              </button>
+            )}
+          </section>
 
           <label className="full">
             <span>صورة المنتج</span>

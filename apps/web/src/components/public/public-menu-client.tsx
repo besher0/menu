@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Star, Trash2, Truck, Utensils, Wheat, X } from "lucide-react";
-import { PublicCategory, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Heart, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
+import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
 type CartItem = {
   slug: string;
@@ -21,6 +21,7 @@ type CategoryProductListLayout = "single" | "double";
 type MenuDisplayMode = "large" | "list";
 type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
+type NormalizedMealDetail = { label: string; value: string; icon: string; iconUrl?: string | null };
 
 const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 const MENU_SECTION_SCROLL_GAP = 6;
@@ -242,13 +243,16 @@ function productHref(restaurantSlug: string, product: PublicProduct, returnHref?
   return safeReturnHref ? `${href}?from=${encodeURIComponent(safeReturnHref)}` : href;
 }
 
-function navigateBack(fallbackHref: string) {
+function navigateBack(fallbackHref: string, navigateTo?: (href: string) => void) {
+  window.dispatchEvent(new Event("app:navigation-start"));
   if (window.history.length > 1) {
     window.history.back();
     return;
   }
 
-  window.location.assign(fallbackHref);
+  if (navigateTo) {
+    navigateTo(fallbackHref);
+  }
 }
 
 function isProductRouteMatch(product: PublicProduct, value?: string) {
@@ -267,6 +271,52 @@ function normalizeMenuKey(value?: string | null) {
   } catch {
     return value.trim().toLowerCase().replace(/\s+/g, "-");
   }
+}
+
+function productMoodKeys(product: PublicProduct) {
+  return product.moodKeys?.length ? product.moodKeys : product.moodKey ? [product.moodKey] : [];
+}
+
+function mealDetailIcon(iconKey?: string | null): LucideIcon {
+  const icons: Record<string, LucideIcon> = {
+    beef: Beef,
+    clock: Clock3,
+    drumstick: Drumstick,
+    flame: Flame,
+    heart: Heart,
+    scale: Scale,
+    sparkles: Sparkles,
+    star: Star,
+    utensils: Utensils,
+    wheat: Wheat
+  };
+
+  return icons[iconKey || ""] ?? Utensils;
+}
+
+function normalizeConfiguredMealDetails(details?: PublicMealDetail[]) {
+  return (details ?? [])
+    .map((detail) => ({
+      label: detail.label?.trim() ?? "",
+      value: detail.value?.trim() ?? "",
+      icon: detail.icon?.trim() || "utensils",
+      iconUrl: detail.iconUrl?.trim() ?? ""
+    }))
+    .filter((detail) => detail.label || detail.value);
+}
+
+function productMealDetails(product: PublicProduct, t: PublicTranslations): NormalizedMealDetail[] {
+  if (Array.isArray(product.nutrition?.details)) {
+    return normalizeConfiguredMealDetails(product.nutrition.details);
+  }
+
+  const protein = product.nutrition?.protein ?? t.chicken;
+  return [
+    { label: t.approximateWeight, value: product.nutrition?.weight ?? "200 mg", icon: "scale" },
+    { label: t.meatType, value: protein, icon: protein.toLowerCase().includes("لحم") ? "beef" : "drumstick" },
+    { label: t.breadType, value: product.nutrition?.breadType ?? t.plate, icon: "wheat" },
+    { label: t.spiceLevel, value: product.nutrition?.spice ?? t.medium, icon: "flame" }
+  ];
 }
 
 function menuSectionScrollOffset(strip: HTMLElement | null, showNestedCategoryStrip: boolean) {
@@ -408,6 +458,7 @@ export function PublicMenuClient({
   view: "home" | "menu" | "product" | "cart";
   productSlug?: string;
 }) {
+  const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartLoaded, setCartLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -431,6 +482,11 @@ export function PublicMenuClient({
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
   const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
+
+  function navigateTo(href: string) {
+    window.dispatchEvent(new Event("app:navigation-start"));
+    router.push(href);
+  }
   const openingHours = formatOpeningHours(firstBranch?.openingHours, language);
   const allBuilderSections = data.menus?.flatMap((menu) => menu.pages?.flatMap((page) => page.sections ?? []) ?? []) ?? [];
   const hasHomeSections = !data.menus?.length || allBuilderSections.some((section) =>
@@ -490,6 +546,44 @@ export function PublicMenuClient({
   }, [language, languageStorageKey]);
 
   useEffect(() => {
+    const manifest = {
+      name: `${data.restaurant.name} Menu`,
+      short_name: data.restaurant.name || "Menu",
+      start_url: `/m/${data.restaurant.slug}`,
+      scope: `/m/${data.restaurant.slug}`,
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: data.theme?.colors?.primary ?? "#e51f2a",
+      dir: language === "ar" ? "rtl" : "ltr",
+      lang: language,
+      icons: [
+        {
+          src: data.restaurant.logoUrl || "/assets/public/menu-home.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any maskable"
+        }
+      ]
+    };
+    const href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
+    let link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "manifest";
+      document.head.appendChild(link);
+    }
+
+    const previousHref = link.href;
+    link.href = href;
+
+    return () => {
+      link.href = previousHref;
+      URL.revokeObjectURL(href);
+    };
+  }, [data.restaurant.logoUrl, data.restaurant.name, data.restaurant.slug, data.theme?.colors?.primary, language]);
+
+  useEffect(() => {
     if (window.sessionStorage.getItem(splashStorageKey)) {
       return;
     }
@@ -507,6 +601,19 @@ export function PublicMenuClient({
       setMenuNested(false);
     }
   }, [activeView]);
+
+  useEffect(() => {
+    if (!drawerOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [drawerOpen]);
 
   useEffect(() => {
     if (activeView !== "product") {
@@ -605,7 +712,7 @@ export function PublicMenuClient({
   }
 
   function goToRestaurantHome() {
-    window.location.assign(`/m/${data.restaurant.slug}`);
+    navigateTo(`/m/${data.restaurant.slug}`);
   }
 
   function openDrawer() {
@@ -730,7 +837,7 @@ export function PublicMenuClient({
       ) : null}
       {activeView !== "product" ? <header className="public-header">
         {activeView === "cart" ? (
-          <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`)} aria-label="الرجوع">
+          <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`, navigateTo)} aria-label="الرجوع">
             <ChevronLeft size={22} />
           </button>
         ) : activeView === "menu" && menuNested ? (
@@ -774,6 +881,7 @@ export function PublicMenuClient({
           showPrices={showPrices}
           menuBackSignal={menuBackSignal}
           onNestedChange={setMenuNested}
+          navigateTo={navigateTo}
         />
       ) : activeView === "product" && activeProduct ? (
         <ProductView
@@ -785,6 +893,7 @@ export function PublicMenuClient({
           cartCount={cartCount}
           t={t}
           showPrices={showPrices}
+          navigateTo={navigateTo}
         />
       ) : activeView === "product" ? (
         <main className="product-detail product-empty">
@@ -822,6 +931,8 @@ export function PublicMenuClient({
         showHome={hasHomeSections}
         showMenu={showMenuNavItem}
       />
+
+      {drawerOpen ? <button className="public-drawer-backdrop" type="button" onClick={closeDrawer} aria-label={t.close} /> : null}
 
       {drawerOpen ? (
         <aside className="public-drawer" dir={language === "ar" ? "rtl" : "ltr"} lang={language}>
@@ -1084,7 +1195,8 @@ function MenuView({
   t,
   showPrices,
   menuBackSignal,
-  onNestedChange
+  onNestedChange,
+  navigateTo
 }: {
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
@@ -1094,6 +1206,7 @@ function MenuView({
   showPrices: boolean;
   menuBackSignal: number;
   onNestedChange: (nested: boolean) => void;
+  navigateTo: (href: string) => void;
 }) {
   const searchParams = useSearchParams();
   const menuQuery = searchParams.toString();
@@ -1128,7 +1241,7 @@ function MenuView({
       const productCategorySlug = product.category?.slug ?? product.categorySlug ?? "";
       const category = regularCategories.find((item) => item.slug === productCategorySlug);
       return [
-        product.moodKey,
+        ...productMoodKeys(product),
         productCategorySlug,
         product.category?.name,
         category?.slug,
@@ -1202,7 +1315,7 @@ function MenuView({
     }
 
     if (selectedMood || selectedCollection) {
-      window.location.href = `/m/${data.restaurant.slug}`;
+      navigateTo(`/m/${data.restaurant.slug}`);
       return;
     }
 
@@ -1327,7 +1440,7 @@ function MenuView({
       return;
     }
 
-    window.location.assign(productHref(data.restaurant.slug, product, menuReturnHref));
+    navigateTo(productHref(data.restaurant.slug, product, menuReturnHref));
   }
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
@@ -1958,7 +2071,8 @@ function ProductView({
   getCartQuantity,
   cartCount,
   t,
-  showPrices
+  showPrices,
+  navigateTo
 }: {
   data: PublicMenuData;
   product: PublicProduct;
@@ -1968,10 +2082,12 @@ function ProductView({
   cartCount: number;
   t: PublicTranslations;
   showPrices: boolean;
+  navigateTo: (href: string) => void;
 }) {
   const searchParams = useSearchParams();
   const related = getRelatedProducts(data.products, product);
   const ingredients = productIngredients(product);
+  const mealDetails = productMealDetails(product, t);
   const model3dUrl = product.media?.model3dUrl ?? null;
   const model3dFormat = product.media?.model3dFormat?.toUpperCase() ?? null;
   const canRenderModel = Boolean(model3dUrl && model3dFormat !== "USDZ");
@@ -2125,7 +2241,7 @@ function ProductView({
         <button
           type="button"
           className="product-back-link"
-          onClick={() => sourceReturnHref ? window.location.assign(sourceReturnHref) : navigateBack(productReturnHref)}
+          onClick={() => sourceReturnHref ? navigateTo(sourceReturnHref) : navigateBack(productReturnHref, navigateTo)}
           aria-label="الرجوع"
         >
           <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
@@ -2170,40 +2286,29 @@ function ProductView({
           </>
         ) : null}
 
-        <h2>
-          <Flame size={18} />
-          {t.mealDetails}
-        </h2>
-        <div className="nutrition-card">
-          <span>
-            <i aria-hidden="true">
-              <Scale size={19} />
-            </i>
-            <small>{t.approximateWeight}</small>
-            <b>{product.nutrition?.weight ?? "200 mg"}</b>
-          </span>
-          <span>
-            <i aria-hidden="true">
-              {(product.nutrition?.protein ?? t.chicken).toLowerCase().includes("لحم") ? <Beef size={19} /> : <Drumstick size={19} />}
-            </i>
-            <small>{t.meatType}</small>
-            <b>{product.nutrition?.protein ?? t.chicken}</b>
-          </span>
-          <span>
-            <i aria-hidden="true">
-              <Wheat size={19} />
-            </i>
-            <small>{t.breadType}</small>
-            <b>{product.nutrition?.breadType ?? t.plate}</b>
-          </span>
-          <span>
-            <i aria-hidden="true">
-              <Flame size={19} />
-            </i>
-            <small>{t.spiceLevel}</small>
-            <b>{product.nutrition?.spice ?? t.medium}</b>
-          </span>
-        </div>
+        {mealDetails.length ? (
+          <>
+            <h2>
+              <Flame size={18} />
+              {t.mealDetails}
+            </h2>
+            <div className="nutrition-card">
+              {mealDetails.map((detail, index) => {
+                const DetailIcon = mealDetailIcon(detail.icon);
+
+                return (
+                  <span key={detail.label + "-" + index}>
+                    <i aria-hidden="true">
+                      {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={19} />}
+                    </i>
+                    <small>{detail.label}</small>
+                    <b>{detail.value}</b>
+                  </span>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
 
         <ProductRail
           title={t.youMayLike}

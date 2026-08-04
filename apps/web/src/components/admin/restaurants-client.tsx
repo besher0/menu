@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Download, ExternalLink, Loader2, Plus, Store } from "lucide-react";
+import { Download, ExternalLink, Plus, Store } from "lucide-react";
 import { apiFetch } from "@/lib/client-api";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { StatCard } from "./stat-card";
 
 type Restaurant = {
@@ -135,10 +136,7 @@ export function RestaurantsClient() {
 
       <section className="data-card full">
         {status === "loading" ? (
-          <div className="empty-state">
-            <Loader2 className="spin" size={28} />
-            <b>يتم تحميل المطاعم</b>
-          </div>
+          <SkeletonTable rows={7} columns={6} />
         ) : null}
 
         {status === "error" ? <EmptyState title="تعذر تحميل المطاعم" text={message} /> : null}

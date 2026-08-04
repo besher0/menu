@@ -369,6 +369,7 @@ export class PublicMenuService {
   private serializeProduct(product: any, features: Array<{ key: string; enabled: boolean }>, currency: string) {
     const canUse3d = features.some((feature) => feature.key === "PRODUCT_3D_VIEWER" && feature.enabled);
     const canUseVr = features.some((feature) => feature.key === "PRODUCT_VR_VIEWER" && feature.enabled);
+    const moodKeys = this.parseStoredMoodKeys(product.moodKey);
 
     return {
       id: product.id,
@@ -381,9 +382,10 @@ export class PublicMenuService {
       isFeatured: product.isFeatured,
       isNew: product.isNew,
       isPopular: product.isPopular,
-      moodKey: product.moodKey ?? null,
+      moodKey: moodKeys[0] ?? null,
+      moodKeys,
       ingredients: product.ingredients ?? [],
-      nutrition: product.nutrition ?? null,
+      nutrition: this.serializeNutrition(product.nutrition),
       category: product.category
         ? {
             id: product.category.id,
@@ -405,6 +407,22 @@ export class PublicMenuService {
     };
   }
 
+  private parseStoredMoodKeys(value?: string | null) {
+    const fallback = value?.trim();
+    if (!fallback) return [];
+
+    try {
+      const parsed = JSON.parse(fallback);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+      }
+    } catch {
+      // Existing products store a single mood label directly.
+    }
+
+    return [fallback];
+  }
+
   private serializeMenus(menus: any[]) {
     return menus.map((menu) => ({
       ...menu,
@@ -416,6 +434,26 @@ export class PublicMenuService {
         }))
       }))
     }));
+  }
+
+  private serializeNutrition(nutrition: Prisma.JsonValue | null) {
+    if (!nutrition || typeof nutrition !== "object" || Array.isArray(nutrition)) {
+      return nutrition ?? null;
+    }
+
+    const record = { ...(nutrition as Record<string, Prisma.JsonValue>) };
+    if (Array.isArray(record.details)) {
+      record.details = record.details.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+        const detail = { ...(item as Record<string, Prisma.JsonValue>) };
+        if (typeof detail.iconUrl === "string") {
+          detail.iconUrl = this.publicAssetUrl(detail.iconUrl) ?? "";
+        }
+        return detail;
+      }) as Prisma.JsonArray;
+    }
+
+    return record;
   }
 
   private serializeSectionSettings(settings: any) {
