@@ -11,13 +11,37 @@ import { readPositiveInt, readStringList } from "./common/security/env";
 import { rateLimitMiddleware } from "./common/security/rate-limit.middleware";
 import { securityHeadersMiddleware } from "./common/security/security-headers.middleware";
 
+function normalizeOrigin(value?: string | null) {
+  if (!value || value === "*") {
+    return value ?? null;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value.replace(/\/+$/, "");
+  }
+}
+
+function uniqueOrigins(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => normalizeOrigin(value))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
   const bodyLimit = `${readPositiveInt("REQUEST_BODY_LIMIT_KB", 256)}kb`;
-  const allowedOrigins = readStringList("CORS_ORIGINS", [
+  const allowedOrigins = uniqueOrigins([
+    ...readStringList("CORS_ORIGINS"),
     config.get<string>("WEB_ORIGIN") ?? "http://localhost:3000",
-    config.get<string>("API_ORIGIN") ?? "http://localhost:5000"
+    config.get<string>("API_ORIGIN") ?? "http://localhost:5000",
+    process.env.NEXT_PUBLIC_API_URL
   ]);
   const trustProxy = config.get<string>("TRUST_PROXY");
 
@@ -27,14 +51,18 @@ async function bootstrap() {
 
   app.enableCors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+      const normalizedOrigin = normalizeOrigin(origin);
+
+      if (!normalizedOrigin || allowedOrigins.includes("*") || allowedOrigins.includes(normalizedOrigin)) {
         callback(null, true);
         return;
       }
 
-      callback(new Error("Not allowed by CORS"));
+      callback(null, false);
     },
-    credentials: true
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Restaurant-Id", "x-restaurant-id"]
   });
   app.use(securityHeadersMiddleware);
   app.use(rateLimitMiddleware);

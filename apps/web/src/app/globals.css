@@ -3804,7 +3804,7 @@ button.table-link {
 }
 
 .builder-section-head {
-  align-content: start;
+  align-content: flex-start;
   display: grid;
   gap: 12px;
 }
@@ -4966,7 +4966,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .category-spotlight-copy {
-  align-content: start;
+  align-content: flex-start;
   direction: rtl;
   display: grid;
   grid-gap: 2px;
@@ -6499,7 +6499,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .cart-page {
   align-items: stretch;
-  align-content: start;
+  align-content: flex-start;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -6578,7 +6578,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .cart-page-list {
-  align-content: start;
+  align-content: flex-start;
   align-items: stretch;
   box-sizing: border-box;
   display: flex;
@@ -6727,7 +6727,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .cart-confirm-form {
-  align-content: start;
+  align-content: flex-start;
   display: grid;
   gap: 18px;
   grid-auto-rows: max-content;
@@ -9042,7 +9042,7 @@ body {
 }
 
 .restaurant-picker {
-  align-content: start;
+  align-content: flex-start;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
