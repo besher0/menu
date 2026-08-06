@@ -14,11 +14,12 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { readFile, unlink } from "fs/promises";
 import { diskStorage } from "multer";
 import { extname } from "path";
 import { AppRequest } from "../../common/app-request";
+import { readPositiveInt } from "../../common/security/env";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
 import {
@@ -29,6 +30,21 @@ import {
 import { CreateMediaAssetDto } from "./dto/create-media-asset.dto";
 import { UpsertImageRuleDto } from "./dto/upsert-image-rule.dto";
 import { MediaService } from "./media.service";
+
+const uploadMaxBytes = readPositiveInt("MAX_UPLOAD_MB", 75) * 1024 * 1024;
+const allowedUploadExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".glb", ".gltf", ".usdz"]);
+const allowedUploadMimeTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/svg+xml",
+  "model/gltf-binary",
+  "model/gltf+json",
+  "model/vnd.usdz+zip",
+  "application/octet-stream",
+  "application/zip"
+]);
 
 @Controller("dashboard/media")
 @UseGuards(JwtAuthGuard, RestaurantContextGuard)
@@ -70,10 +86,20 @@ export class MediaController {
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-+|-+$/g, "")
             .slice(0, 48);
-          callback(null, `${Date.now()}-${safeBase || "asset"}${extname(file.originalname).toLowerCase()}`);
+          callback(null, `${Date.now()}-${randomUUID()}-${safeBase || "asset"}${extname(file.originalname).toLowerCase()}`);
         }
       }),
-      limits: { fileSize: 75 * 1024 * 1024 }
+      fileFilter: (_request, file, callback) => {
+        const extension = extname(file.originalname).toLowerCase();
+
+        if (!allowedUploadExtensions.has(extension) || !allowedUploadMimeTypes.has(file.mimetype)) {
+          callback(new BadRequestException("Unsupported upload type"), false);
+          return;
+        }
+
+        callback(null, true);
+      },
+      limits: { fileSize: uploadMaxBytes, files: 1 }
     })
   )
   async upload(

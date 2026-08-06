@@ -7,15 +7,39 @@ import { join } from "path";
 import express from "express";
 import { AppModule } from "./app.module";
 import { ApiResponseInterceptor } from "./common/api-response.interceptor";
+import { readPositiveInt, readStringList } from "./common/security/env";
+import { rateLimitMiddleware } from "./common/security/rate-limit.middleware";
+import { securityHeadersMiddleware } from "./common/security/security-headers.middleware";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
+  const bodyLimit = `${readPositiveInt("REQUEST_BODY_LIMIT_KB", 256)}kb`;
+  const allowedOrigins = readStringList("CORS_ORIGINS", [
+    config.get<string>("WEB_ORIGIN") ?? "http://localhost:3000",
+    config.get<string>("API_ORIGIN") ?? "http://localhost:5000"
+  ]);
+  const trustProxy = config.get<string>("TRUST_PROXY");
+
+  if (trustProxy) {
+    app.getHttpAdapter().getInstance().set("trust proxy", trustProxy === "true" ? 1 : trustProxy);
+  }
 
   app.enableCors({
-    origin: true,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Not allowed by CORS"));
+    },
     credentials: true
   });
+  app.use(securityHeadersMiddleware);
+  app.use(rateLimitMiddleware);
+  app.use(express.json({ limit: bodyLimit }));
+  app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -31,8 +55,13 @@ async function bootstrap() {
   app.use(
     "/uploads",
     express.static(uploadsDir, {
+      maxAge: "1d",
+      immutable: true,
       setHeaders(response, filePath) {
         const extension = filePath.split(".").pop()?.toLowerCase();
+
+        response.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox");
+        response.setHeader("X-Content-Type-Options", "nosniff");
 
         if (extension === "glb") {
           response.setHeader("Content-Type", "model/gltf-binary");
