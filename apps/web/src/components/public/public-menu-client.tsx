@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createElement, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Heart, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 
@@ -297,7 +297,7 @@ function mealDetailIcon(iconKey?: string | null): LucideIcon {
 function normalizeConfiguredMealDetails(details?: PublicMealDetail[]) {
   return (details ?? [])
     .map((detail) => ({
-      label: detail.label?.trim() ?? "",
+      label: (detail.displayName || detail.label)?.trim() ?? "",
       value: detail.value?.trim() ?? "",
       icon: detail.icon?.trim() || "utensils",
       iconUrl: detail.iconUrl?.trim() ?? ""
@@ -445,7 +445,7 @@ function productIngredients(product: PublicProduct): NormalizedIngredient[] {
     .map((ingredient) =>
       typeof ingredient === "string"
         ? { name: ingredient.trim(), imageUrl: null }
-        : { name: ingredient.name?.trim() ?? "", imageUrl: ingredient.imageUrl ?? null }
+        : { name: (ingredient.displayName || ingredient.name)?.trim() ?? "", imageUrl: ingredient.imageUrl ?? null }
     )
     .filter((ingredient) => ingredient.name || ingredient.imageUrl);
 }
@@ -1255,6 +1255,10 @@ function MenuView({
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
+  const spotlightPointerStartX = useRef<number | null>(null);
+  const spotlightPointerStartY = useRef<number | null>(null);
+  const spotlightPointerId = useRef<number | null>(null);
+  const spotlightDragMoved = useRef(false);
   const manualCategoryScrollUntil = useRef(0);
   const categoryStripRef = useRef<HTMLElement | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>(selectedDisplayParam);
@@ -1282,8 +1286,8 @@ function MenuView({
       : [];
   const contextTitle = selectedMood || (selectedCollection === "popular" ? t.mostPopular : selectedCollection === "new" ? t.newItems : "");
   const contextProducts = selectedMood ? moodProducts : collectionProducts;
-  const visibleProducts = data.products;
-  const categoryProductsSource = data.products;
+  const categoryProductsSource = selectedMood || selectedCollection ? contextProducts : data.products;
+  const visibleProducts = categoryProductsSource;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const menuReturnParams = new URLSearchParams(menuQuery);
 
@@ -1452,6 +1456,13 @@ function MenuView({
     setActiveSpotlightIndex((current) => (current + direction + activeProducts.length) % activeProducts.length);
   }
 
+  function markSpotlightDragged() {
+    spotlightDragMoved.current = true;
+    window.setTimeout(() => {
+      spotlightDragMoved.current = false;
+    }, 120);
+  }
+
   function changeMenuDisplayMode(mode: MenuDisplayMode) {
     setMenuDisplayMode(mode);
 
@@ -1479,7 +1490,53 @@ function MenuView({
     const deltaX = endX - spotlightTouchStartX.current;
     spotlightTouchStartX.current = null;
     if (Math.abs(deltaX) < 40) return;
+    markSpotlightDragged();
     moveSpotlight(deltaX > 0 ? -1 : 1);
+  }
+
+  function handleSpotlightPointerDown(event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "touch") return;
+
+    spotlightPointerStartX.current = event.clientX;
+    spotlightPointerStartY.current = event.clientY;
+    spotlightPointerId.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handleSpotlightPointerEnd(event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "touch" || spotlightPointerId.current !== event.pointerId || spotlightPointerStartX.current === null || spotlightPointerStartY.current === null) {
+      return;
+    }
+
+    const deltaX = event.clientX - spotlightPointerStartX.current;
+    const deltaY = event.clientY - spotlightPointerStartY.current;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    spotlightPointerStartX.current = null;
+    spotlightPointerStartY.current = null;
+    spotlightPointerId.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+
+    if (absX < 40 || absX < absY * 1.15) return;
+    markSpotlightDragged();
+    event.preventDefault();
+    moveSpotlight(deltaX > 0 ? -1 : 1);
+  }
+
+  function handleSpotlightPointerCancel() {
+    spotlightPointerStartX.current = null;
+    spotlightPointerStartY.current = null;
+    spotlightPointerId.current = null;
+  }
+
+  function handleSpotlightOpen(product: PublicProduct) {
+    if (spotlightDragMoved.current) {
+      spotlightDragMoved.current = false;
+      return;
+    }
+
+    openProduct(product);
   }
 
   function renderCategoryLanding() {
@@ -1573,7 +1630,7 @@ function MenuView({
                 fillPlaceholders={false}
                 showPrices={showPrices}
                 showViewAll={false}
-                onAddToCart={productListLayout === "double" ? undefined : addToCart}
+                onAddToCart={addToCart}
                 returnHref={menuReturnHref}
               />
             </section>
@@ -1630,10 +1687,13 @@ function MenuView({
             <section className="category-spotlight" id="menu-products-start">
               <article
                 className="category-spotlight-card"
+                onPointerCancel={handleSpotlightPointerCancel}
+                onPointerDown={handleSpotlightPointerDown}
+                onPointerUp={handleSpotlightPointerEnd}
                 onTouchStart={handleSpotlightTouchStart}
                 onTouchEnd={handleSpotlightTouchEnd}
               >
-                <button type="button" className="category-spotlight-open" onClick={() => openProduct(spotlightProduct)}>
+                <button type="button" className="category-spotlight-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                   <ProductImageMedia product={spotlightProduct} />
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
@@ -2415,11 +2475,84 @@ function ProductRail({
   viewAllHref?: string;
   returnHref?: string;
 }) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const railPointerId = useRef<number | null>(null);
+  const railPointerX = useRef(0);
+  const railStartScrollLeft = useRef(0);
+  const railDragMoved = useRef(false);
+  const railRtlScrollType = useRef<"negative" | "reverse" | null>(null);
+
   if (!products.length && !fillPlaceholders) {
     return null;
   }
 
   const railSlots = fillPlaceholders ? Array.from({ length: Math.max(3, products.length) }) : products;
+  const maxRailScroll = (rail: HTMLDivElement) => Math.max(0, rail.scrollWidth - rail.clientWidth);
+  const getRailRtlScrollType = (rail: HTMLDivElement) => {
+    if (railRtlScrollType.current) return railRtlScrollType.current;
+
+    const previous = rail.scrollLeft;
+    rail.scrollLeft = 1;
+    railRtlScrollType.current = rail.scrollLeft === 0 ? "negative" : "reverse";
+    rail.scrollLeft = previous;
+    return railRtlScrollType.current;
+  };
+  const getRailScrollPosition = (rail: HTMLDivElement) => {
+    const max = maxRailScroll(rail);
+    if (window.getComputedStyle(rail).direction !== "rtl") {
+      return rail.scrollLeft;
+    }
+
+    return getRailRtlScrollType(rail) === "negative" ? -rail.scrollLeft : max - rail.scrollLeft;
+  };
+  const setRailScrollPosition = (rail: HTMLDivElement, value: number) => {
+    const max = maxRailScroll(rail);
+    const next = Math.max(0, Math.min(max, value));
+
+    if (window.getComputedStyle(rail).direction !== "rtl") {
+      rail.scrollLeft = next;
+      return;
+    }
+
+    rail.scrollLeft = getRailRtlScrollType(rail) === "negative" ? -next : max - next;
+  };
+
+  const handleRailPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (maxRailScroll(event.currentTarget) <= 1) return;
+
+    railPointerId.current = event.pointerId;
+    railPointerX.current = event.clientX;
+    railStartScrollLeft.current = getRailScrollPosition(event.currentTarget);
+    railDragMoved.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleRailPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const rail = railRef.current;
+    if (!rail || railPointerId.current !== event.pointerId) return;
+
+    const deltaX = event.clientX - railPointerX.current;
+    if (Math.abs(deltaX) > 3) {
+      railDragMoved.current = true;
+    }
+
+    if (deltaX) {
+      setRailScrollPosition(rail, railStartScrollLeft.current - deltaX);
+    }
+  };
+
+  const handleRailPointerEnd = (event: PointerEvent<HTMLDivElement>) => {
+    if (railPointerId.current !== event.pointerId) return;
+
+    railPointerId.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (railDragMoved.current) {
+      window.setTimeout(() => {
+        railDragMoved.current = false;
+      }, 80);
+    }
+  };
 
   return (
     <section className="product-rail">
@@ -2430,13 +2563,32 @@ function ProductRail({
         </h2>
         {showViewAll ? <Link href={viewAllHref ?? `/m/${restaurantSlug}/menu`}>{t.viewAll}</Link> : null}
       </div>
-      <div className="rail-scroll">
+      <div
+        className="rail-scroll"
+        ref={railRef}
+        onPointerCancel={handleRailPointerEnd}
+        onPointerDown={handleRailPointerDown}
+        onPointerMove={handleRailPointerMove}
+        onPointerUp={handleRailPointerEnd}
+        onDragStart={(event) => event.preventDefault()}
+      >
         {railSlots.map((_, index) => {
           const product = products[index];
           return product ? (
           <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
-            <Link href={productHref(restaurantSlug, product, returnHref)} scroll onClick={() => window.scrollTo(0, 0)}>
+            <Link
+              href={productHref(restaurantSlug, product, returnHref)}
+              scroll
+              onClick={(event) => {
+                if (railDragMoved.current) {
+                  event.preventDefault();
+                  return;
+                }
+
+                window.scrollTo(0, 0);
+              }}
+            >
               <ProductImageMedia product={product} />
             </Link>
             <b>{product.name}</b>

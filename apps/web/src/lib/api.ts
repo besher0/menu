@@ -21,11 +21,13 @@ export type PublicCategory = {
 
 export type PublicIngredient = string | {
   name: string;
+  displayName?: string;
   imageUrl?: string | null;
 };
 
 export type PublicMealDetail = {
   label: string;
+  displayName?: string;
   value: string;
   icon?: string | null;
   iconUrl?: string | null;

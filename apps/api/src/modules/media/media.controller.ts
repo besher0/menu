@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -12,14 +14,11 @@ import {
   UseGuards,
   UseInterceptors
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { createHash, randomUUID } from "crypto";
-import { readFile, unlink } from "fs/promises";
+import { randomUUID } from "crypto";
 import { diskStorage } from "multer";
 import { extname } from "path";
 import { AppRequest } from "../../common/app-request";
-import { readPositiveInt } from "../../common/security/env";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
 import {
@@ -30,28 +29,22 @@ import {
 import { CreateMediaAssetDto } from "./dto/create-media-asset.dto";
 import { UpsertImageRuleDto } from "./dto/upsert-image-rule.dto";
 import { MediaService } from "./media.service";
-
-const uploadMaxBytes = readPositiveInt("MAX_UPLOAD_MB", 75) * 1024 * 1024;
-const allowedUploadExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".glb", ".gltf", ".usdz"]);
-const allowedUploadMimeTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-  "model/gltf-binary",
-  "model/gltf+json",
-  "model/vnd.usdz+zip",
-  "application/octet-stream",
-  "application/zip"
-]);
+import { ProductLibraryService } from "./product-library.service";
+import {
+  MediaStorageService,
+  uploadMaxBytes,
+  validateUploadFile
+} from "./media-storage.service";
+import { UpsertIngredientLibraryItemDto } from "./dto/upsert-ingredient-library-item.dto";
+import { UpsertMealDetailLibraryItemDto } from "./dto/upsert-meal-detail-library-item.dto";
 
 @Controller("dashboard/media")
 @UseGuards(JwtAuthGuard, RestaurantContextGuard)
 export class MediaController {
   constructor(
     @Inject(MediaService) private readonly mediaService: MediaService,
-    @Inject(ConfigService) private readonly config: ConfigService
+    @Inject(MediaStorageService) private readonly storage: MediaStorageService,
+    @Inject(ProductLibraryService) private readonly productLibrary: ProductLibraryService
   ) {}
 
   @Get()
@@ -67,6 +60,54 @@ export class MediaController {
   @Post("rules")
   upsertRule(@Req() request: AppRequest, @Body() dto: UpsertImageRuleDto) {
     return this.mediaService.upsertRule(request.restaurant!.id, dto);
+  }
+
+  @Get("ingredients")
+  ingredients(@Req() request: AppRequest) {
+    return this.productLibrary.listIngredients(request.restaurant!.id);
+  }
+
+  @Post("ingredients")
+  createIngredient(@Req() request: AppRequest, @Body() dto: UpsertIngredientLibraryItemDto) {
+    return this.productLibrary.createIngredient(request.restaurant!.id, dto);
+  }
+
+  @Patch("ingredients/:id")
+  updateIngredient(
+    @Req() request: AppRequest,
+    @Param("id") id: string,
+    @Body() dto: UpsertIngredientLibraryItemDto
+  ) {
+    return this.productLibrary.updateIngredient(request.restaurant!.id, id, dto);
+  }
+
+  @Delete("ingredients/:id")
+  deleteIngredient(@Req() request: AppRequest, @Param("id") id: string) {
+    return this.productLibrary.deleteIngredient(request.restaurant!.id, id);
+  }
+
+  @Get("meal-details")
+  mealDetails(@Req() request: AppRequest) {
+    return this.productLibrary.listMealDetails(request.restaurant!.id);
+  }
+
+  @Post("meal-details")
+  createMealDetail(@Req() request: AppRequest, @Body() dto: UpsertMealDetailLibraryItemDto) {
+    return this.productLibrary.createMealDetail(request.restaurant!.id, dto);
+  }
+
+  @Patch("meal-details/:id")
+  updateMealDetail(
+    @Req() request: AppRequest,
+    @Param("id") id: string,
+    @Body() dto: UpsertMealDetailLibraryItemDto
+  ) {
+    return this.productLibrary.updateMealDetail(request.restaurant!.id, id, dto);
+  }
+
+  @Delete("meal-details/:id")
+  deleteMealDetail(@Req() request: AppRequest, @Param("id") id: string) {
+    return this.productLibrary.deleteMealDetail(request.restaurant!.id, id);
   }
 
   @Post()
@@ -90,14 +131,12 @@ export class MediaController {
         }
       }),
       fileFilter: (_request, file, callback) => {
-        const extension = extname(file.originalname).toLowerCase();
-
-        if (!allowedUploadExtensions.has(extension) || !allowedUploadMimeTypes.has(file.mimetype)) {
-          callback(new BadRequestException("Unsupported upload type"), false);
-          return;
+        try {
+          validateUploadFile(file);
+          callback(null, true);
+        } catch (error) {
+          callback(error instanceof BadRequestException ? error : new BadRequestException("Unsupported upload type"), false);
         }
-
-        callback(null, true);
       },
       limits: { fileSize: uploadMaxBytes, files: 1 }
     })
@@ -111,67 +150,19 @@ export class MediaController {
       throw new BadRequestException("Upload file is required");
     }
 
-    const cloudinaryUrl = await this.uploadToCloudinaryIfConfigured(file, body.type);
-    const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5000}`;
+    const upload = await this.storage.storeUploadedFile(file, body.type);
 
     return this.mediaService.create(request.restaurant!.id, request.user?.sub, {
-      url: cloudinaryUrl ?? `${apiOrigin}/uploads/${file.filename}`,
+      url: upload.url,
       type: body.type ?? this.mediaService.inferMediaType(file.originalname),
       altText: body.altText ?? file.originalname,
-      size: file.size,
-      filename: file.filename,
-      originalFilename: file.originalname,
-      mimeType: file.mimetype
+      size: upload.size,
+      filename: upload.filename,
+      originalFilename: upload.originalFilename,
+      mimeType: upload.mimeType,
+      provider: upload.provider,
+      metadata: upload.metadata
     });
-  }
-
-  private async uploadToCloudinaryIfConfigured(
-    file: Express.Multer.File,
-    type?: "IMAGE" | "MODEL_3D" | "VR_PANORAMA" | "SVG_ICON" | "PNG_ICON"
-  ) {
-    const cloudName = this.config.get<string>("CLOUDINARY_CLOUD_NAME");
-    const apiKey = this.config.get<string>("CLOUDINARY_API_KEY");
-    const apiSecret = this.config.get<string>("CLOUDINARY_API_SECRET");
-
-    if (!cloudName || !apiKey || !apiSecret) {
-      if (type === "MODEL_3D") {
-        await unlink(file.path).catch(() => undefined);
-        throw new BadRequestException("Cloudinary is required for 3D uploads. Configure CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET.");
-      }
-
-      return null;
-    }
-
-    try {
-      const timestamp = Math.floor(Date.now() / 1000);
-      const folder = this.config.get<string>("CLOUDINARY_FOLDER") ?? "menu-builder";
-      const resourceType = type === "IMAGE" || type === "SVG_ICON" || type === "PNG_ICON" ? "image" : "raw";
-      const signature = createHash("sha1")
-        .update(`folder=${folder}&timestamp=${timestamp}${apiSecret}`)
-        .digest("hex");
-      const buffer = await readFile(file.path);
-      const formData = new FormData();
-
-      formData.append("file", new Blob([buffer], { type: file.mimetype }), file.originalname);
-      formData.append("api_key", apiKey);
-      formData.append("timestamp", String(timestamp));
-      formData.append("folder", folder);
-      formData.append("signature", signature);
-
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
-        method: "POST",
-        body: formData
-      });
-      const payload = await response.json().catch(() => null) as { secure_url?: string; error?: { message?: string } } | null;
-
-      if (!response.ok || !payload?.secure_url) {
-        throw new BadRequestException(payload?.error?.message ?? "Cloudinary upload failed");
-      }
-
-      return payload.secure_url;
-    } finally {
-      await unlink(file.path).catch(() => undefined);
-    }
   }
 
   @Post("products/:productId/images")

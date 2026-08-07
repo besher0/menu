@@ -384,7 +384,7 @@ export class PublicMenuService {
       isPopular: product.isPopular,
       moodKey: moodKeys[0] ?? null,
       moodKeys,
-      ingredients: product.ingredients ?? [],
+      ingredients: this.serializePublicIngredients(product.ingredients),
       nutrition: this.serializeNutrition(product.nutrition),
       category: product.category
         ? {
@@ -445,15 +445,58 @@ export class PublicMenuService {
     if (Array.isArray(record.details)) {
       record.details = record.details.map((item) => {
         if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-        const detail = { ...(item as Record<string, Prisma.JsonValue>) };
+        const source = item as Record<string, Prisma.JsonValue>;
+        const displayName = typeof source.displayName === "string" && source.displayName.trim()
+          ? source.displayName.trim()
+          : typeof source.label === "string"
+            ? source.label.trim()
+            : "";
+        const detail: Record<string, Prisma.JsonValue> = {
+          label: displayName,
+          displayName,
+          value: typeof source.value === "string" ? source.value : "",
+          icon: typeof source.icon === "string" && source.icon.trim() ? source.icon : "utensils"
+        };
         if (typeof detail.iconUrl === "string") {
           detail.iconUrl = this.publicAssetUrl(detail.iconUrl) ?? "";
+        } else if (typeof source.iconUrl === "string") {
+          detail.iconUrl = this.publicAssetUrl(source.iconUrl) ?? "";
         }
         return detail;
       }) as Prisma.JsonArray;
     }
 
     return record;
+  }
+
+  private serializePublicIngredients(ingredients: Prisma.JsonValue | null) {
+    if (!Array.isArray(ingredients)) {
+      return ingredients ?? [];
+    }
+
+    return ingredients.map((item) => {
+      if (typeof item === "string") {
+        const name = item.trim();
+        return name ? { name, displayName: name } : item;
+      }
+
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return item;
+      }
+
+      const source = item as Record<string, Prisma.JsonValue>;
+      const displayName = typeof source.displayName === "string" && source.displayName.trim()
+        ? source.displayName.trim()
+        : typeof source.name === "string"
+          ? source.name.trim()
+          : "";
+
+      return {
+        name: displayName,
+        displayName,
+        imageUrl: typeof source.imageUrl === "string" ? this.publicAssetUrl(source.imageUrl) ?? "" : ""
+      };
+    });
   }
 
   private serializeSectionSettings(settings: any) {

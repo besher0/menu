@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { slugify } from "../../common/slugify";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
+import { ProductLibraryService } from "../media/product-library.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsQueryDto } from "./dto/list-products-query.dto";
@@ -12,6 +13,7 @@ export class ProductsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FeatureFlagsService) private readonly featureFlags: FeatureFlagsService,
+    @Inject(ProductLibraryService) private readonly productLibrary: ProductLibraryService,
     @Inject(ConfigService) private readonly config: ConfigService
   ) {}
 
@@ -161,13 +163,20 @@ export class ProductsService {
   }
 
   async ingredients(restaurantId: string) {
-    const products = await this.prisma.product.findMany({
+    const [library, products] = await Promise.all([
+      this.prisma.ingredientLibraryItem.findMany({
+        where: { restaurantId },
+        orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
+      }),
+      this.prisma.product.findMany({
       where: { restaurantId, deletedAt: null },
       select: { ingredients: true },
       orderBy: { updatedAt: "desc" },
       take: 500
-    });
-    const ingredients = new Map<string, { name: string; imageUrl: string; usageCount: number }>();
+      })
+    ]);
+    const usage = new Map<string, number>();
+    const legacy = new Map<string, { name: string; displayName: string; imageUrl: string; usageCount: number }>();
 
     for (const product of products) {
       if (!Array.isArray(product.ingredients)) continue;
@@ -176,53 +185,149 @@ export class ProductsService {
         const normalized = this.normalizeIngredientItem(item);
         if (!normalized) continue;
 
-        const key = normalized.name.toLocaleLowerCase();
+        const key = (normalized.adminName || normalized.name).toLocaleLowerCase();
         const imageUrl = this.publicAssetUrl(normalized.imageUrl) ?? "";
-        const existing = ingredients.get(key);
+        usage.set(key, (usage.get(key) ?? 0) + 1);
+        const existing = legacy.get(key);
         if (existing) {
           existing.usageCount += 1;
           if (!existing.imageUrl && imageUrl) {
             existing.imageUrl = imageUrl;
           }
         } else {
-          ingredients.set(key, { name: normalized.name, imageUrl, usageCount: 1 });
+          legacy.set(key, {
+            name: normalized.name,
+            displayName: normalized.displayName || normalized.name,
+            imageUrl,
+            usageCount: 1
+          });
         }
       }
     }
 
+    const libraryKeys = new Set(library.map((item) => item.adminNameNormalized));
+    const librarySuggestions = library.map((item) => ({
+      id: item.id,
+      libraryId: item.id,
+      adminName: item.adminName,
+      displayName: item.displayName,
+      name: item.displayName,
+      imageUrl: this.publicAssetUrl(item.imageUrl) ?? "",
+      isActive: item.isActive,
+      usageCount: usage.get(item.adminNameNormalized) ?? 0
+    }));
+    const legacySuggestions = Array.from(legacy.entries())
+      .filter(([key]) => !libraryKeys.has(key))
+      .map(([, value]) => value);
+
     return {
-      data: Array.from(ingredients.values())
+      data: [...librarySuggestions, ...legacySuggestions]
         .sort((left, right) => right.usageCount - left.usageCount || left.name.localeCompare(right.name, "ar"))
         .slice(0, 200)
     };
   }
 
   async mealDetails(restaurantId: string) {
-    const products = await this.prisma.product.findMany({
+    const [library, products] = await Promise.all([
+      this.prisma.mealDetailLibraryItem.findMany({
+        where: { restaurantId },
+        orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
+      }),
+      this.prisma.product.findMany({
       where: { restaurantId, deletedAt: null },
       select: { nutrition: true },
       orderBy: { updatedAt: "desc" },
       take: 500
-    });
-    const details = new Map<string, { label: string; value: string; icon: string; usageCount: number }>();
+      })
+    ]);
+    const usage = new Map<string, number>();
+    const details = new Map<string, { label: string; displayName: string; value: string; icon: string; iconUrl: string; usageCount: number }>();
 
     for (const product of products) {
       for (const detail of this.normalizeMealDetails(product.nutrition)) {
-        const key = `${detail.label.toLocaleLowerCase()}|${detail.value.toLocaleLowerCase()}|${detail.icon}|${detail.iconUrl.toLocaleLowerCase()}`;
+        const key = (detail.adminName || detail.label).toLocaleLowerCase();
+        usage.set(key, (usage.get(key) ?? 0) + 1);
         const existing = details.get(key);
         if (existing) {
           existing.usageCount += 1;
         } else {
-          details.set(key, { ...detail, usageCount: 1 });
+          details.set(key, { ...detail, displayName: detail.displayName || detail.label, usageCount: 1 });
         }
       }
     }
 
+    const libraryKeys = new Set(library.map((item) => item.adminNameNormalized));
+    const librarySuggestions = library.map((item) => ({
+      id: item.id,
+      libraryId: item.id,
+      adminName: item.adminName,
+      displayName: item.displayName,
+      label: item.displayName,
+      value: item.value ?? "",
+      icon: item.icon,
+      iconUrl: this.publicAssetUrl(item.iconUrl) ?? "",
+      isActive: item.isActive,
+      usageCount: usage.get(item.adminNameNormalized) ?? 0
+    }));
+    const legacySuggestions = Array.from(details.entries())
+      .filter(([key]) => !libraryKeys.has(key))
+      .map(([, value]) => value);
+
     return {
-      data: Array.from(details.values())
+      data: [...librarySuggestions, ...legacySuggestions]
         .sort((left, right) => right.usageCount - left.usageCount || left.label.localeCompare(right.label, "ar"))
         .slice(0, 200)
     };
+  }
+
+  async createImportedProduct(
+    tx: Prisma.TransactionClient,
+    restaurantId: string,
+    input: {
+      categoryId: string;
+      name: string;
+      description?: string | null;
+      basePrice: number;
+      currency: string;
+      isPopular: boolean;
+      isNew: boolean;
+      moodKeys: string[];
+      ingredients: Prisma.InputJsonValue[];
+      nutrition: Prisma.InputJsonValue;
+      images: Array<{ url: string; mediaId?: string; altText?: string }>;
+      sortOrder: number;
+    }
+  ) {
+    const slug = await this.uniqueProductSlug(restaurantId, input.name, undefined, tx);
+
+    return tx.product.create({
+      data: {
+        restaurantId,
+        categoryId: input.categoryId,
+        name: input.name,
+        slug,
+        description: input.description,
+        basePrice: input.basePrice,
+        currency: input.currency,
+        isPopular: input.isPopular,
+        isNew: input.isNew,
+        isFeatured: input.isNew,
+        moodKey: this.serializeMoodKeyValue(input.moodKeys),
+        ingredients: input.ingredients,
+        nutrition: input.nutrition,
+        sortOrder: input.sortOrder,
+        images: input.images.length
+          ? {
+              create: input.images.map((image, index) => ({
+                mediaId: image.mediaId,
+                url: image.url,
+                altText: image.altText ?? input.name,
+                sortOrder: index
+              }))
+            }
+          : undefined
+      }
+    });
   }
 
   async update(restaurantId: string, id: string, dto: CreateProductDto, allowAdvancedMedia = false) {
@@ -410,7 +515,7 @@ export class ProductsService {
       moodKeys,
       sortOrder: product.sortOrder,
       views,
-      ingredients: product.ingredients ?? [],
+      ingredients: this.serializeIngredients(product.ingredients),
       nutrition: this.serializeNutrition(product.nutrition),
       category: product.category
         ? {
@@ -500,12 +605,17 @@ export class ProductsService {
     return [fallback];
   }
 
-  private async uniqueProductSlug(restaurantId: string, value: string, excludeId?: string) {
+  private async uniqueProductSlug(
+    restaurantId: string,
+    value: string,
+    excludeId?: string,
+    client: Pick<PrismaService, "product"> | Prisma.TransactionClient = this.prisma
+  ) {
     const base = slugify(value) || "product";
     let candidate = base;
     let suffix = 2;
 
-    while (await this.prisma.product.findFirst({
+    while (await client.product.findFirst({
       where: {
         restaurantId,
         slug: candidate,
@@ -542,7 +652,7 @@ export class ProductsService {
   private normalizeIngredientItem(item: Prisma.JsonValue) {
     if (typeof item === "string") {
       const name = item.trim();
-      return name ? { name, imageUrl: "" } : null;
+      return name ? { name, displayName: name, adminName: "", imageUrl: "" } : null;
     }
 
     if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -550,10 +660,12 @@ export class ProductsService {
     }
 
     const record = item as Record<string, Prisma.JsonValue>;
-    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const displayName = typeof record.displayName === "string" ? record.displayName.trim() : "";
+    const adminName = typeof record.adminName === "string" ? record.adminName.trim() : "";
+    const name = (typeof record.name === "string" ? record.name.trim() : "") || displayName;
     const imageUrl = typeof record.imageUrl === "string" ? record.imageUrl.trim() : "";
 
-    return name ? { name, imageUrl } : null;
+    return name ? { name, displayName: displayName || name, adminName, imageUrl } : null;
   }
 
   private normalizeMealDetails(nutrition: Prisma.JsonValue | null) {
@@ -565,7 +677,7 @@ export class ProductsService {
     if (Array.isArray(record.details)) {
       return record.details
         .map((item) => this.normalizeMealDetailItem(item))
-        .filter((item): item is { label: string; value: string; icon: string; iconUrl: string } => Boolean(item));
+        .filter((item): item is { label: string; displayName: string; adminName: string; value: string; icon: string; iconUrl: string } => Boolean(item));
     }
 
     return [
@@ -573,7 +685,7 @@ export class ProductsService {
       this.legacyMealDetail(record.protein, "نوع البروتين", "drumstick"),
       this.legacyMealDetail(record.breadType, "نوع الخبز", "wheat"),
       this.legacyMealDetail(record.spice, "مستوى الحدة", "flame")
-    ].filter((item): item is { label: string; value: string; icon: string; iconUrl: string } => Boolean(item));
+    ].filter((item): item is { label: string; displayName: string; adminName: string; value: string; icon: string; iconUrl: string } => Boolean(item));
   }
 
   private normalizeMealDetailItem(item: Prisma.JsonValue) {
@@ -582,17 +694,37 @@ export class ProductsService {
     }
 
     const record = item as Record<string, Prisma.JsonValue>;
-    const label = typeof record.label === "string" ? record.label.trim() : "";
+    const displayName = typeof record.displayName === "string" ? record.displayName.trim() : "";
+    const adminName = typeof record.adminName === "string" ? record.adminName.trim() : "";
+    const label = (typeof record.label === "string" ? record.label.trim() : "") || displayName;
     const value = typeof record.value === "string" ? record.value.trim() : "";
     const icon = typeof record.icon === "string" && record.icon.trim() ? record.icon.trim() : "utensils";
     const iconUrl = typeof record.iconUrl === "string" && record.iconUrl.trim() ? this.publicAssetUrl(record.iconUrl.trim()) ?? "" : "";
 
-    return label || value ? { label, value, icon, iconUrl } : null;
+    return label || value ? { label, displayName: displayName || label, adminName, value, icon, iconUrl } : null;
   }
 
   private legacyMealDetail(value: Prisma.JsonValue | undefined, label: string, icon: string) {
     const normalizedValue = typeof value === "string" ? value.trim() : "";
-    return normalizedValue ? { label, value: normalizedValue, icon, iconUrl: "" } : null;
+    return normalizedValue ? { label, displayName: label, adminName: "", value: normalizedValue, icon, iconUrl: "" } : null;
+  }
+
+  private serializeIngredients(ingredients: Prisma.JsonValue | null) {
+    if (!Array.isArray(ingredients)) {
+      return ingredients ?? [];
+    }
+
+    return ingredients.map((item) => {
+      const normalized = this.normalizeIngredientItem(item);
+      if (!normalized) return item;
+      return {
+        ...(typeof item === "object" && item && !Array.isArray(item) ? item : {}),
+        adminName: normalized.adminName || undefined,
+        displayName: normalized.displayName || normalized.name,
+        name: normalized.displayName || normalized.name,
+        imageUrl: this.publicAssetUrl(normalized.imageUrl) ?? ""
+      };
+    });
   }
 
   private serializeNutrition(nutrition: Prisma.JsonValue | null) {

@@ -21,38 +21,40 @@ model User {
 }
 
 model Restaurant {
-  id               String                   @id @default(cuid())
-  name             String
-  slug             String                   @unique
-  description      String?
-  type             String?
-  logoUrl          String?
-  heroImageUrl     String?
-  defaultLanguage  String                   @default("ar")
-  currency         String                   @default("ل.س")
-  city             String?
-  country          String?
-  whatsappPhone    String?
-  isActive         Boolean                  @default(true)
-  platformBranding Boolean                  @default(true)
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  deletedAt        DateTime?
-  analyticsEvents  AnalyticsEvent[]
-  auditLogs        AuditLog[]
-  branches         Branch[]
-  categories       Category[]
-  domains          CustomDomain[]
-  imageRules       ImageRule[]
-  mediaAssets      MediaAsset[]
-  menus            Menu[]
-  orders           Order[]
-  products         Product[]
-  qrCodes          QrCode[]
-  members          RestaurantMember[]
-  subscription     RestaurantSubscription?
-  syncJobs         SyncJob[]
-  themeSettings    RestaurantThemeSettings?
+  id                     String                   @id @default(cuid())
+  name                   String
+  slug                   String                   @unique
+  description            String?
+  type                   String?
+  logoUrl                String?
+  heroImageUrl           String?
+  defaultLanguage        String                   @default("ar")
+  currency               String                   @default("ل.س")
+  city                   String?
+  country                String?
+  whatsappPhone          String?
+  isActive               Boolean                  @default(true)
+  platformBranding       Boolean                  @default(true)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  deletedAt              DateTime?
+  analyticsEvents        AnalyticsEvent[]
+  auditLogs              AuditLog[]
+  branches               Branch[]
+  categories             Category[]
+  domains                CustomDomain[]
+  imageRules             ImageRule[]
+  ingredientLibraryItems IngredientLibraryItem[]
+  mealDetailLibraryItems MealDetailLibraryItem[]
+  mediaAssets            MediaAsset[]
+  menus                  Menu[]
+  orders                 Order[]
+  products               Product[]
+  qrCodes                QrCode[]
+  members                RestaurantMember[]
+  subscription           RestaurantSubscription?
+  syncJobs               SyncJob[]
+  themeSettings          RestaurantThemeSettings?
 
   @@index([slug])
 }
@@ -175,26 +177,26 @@ model MenuVersion {
 }
 
 model Category {
-  id           String     @id @default(cuid())
-  restaurantId String
-  name         String
-  slug         String
-  description  String?
-  imageUrl     String?
-  imagePosition String?    @default("end")
-  imageWidth   Int?
-  imageHeight  Int?
-  color        String?
-  backgroundType CategoryBackgroundType @default(COLOR)
-  backgroundValue String?
-  backgroundOverlay String?
-  backgroundCss String?
-  visualScrollEnabled Boolean @default(false)
-  sortOrder    Int        @default(0)
-  isActive     Boolean    @default(true)
-  deletedAt    DateTime?
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  products     Product[]
+  id                  String                 @id @default(cuid())
+  restaurantId        String
+  name                String
+  slug                String
+  description         String?
+  imageUrl            String?
+  imagePosition       String?                @default("end")
+  imageWidth          Int?
+  imageHeight         Int?
+  color               String?
+  backgroundType      CategoryBackgroundType @default(COLOR)
+  backgroundValue     String?
+  backgroundOverlay   String?
+  backgroundCss       String?
+  visualScrollEnabled Boolean                @default(false)
+  sortOrder           Int                    @default(0)
+  isActive            Boolean                @default(true)
+  deletedAt           DateTime?
+  restaurant          Restaurant             @relation(fields: [restaurantId], references: [id])
+  products            Product[]
 
   @@unique([restaurantId, slug])
   @@index([restaurantId])
@@ -293,6 +295,42 @@ model ProductVrMedia {
   type        String
   isActive    Boolean @default(true)
   product     Product @relation(fields: [productId], references: [id])
+}
+
+model IngredientLibraryItem {
+  id                  String     @id @default(cuid())
+  restaurantId        String
+  adminName           String
+  adminNameNormalized String
+  displayName         String
+  imageUrl            String?
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  restaurant          Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@unique([restaurantId, adminNameNormalized])
+  @@index([restaurantId])
+  @@index([restaurantId, isActive])
+}
+
+model MealDetailLibraryItem {
+  id                  String     @id @default(cuid())
+  restaurantId        String
+  adminName           String
+  adminNameNormalized String
+  displayName         String
+  value               String?
+  icon                String     @default("utensils")
+  iconUrl             String?
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  restaurant          Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@unique([restaurantId, adminNameNormalized])
+  @@index([restaurantId])
+  @@index([restaurantId, isActive])
 }
 
 model MediaAsset {

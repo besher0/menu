@@ -8,6 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 type MediaType = "IMAGE" | "MODEL_3D" | "VR_PANORAMA" | "SVG_ICON" | "PNG_ICON";
 type ImageRuleTarget = "PRODUCT_IMAGE" | "CATEGORY_IMAGE" | "HERO_IMAGE" | "GALLERY_IMAGE" | "LOGO" | "ICON";
+type MediaPageTab = "media" | "ingredients" | "meal-details";
 
 type MediaVariant = {
   id: string;
@@ -50,6 +51,38 @@ type ImageRule = {
   generateWebp: boolean;
   lazyLoad: boolean;
   progressive: boolean;
+};
+
+type IngredientLibraryItem = {
+  id: string;
+  adminName: string;
+  displayName: string;
+  imageUrl?: string | null;
+  isActive: boolean;
+};
+
+type MealDetailLibraryItem = {
+  id: string;
+  adminName: string;
+  displayName: string;
+  value?: string | null;
+  icon: string;
+  iconUrl?: string | null;
+  isActive: boolean;
+};
+
+type IngredientDraft = {
+  adminName: string;
+  displayName: string;
+  imageUrl: string;
+};
+
+type MealDetailDraft = {
+  adminName: string;
+  displayName: string;
+  value: string;
+  icon: string;
+  iconUrl: string;
 };
 
 type RuleDraft = {
@@ -101,9 +134,17 @@ const defaultRuleDraft: RuleDraft = {
   progressive: true
 };
 
+const defaultIngredientDraft: IngredientDraft = { adminName: "", displayName: "", imageUrl: "" };
+const defaultMealDetailDraft: MealDetailDraft = { adminName: "", displayName: "", value: "", icon: "utensils", iconUrl: "" };
+
 export function MediaLibraryClient() {
+  const [activeTab, setActiveTab] = useState<MediaPageTab>("media");
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [rules, setRules] = useState<ImageRule[]>([]);
+  const [ingredients, setIngredients] = useState<IngredientLibraryItem[]>([]);
+  const [mealDetails, setMealDetails] = useState<MealDetailLibraryItem[]>([]);
+  const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(defaultIngredientDraft);
+  const [mealDetailDraft, setMealDetailDraft] = useState<MealDetailDraft>(defaultMealDetailDraft);
   const [ruleDraft, setRuleDraft] = useState<RuleDraft>(defaultRuleDraft);
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -125,6 +166,15 @@ export function MediaLibraryClient() {
   useEffect(() => {
     void loadRules();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "ingredients") {
+      void loadIngredients();
+    }
+    if (activeTab === "meal-details") {
+      void loadMealDetails();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!selectedRule) {
@@ -257,6 +307,150 @@ export function MediaLibraryClient() {
     }
   }
 
+  async function loadIngredients() {
+    try {
+      const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
+        headers: authHeaders(),
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error("تعذر تحميل مكتبة المكونات.");
+      setIngredients(unwrapList<IngredientLibraryItem>(payload));
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر تحميل مكتبة المكونات.");
+    }
+  }
+
+  async function saveIngredient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus("saving");
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          adminName: ingredientDraft.adminName,
+          displayName: ingredientDraft.displayName,
+          imageUrl: ingredientDraft.imageUrl || undefined
+        })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? "تعذر حفظ المكون.");
+      setIngredientDraft(defaultIngredientDraft);
+      setIngredients((current) => [unwrapData<IngredientLibraryItem>(payload), ...current]);
+      setStatus("success");
+      setMessage("تم حفظ المكون في المكتبة.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر حفظ المكون.");
+    }
+  }
+
+  async function updateIngredient(item: IngredientLibraryItem, patch: Partial<IngredientLibraryItem>) {
+    const response = await fetch(`${API_URL}/dashboard/media/ingredients/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ ...item, ...patch })
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      setStatus("error");
+      setMessage(payload?.message ?? "تعذر تعديل المكون.");
+      return;
+    }
+    const updated = unwrapData<IngredientLibraryItem>(payload);
+    setIngredients((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+  }
+
+  async function deleteIngredient(item: IngredientLibraryItem) {
+    const response = await fetch(`${API_URL}/dashboard/media/ingredients/${item.id}`, {
+      method: "DELETE",
+      headers: authHeaders()
+    });
+    if (!response.ok) {
+      setStatus("error");
+      setMessage("تعذر حذف المكون.");
+      return;
+    }
+    setIngredients((current) => current.map((entry) => entry.id === item.id ? { ...entry, isActive: false } : entry));
+  }
+
+  async function loadMealDetails() {
+    try {
+      const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
+        headers: authHeaders(),
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error("تعذر تحميل تفاصيل الوجبة.");
+      setMealDetails(unwrapList<MealDetailLibraryItem>(payload));
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر تحميل تفاصيل الوجبة.");
+    }
+  }
+
+  async function saveMealDetail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus("saving");
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          adminName: mealDetailDraft.adminName,
+          displayName: mealDetailDraft.displayName,
+          value: mealDetailDraft.value || undefined,
+          icon: mealDetailDraft.icon || "utensils",
+          iconUrl: mealDetailDraft.iconUrl || undefined
+        })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? "تعذر حفظ التفصيل.");
+      setMealDetailDraft(defaultMealDetailDraft);
+      setMealDetails((current) => [unwrapData<MealDetailLibraryItem>(payload), ...current]);
+      setStatus("success");
+      setMessage("تم حفظ التفصيل في المكتبة.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر حفظ التفصيل.");
+    }
+  }
+
+  async function updateMealDetail(item: MealDetailLibraryItem, patch: Partial<MealDetailLibraryItem>) {
+    const response = await fetch(`${API_URL}/dashboard/media/meal-details/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ ...item, ...patch })
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      setStatus("error");
+      setMessage(payload?.message ?? "تعذر تعديل التفصيل.");
+      return;
+    }
+    const updated = unwrapData<MealDetailLibraryItem>(payload);
+    setMealDetails((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+  }
+
+  async function deleteMealDetail(item: MealDetailLibraryItem) {
+    const response = await fetch(`${API_URL}/dashboard/media/meal-details/${item.id}`, {
+      method: "DELETE",
+      headers: authHeaders()
+    });
+    if (!response.ok) {
+      setStatus("error");
+      setMessage("تعذر حذف التفصيل.");
+      return;
+    }
+    setMealDetails((current) => current.map((entry) => entry.id === item.id ? { ...entry, isActive: false } : entry));
+  }
+
   async function saveRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("saving");
@@ -317,6 +511,13 @@ export function MediaLibraryClient() {
 
       {message ? <p className={status === "success" ? "form-message success" : "form-message"}>{message}</p> : null}
 
+      <div className="media-page-tabs">
+        <button type="button" className={activeTab === "media" ? "active" : ""} onClick={() => setActiveTab("media")}>الوسائط</button>
+        <button type="button" className={activeTab === "ingredients" ? "active" : ""} onClick={() => setActiveTab("ingredients")}>مكتبة المكونات</button>
+        <button type="button" className={activeTab === "meal-details" ? "active" : ""} onClick={() => setActiveTab("meal-details")}>تفاصيل الوجبة</button>
+      </div>
+
+      {activeTab === "media" ? (
       <section className="media-layout">
         <div className="media-sidebar">
           <form className="media-form" onSubmit={createAsset}>
@@ -455,7 +656,172 @@ export function MediaLibraryClient() {
           </div>
         </section>
       </section>
+      ) : activeTab === "ingredients" ? (
+        <IngredientLibraryPanel
+          draft={ingredientDraft}
+          items={ingredients}
+          saving={status === "saving"}
+          onDraftChange={setIngredientDraft}
+          onSubmit={saveIngredient}
+          onUpdate={(item, patch) => void updateIngredient(item, patch)}
+          onDelete={(item) => void deleteIngredient(item)}
+        />
+      ) : (
+        <MealDetailLibraryPanel
+          draft={mealDetailDraft}
+          items={mealDetails}
+          saving={status === "saving"}
+          onDraftChange={setMealDetailDraft}
+          onSubmit={saveMealDetail}
+          onUpdate={(item, patch) => void updateMealDetail(item, patch)}
+          onDelete={(item) => void deleteMealDetail(item)}
+        />
+      )}
     </div>
+  );
+}
+
+function IngredientLibraryPanel({
+  draft,
+  items,
+  saving,
+  onDraftChange,
+  onSubmit,
+  onUpdate,
+  onDelete
+}: {
+  draft: IngredientDraft;
+  items: IngredientLibraryItem[];
+  saving: boolean;
+  onDraftChange: (draft: IngredientDraft) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdate: (item: IngredientLibraryItem, patch: Partial<IngredientLibraryItem>) => void;
+  onDelete: (item: IngredientLibraryItem) => void;
+}) {
+  return (
+    <section className="library-panel">
+      <form className="media-form library-form" onSubmit={onSubmit}>
+        <h2>مكتبة المكونات</h2>
+        <label>
+          <span>اسم الإدارة</span>
+          <input value={draft.adminName} onChange={(event) => onDraftChange({ ...draft, adminName: event.target.value })} required />
+        </label>
+        <label>
+          <span>الاسم الظاهر للزبون</span>
+          <input value={draft.displayName} onChange={(event) => onDraftChange({ ...draft, displayName: event.target.value })} required />
+        </label>
+        <label>
+          <span>رابط الصورة</span>
+          <input value={draft.imageUrl} onChange={(event) => onDraftChange({ ...draft, imageUrl: event.target.value })} placeholder="https://..." />
+        </label>
+        <button className="primary-action" type="submit" disabled={saving}>
+          {saving ? <Loader2 className="spin" size={18} /> : <Plus size={18} />}
+          إضافة
+        </button>
+      </form>
+
+      <div className="library-table-wrap">
+        <table className="restaurant-table">
+          <thead>
+            <tr>
+              <th>الصورة</th>
+              <th>اسم الإدارة</th>
+              <th>يظهر للزبون</th>
+              <th>الحالة</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td>{item.imageUrl ? <img className="library-thumb" src={item.imageUrl} alt="" /> : "-"}</td>
+                <td><input value={item.adminName} onChange={(event) => onUpdate(item, { adminName: event.target.value })} /></td>
+                <td><input value={item.displayName} onChange={(event) => onUpdate(item, { displayName: event.target.value })} /></td>
+                <td><button className="bare" type="button" onClick={() => onUpdate(item, { isActive: !item.isActive })}><StatusPill active={item.isActive} /></button></td>
+                <td><button className="danger-link" type="button" onClick={() => onDelete(item)}>حذف</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function MealDetailLibraryPanel({
+  draft,
+  items,
+  saving,
+  onDraftChange,
+  onSubmit,
+  onUpdate,
+  onDelete
+}: {
+  draft: MealDetailDraft;
+  items: MealDetailLibraryItem[];
+  saving: boolean;
+  onDraftChange: (draft: MealDetailDraft) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdate: (item: MealDetailLibraryItem, patch: Partial<MealDetailLibraryItem>) => void;
+  onDelete: (item: MealDetailLibraryItem) => void;
+}) {
+  return (
+    <section className="library-panel">
+      <form className="media-form library-form" onSubmit={onSubmit}>
+        <h2>تفاصيل الوجبة</h2>
+        <label>
+          <span>اسم الإدارة</span>
+          <input value={draft.adminName} onChange={(event) => onDraftChange({ ...draft, adminName: event.target.value })} required />
+        </label>
+        <label>
+          <span>الاسم الظاهر للزبون</span>
+          <input value={draft.displayName} onChange={(event) => onDraftChange({ ...draft, displayName: event.target.value })} required />
+        </label>
+        <label>
+          <span>القيمة</span>
+          <input value={draft.value} onChange={(event) => onDraftChange({ ...draft, value: event.target.value })} />
+        </label>
+        <label>
+          <span>الأيقونة</span>
+          <input value={draft.icon} onChange={(event) => onDraftChange({ ...draft, icon: event.target.value })} />
+        </label>
+        <label>
+          <span>رابط صورة الأيقونة</span>
+          <input value={draft.iconUrl} onChange={(event) => onDraftChange({ ...draft, iconUrl: event.target.value })} placeholder="https://..." />
+        </label>
+        <button className="primary-action" type="submit" disabled={saving}>
+          {saving ? <Loader2 className="spin" size={18} /> : <Plus size={18} />}
+          إضافة
+        </button>
+      </form>
+
+      <div className="library-table-wrap">
+        <table className="restaurant-table">
+          <thead>
+            <tr>
+              <th>اسم الإدارة</th>
+              <th>يظهر للزبون</th>
+              <th>القيمة</th>
+              <th>الأيقونة</th>
+              <th>الحالة</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td><input value={item.adminName} onChange={(event) => onUpdate(item, { adminName: event.target.value })} /></td>
+                <td><input value={item.displayName} onChange={(event) => onUpdate(item, { displayName: event.target.value })} /></td>
+                <td><input value={item.value ?? ""} onChange={(event) => onUpdate(item, { value: event.target.value })} /></td>
+                <td><input value={item.iconUrl || item.icon} onChange={(event) => onUpdate(item, event.target.value.startsWith("http") ? { iconUrl: event.target.value } : { icon: event.target.value })} /></td>
+                <td><button className="bare" type="button" onClick={() => onUpdate(item, { isActive: !item.isActive })}><StatusPill active={item.isActive} /></button></td>
+                <td><button className="danger-link" type="button" onClick={() => onDelete(item)}>حذف</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -481,6 +847,21 @@ function unwrapAsset(payload: ApiPayload<MediaAsset> | MediaAsset): MediaAsset {
 
 function unwrapRule(payload: ApiPayload<ImageRule> | ImageRule): ImageRule {
   return (payload as ApiPayload<ImageRule>).data ?? (payload as ImageRule);
+}
+
+function unwrapData<T>(payload: unknown): T {
+  const record = payload && typeof payload === "object" ? payload as { data?: T } : {};
+  return (record.data ?? payload) as T;
+}
+
+function unwrapList<T>(payload: unknown): T[] {
+  const data = unwrapData<T[] | { data?: T[] }>(payload);
+  if (Array.isArray(data)) return data;
+  return data?.data ?? [];
+}
+
+function StatusPill({ active }: { active: boolean }) {
+  return <span className={`status-pill ${active ? "active" : "inactive"}`}>{active ? "فعال" : "متوقف"}</span>;
 }
 
 function toNumber(value: string) {

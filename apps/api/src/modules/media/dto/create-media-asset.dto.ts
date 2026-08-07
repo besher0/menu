@@ -37,4 +37,10 @@ export class CreateMediaAssetDto {
   @IsInt()
   @Min(0)
   height?: number;
+
+  @IsOptional()
+  @IsString()
+  provider?: string;
+
+  metadata?: Record<string, unknown>;
 }

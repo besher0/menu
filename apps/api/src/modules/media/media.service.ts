@@ -51,10 +51,12 @@ export class MediaService {
         height: dto.height,
         altText: dto.altText,
         blurDataUrl: dto.type === "IMAGE" ? this.buildBlurPlaceholder(dto.url) : undefined,
+        provider: dto.provider ?? "LOCAL",
         metadata: {
           responsive: dto.type === "IMAGE",
           progressive: dto.type === "IMAGE",
-          source: "media-engine-v1"
+          source: "media-engine-v1",
+          ...(dto.metadata ?? {})
         },
         variants: variants.length
           ? {

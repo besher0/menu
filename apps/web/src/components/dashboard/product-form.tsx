@@ -45,23 +45,35 @@ type FormState = {
 };
 
 type IngredientFormItem = {
+  id?: string;
+  libraryId?: string;
+  adminName?: string;
+  displayName?: string;
   name: string;
   imageUrl: string;
+  isActive?: boolean;
 };
 
 type IngredientSuggestion = IngredientFormItem & {
-  usageCount: number;
+  id?: string;
+  usageCount?: number;
 };
 
 type MealDetailFormItem = {
+  id?: string;
+  libraryId?: string;
+  adminName?: string;
+  displayName?: string;
   label: string;
   value: string;
   icon: string;
   iconUrl?: string;
+  isActive?: boolean;
 };
 
 type MealDetailSuggestion = MealDetailFormItem & {
-  usageCount: number;
+  id?: string;
+  usageCount?: number;
 };
 
 type RestaurantOption = {
@@ -112,7 +124,7 @@ type ProductDetails = {
   isPopular?: boolean;
   moodKey?: string | null;
   moodKeys?: string[];
-  ingredients?: Array<string | { name?: string; imageUrl?: string | null }>;
+  ingredients?: Array<string | { libraryId?: string; adminName?: string; displayName?: string; name?: string; imageUrl?: string | null }>;
   nutrition?: {
     details?: MealDetailFormItem[];
     weight?: string;
@@ -129,12 +141,18 @@ type ProductDetails = {
   images?: Array<{ id?: string; url: string; altText?: string | null }>;
 };
 
-function normalizeIngredients(items?: Array<string | { name?: string; imageUrl?: string | null }>): IngredientFormItem[] {
+function normalizeIngredients(items?: ProductDetails["ingredients"]): IngredientFormItem[] {
   return (items ?? [])
     .map((item) =>
       typeof item === "string"
         ? { name: item.trim(), imageUrl: "" }
-        : { name: item.name?.trim() ?? "", imageUrl: item.imageUrl ?? "" }
+        : {
+            libraryId: item.libraryId,
+            adminName: item.adminName?.trim(),
+            displayName: item.displayName?.trim(),
+            name: (item.displayName || item.name)?.trim() ?? "",
+            imageUrl: item.imageUrl ?? ""
+          }
     )
     .filter((item) => item.name || item.imageUrl);
 }
@@ -143,7 +161,10 @@ function normalizeMealDetails(nutrition?: ProductDetails["nutrition"]): MealDeta
   if (Array.isArray(nutrition?.details)) {
     const details = nutrition.details
       .map((item) => ({
-        label: item.label?.trim() ?? "",
+        libraryId: item.libraryId,
+        adminName: item.adminName?.trim(),
+        displayName: item.displayName?.trim(),
+        label: (item.displayName || item.label)?.trim() ?? "",
         value: item.value?.trim() ?? "",
         icon: DETAIL_ICON_OPTIONS.some((option) => option.key === item.icon) ? item.icon : "utensils",
         iconUrl: item.iconUrl?.trim() ?? ""
@@ -325,7 +346,13 @@ export function ProductForm({ productId }: { productId?: string }) {
 
       return {
         ...current,
-        ingredients: [...current.ingredients, { name: ingredient.name, imageUrl: ingredient.imageUrl }]
+        ingredients: [...current.ingredients, {
+          libraryId: ingredient.libraryId ?? ingredient.id,
+          adminName: ingredient.adminName,
+          displayName: ingredient.displayName ?? ingredient.name,
+          name: ingredient.displayName ?? ingredient.name,
+          imageUrl: ingredient.imageUrl
+        }]
       };
     });
     setIngredientSearch("");
@@ -363,7 +390,15 @@ export function ProductForm({ productId }: { productId?: string }) {
 
       return {
         ...current,
-        mealDetails: [...current.mealDetails, { label: detail.label, value: detail.value, icon: detail.icon, iconUrl: detail.iconUrl ?? "" }]
+        mealDetails: [...current.mealDetails, {
+          libraryId: detail.libraryId ?? detail.id,
+          adminName: detail.adminName,
+          displayName: detail.displayName ?? detail.label,
+          label: detail.displayName ?? detail.label,
+          value: detail.value,
+          icon: detail.icon,
+          iconUrl: detail.iconUrl ?? ""
+        }]
       };
     });
     setMealDetailSearch("");
@@ -525,7 +560,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     async function loadIngredientSuggestions() {
       setIngredientLibraryStatus("loading");
       try {
-        const response = await fetch(`${API_URL}/dashboard/products/ingredients`, {
+        const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
           headers: selectedRestaurantHeaders(),
           cache: "no-store"
         });
@@ -541,11 +576,16 @@ export function ProductForm({ productId }: { productId?: string }) {
           setIngredientSuggestions(
             nextSuggestions
               .map((item) => ({
-                name: item.name?.trim() ?? "",
+                id: item.id,
+                libraryId: item.libraryId ?? item.id,
+                adminName: item.adminName?.trim(),
+                displayName: item.displayName?.trim(),
+                name: (item.displayName || item.name)?.trim() ?? "",
                 imageUrl: item.imageUrl ?? "",
+                isActive: item.isActive ?? true,
                 usageCount: Number(item.usageCount ?? 0)
               }))
-              .filter((item) => item.name)
+              .filter((item) => item.name && item.isActive !== false)
           );
           setIngredientLibraryStatus("idle");
         }
@@ -576,7 +616,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     async function loadMealDetailSuggestions() {
       setMealDetailLibraryStatus("loading");
       try {
-        const response = await fetch(`${API_URL}/dashboard/products/meal-details`, {
+        const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
           headers: selectedRestaurantHeaders(),
           cache: "no-store"
         });
@@ -592,13 +632,18 @@ export function ProductForm({ productId }: { productId?: string }) {
           setMealDetailSuggestions(
             nextSuggestions
               .map((item) => ({
-                label: item.label?.trim() ?? "",
+                id: item.id,
+                libraryId: item.libraryId ?? item.id,
+                adminName: item.adminName?.trim(),
+                displayName: item.displayName?.trim(),
+                label: (item.displayName || item.label)?.trim() ?? "",
                 value: item.value?.trim() ?? "",
                 icon: DETAIL_ICON_OPTIONS.some((option) => option.key === item.icon) ? item.icon : "utensils",
                 iconUrl: item.iconUrl?.trim() ?? "",
+                isActive: item.isActive ?? true,
                 usageCount: Number(item.usageCount ?? 0)
               }))
-              .filter((item) => item.label || item.value)
+              .filter((item) => (item.label || item.value) && item.isActive !== false)
           );
           setMealDetailLibraryStatus("idle");
         }
@@ -704,14 +749,20 @@ export function ProductForm({ productId }: { productId?: string }) {
           })),
           ingredients: form.ingredients
             .map((item) => ({
-              name: item.name.trim(),
+              libraryId: item.libraryId,
+              adminName: item.adminName?.trim() || undefined,
+              displayName: (item.displayName || item.name).trim() || undefined,
+              name: (item.displayName || item.name).trim(),
               imageUrl: item.imageUrl.trim() || undefined
             }))
             .filter((item) => item.name || item.imageUrl),
           nutrition: {
             details: form.mealDetails
               .map((item) => ({
-                label: item.label.trim(),
+                libraryId: item.libraryId,
+                adminName: item.adminName?.trim() || undefined,
+                displayName: (item.displayName || item.label).trim() || undefined,
+                label: (item.displayName || item.label).trim(),
                 value: item.value.trim(),
                 icon: item.icon,
                 iconUrl: item.iconUrl?.trim() || undefined
@@ -935,7 +986,8 @@ export function ProductForm({ productId }: { productId?: string }) {
     return ingredientSuggestions
       .filter((ingredient) => {
         const key = ingredientKey(ingredient.name);
-        return key && !selectedIngredientKeys.has(key) && (!query || key.includes(query));
+        const searchable = `${ingredient.name} ${ingredient.adminName ?? ""} ${ingredient.displayName ?? ""}`.toLocaleLowerCase();
+        return key && !selectedIngredientKeys.has(key) && (!query || searchable.includes(query));
       })
       .slice(0, 8);
   }, [ingredientSearch, ingredientSuggestions, selectedIngredientKeys]);
@@ -955,7 +1007,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     return mealDetailSuggestions
       .filter((detail) => {
         const key = mealDetailKey(detail);
-        const searchable = `${detail.label} ${detail.value} ${detail.icon}`.toLocaleLowerCase();
+        const searchable = `${detail.label} ${detail.value} ${detail.icon} ${detail.adminName ?? ""} ${detail.displayName ?? ""}`.toLocaleLowerCase();
         return key !== "||" && !selectedMealDetailKeys.has(key) && (!query || searchable.includes(query));
       })
       .slice(0, 8);
@@ -1070,8 +1122,11 @@ export function ProductForm({ productId }: { productId?: string }) {
                       onClick={() => addExistingIngredient(ingredient)}
                     >
                       {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : <span className="ingredient-suggestion-image" />}
-                      <span>{ingredient.name}</span>
-                      <small>{ingredient.usageCount}x</small>
+                      <span>
+                        {ingredient.adminName ?? ingredient.name}
+                        <small>يظهر للزبون: {ingredient.displayName ?? ingredient.name}</small>
+                      </span>
+                      <small>{ingredient.usageCount ?? 0}x</small>
                     </button>
                   ))}
                   {canAddSearchedIngredient ? (
@@ -1102,6 +1157,7 @@ export function ProductForm({ productId }: { productId?: string }) {
                         onChange={(event) => updateIngredient(index, { name: event.target.value })}
                         placeholder="بطاطا"
                       />
+                      {ingredient.adminName ? <small>اسم الإدارة: {ingredient.adminName} - يظهر للزبون: {ingredient.displayName ?? ingredient.name}</small> : null}
                     </label>
                     <label>
                       <span>صورة اختيارية</span>
@@ -1183,9 +1239,12 @@ export function ProductForm({ productId }: { productId?: string }) {
                         onClick={() => addExistingMealDetail(detail)}
                       >
                         {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={16} />}
-                        <span>{detail.label}</span>
+                        <span>
+                          {detail.adminName ?? detail.label}
+                          <small>يظهر للزبون: {detail.displayName ?? detail.label}</small>
+                        </span>
                         {detail.value ? <b>{detail.value}</b> : null}
-                        <small>{detail.usageCount}x</small>
+                        <small>{detail.usageCount ?? 0}x</small>
                       </button>
                     );
                   })}
@@ -1220,6 +1279,7 @@ export function ProductForm({ productId }: { productId?: string }) {
                           onChange={(event) => updateMealDetail(index, { label: event.target.value })}
                           placeholder="الوزن التقريبي"
                         />
+                        {detail.adminName ? <small>اسم الإدارة: {detail.adminName} - يظهر للزبون: {detail.displayName ?? detail.label}</small> : null}
                       </label>
                       <label>
                         <span>القيمة</span>

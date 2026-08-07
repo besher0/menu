@@ -4415,12 +4415,31 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .rail-scroll {
+  cursor: grab;
   display: flex;
   gap: 12px;
   margin-inline: -16px;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
   padding: 0 16px 10px;
   scrollbar-width: none;
+  touch-action: pan-x;
+  user-select: none;
+}
+
+.rail-scroll:active {
+  cursor: grabbing;
+}
+
+.rail-scroll > * {
+  flex: 0 0 auto;
+}
+
+.rail-scroll a,
+.rail-scroll img {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .rail-product {
@@ -4587,15 +4606,9 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .menu-context-products .rail-scroll {
+  inline-size: min(100%, 440px);
   overflow-x: auto;
   padding-bottom: 12px;
-}
-
-.menu-context-products .rail-product {
-  flex: 0 0 118px;
-  height: 140px;
-  min-height: 140px;
-  width: 118px;
 }
 
 .new-grid > div:last-child {
@@ -5021,12 +5034,19 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 18px;
   box-shadow: 0 3px 12px rgb(16 24 40 / 8%);
   color: inherit;
+  cursor: grab;
   display: grid;
   min-height: 300px;
   overflow: hidden;
   padding: 0;
   position: relative;
   text-align: center;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.category-spotlight-card:active {
+  cursor: grabbing;
 }
 
 .category-spotlight-open {
@@ -5212,10 +5232,10 @@ body:has(.public-page)::-webkit-scrollbar {
   margin: 0 0 -50px;
   padding: 0 9px;
   position: sticky;
-  top: 54px;
+  top: 92px;
   transform: translateY(-10px);
   width: max-content;
-  z-index: 40;
+  z-index: 29;
 }
 
 .menu-view-switch button {
@@ -9523,7 +9543,8 @@ body {
   text-align: center;
 }
 
-.confirm-backdrop {
+.confirm-backdrop,
+.modal-backdrop {
   align-items: center;
   background: rgb(15 23 42 / 48%);
   display: flex;
@@ -9587,6 +9608,306 @@ body {
 .danger-action:disabled {
   cursor: wait;
   opacity: .65;
+}
+
+.product-import-modal {
+  max-height: min(760px, calc(100vh - 36px));
+  max-width: 880px;
+  overflow: auto;
+  width: min(880px, 100%);
+}
+
+.modal-title-row,
+.import-actions,
+.media-page-tabs {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.modal-title-row .icon-button {
+  background: #f1f5f9;
+  border: 0;
+  border-radius: 8px;
+  color: #111827;
+  cursor: pointer;
+  font-size: 24px;
+  height: 38px;
+  width: 38px;
+}
+
+.import-actions {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.import-dropzone {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1 1 280px;
+  font-weight: 900;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 14px;
+}
+
+.import-dropzone input {
+  display: none;
+}
+
+.import-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.import-error-list {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  display: grid;
+  font-weight: 800;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 28px;
+}
+
+.import-preview-table td:last-child {
+  max-width: 360px;
+  white-space: normal;
+}
+
+.import-invalid-row {
+  background: #fff7ed;
+}
+
+.media-page-tabs {
+  background: #fff;
+  border: 1px solid #edf0f4;
+  border-radius: 8px;
+  justify-content: flex-start;
+  margin: 0 0 16px;
+  padding: 8px;
+}
+
+.media-page-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: #475569;
+  cursor: pointer;
+  font-weight: 900;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.media-page-tabs button.active {
+  background: #111827;
+  color: #fff;
+}
+
+.library-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.library-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
+.library-table-wrap {
+  background: #fff;
+  border: 1px solid #edf0f4;
+  border-radius: 8px;
+  overflow-x: auto;
+  padding: 8px;
+}
+
+.library-table-wrap input {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.library-thumb {
+  border-radius: 8px;
+  height: 42px;
+  object-fit: cover;
+  width: 42px;
+}
+
+.danger-link {
+  background: #fee2e2;
+  border: 0;
+  border-radius: 8px;
+  color: #991b1b;
+  cursor: pointer;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.ingredient-suggestion span small,
+.meal-detail-suggestion span small,
+.ingredient-form-row label small,
+.meal-detail-form-row label small {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 3px;
+}
+
+@media (max-width: 760px) {
+  .library-form {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-title-row,
+  .import-actions,
+  .media-page-tabs {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* Public theme color mapping */
+.public-screen {
+  background: var(--color-background);
+  color: #151515;
+}
+
+.public-screen.view-menu,
+.public-screen.view-cart,
+.public-screen .public-content,
+.public-screen .cart-page,
+.public-screen .product-detail {
+  background: var(--color-background);
+}
+
+.public-screen :where(
+  .rail-product,
+  .category-spotlight-card,
+  .menu-product-row,
+  .menu-product-card,
+  .menu-empty-products,
+  .product-quick-modal,
+  .sticky-cart,
+  .cart-edit-row,
+  .cart-quantity,
+  .cart-page-item,
+  .cart-checkout-card,
+  .cart-empty,
+  .checkout-steps b,
+  .cart-confirm-form input,
+  .public-header .public-header-menu-button,
+  .public-screen.menu-nested .public-header > button:first-child,
+  .public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
+  .public-screen.view-cart .public-header > button:first-child,
+  .public-screen:not(.menu-nested) .public-header > a:first-child,
+  .menu-view-switch
+) {
+  background-color: var(--color-surface);
+}
+
+.public-screen :where(
+  .rail-product,
+  .category-spotlight-card,
+  .menu-product-row,
+  .menu-product-card,
+  .menu-empty-products,
+  .sticky-cart,
+  .cart-edit-row,
+  .cart-quantity,
+  .cart-page-item,
+  .cart-page-stepper button,
+  .cart-checkout-card dl div,
+  .cart-empty,
+  .checkout-steps b,
+  .cart-confirm-form input,
+  .public-header .public-header-menu-button,
+  .public-screen.menu-nested .public-header > button:first-child,
+  .public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
+  .public-screen.view-cart .public-header > button:first-child,
+  .public-screen:not(.menu-nested) .public-header > a:first-child,
+  .menu-view-switch
+) {
+  border-color: var(--color-border);
+}
+
+.public-screen :where(
+  .rail-product b,
+  .category-spotlight-card b,
+  .menu-product-row b,
+  .menu-product-card b,
+  .menu-empty-products b,
+  .product-quick-body h2,
+  .product-detail.product-empty b,
+  .cart-edit-row > div:first-child b,
+  .cart-page-copy b,
+  .cart-page-stepper strong,
+  .cart-checkout-card h2,
+  .cart-checkout-card dl div:last-child dt,
+  .cart-empty b,
+  .wide-product b
+) {
+  color: var(--color-text);
+}
+
+.public-screen :where(
+  .public-header p,
+  .public-header-title .restaurant-name,
+  .mood-strip h1,
+  .public-content .rail-head h2,
+  .category-section-title span,
+  .checkout-steps div,
+  .cart-confirm-form label span,
+  .cart-checkout-meta,
+  .sticky-cart > div:not(.cart-edit-panel):not(.cart-head)
+) {
+  color: #16181d;
+}
+
+.public-screen :where(
+  .category-spotlight-card p,
+  .menu-product-row p,
+  .menu-product-card p,
+  .product-quick-body p,
+  .product-detail.product-empty,
+  .cart-edit-row > div:first-child span,
+  .sticky-cart > div:not(.cart-edit-panel):not(.cart-head) span,
+  .cart-page-copy p,
+  .cart-confirm-form input,
+  .cart-checkout-card dt,
+  .cart-total-pill small,
+  .cart-empty
+) {
+  color: var(--color-muted);
+}
+
+.public-screen .menu-category-strip {
+  background: var(--color-background);
+}
+
+.public-screen .menu-category-chip {
+  color: var(--color-muted);
+}
+
+.public-screen.menu-nested .public-header > button:first-child,
+.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
+.public-screen.view-cart .public-header > button:first-child,
+.public-screen:not(.menu-nested) .public-header > a:first-child {
+  background-color: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 .restaurant-empty b {

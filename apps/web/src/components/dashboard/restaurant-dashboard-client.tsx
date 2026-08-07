@@ -5,6 +5,7 @@ import type * as React from "react";
 import Link from "next/link";
 import {
   Edit3,
+  FileSpreadsheet,
   ImagePlus,
   Loader2,
   Menu,
@@ -134,6 +135,29 @@ type ProductGroup = {
   key: string;
   name: string;
   items: Product[];
+};
+
+type ImportPreviewRow = {
+  rowNumber: number;
+  name: string;
+  category: string;
+  basePrice: number | null;
+  imagesCount: number;
+  isValid: boolean;
+  errors: string[];
+};
+
+type ImportPreview = {
+  summary: {
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+    imagesCount: number;
+    wouldImport: number;
+    pages: number;
+  };
+  globalErrors: string[];
+  rows: ImportPreviewRow[];
 };
 
 function useRestaurantGate() {
@@ -279,6 +303,7 @@ function ProductsTable() {
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [dragProduct, setDragProduct] = useState<{ id: string; categoryKey: string } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const cancelledPriceEditRef = useRef<string | null>(null);
 
   const load = useCallback(async (limit = visibleLimit, nextSearch = search) => {
@@ -409,7 +434,18 @@ function ProductsTable() {
 
   return (
     <div className="restaurant-dashboard-page">
-      <DashboardToolbar addHref="/dashboard/products/new" search={search} onSearch={setSearch} onApply={applyFilters}>
+      <DashboardToolbar
+        addHref="/dashboard/products/new"
+        search={search}
+        onSearch={setSearch}
+        onApply={applyFilters}
+        actions={(
+          <button className="secondary-action" type="button" onClick={() => setImportOpen(true)}>
+            <FileSpreadsheet size={20} />
+            استيراد من Excel
+          </button>
+        )}
+      >
         <select value={availability} onChange={(event) => setAvailability(event.target.value as typeof availability)}>
           <option value="all">كل الحالات</option>
           <option value="available">متوفر</option>
@@ -499,8 +535,198 @@ function ProductsTable() {
           </table>
         ) : null}
       </DataPanel>
+      {importOpen ? (
+        <ProductImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={(count) => {
+            setImportOpen(false);
+            setMessage(`تم استيراد ${count} منتج بنجاح`);
+            setStatus("ready");
+            void load(visibleLimit);
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+function ProductImportModal({ onClose, onImported }: { onClose: () => void; onImported: (count: number) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [status, setStatus] = useState<"idle" | "previewing" | "importing" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  const canImport = Boolean(file && preview && !preview.globalErrors.length && preview.rows.every((row) => row.isValid));
+
+  async function downloadTemplate() {
+    setMessage("");
+    try {
+      const response = await fetch(`${API_URL}/dashboard/products/import/template`, {
+        headers: authHeaders(),
+        cache: "no-store"
+      });
+      if (!response.ok) throw new Error("تعذر تحميل نموذج Excel.");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "products-import-template.xlsx";
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر تحميل نموذج Excel.");
+    }
+  }
+
+  async function previewFile(nextFile = file) {
+    if (!nextFile) {
+      setStatus("error");
+      setMessage("اختر ملف Excel أولاً.");
+      return;
+    }
+
+    setStatus("previewing");
+    setMessage("");
+    const formData = new FormData();
+    formData.append("file", nextFile);
+
+    try {
+      const response = await fetch(`${API_URL}/dashboard/products/import/preview`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: formData
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? "تعذر قراءة ملف Excel.");
+
+      setPreview(unwrapData<ImportPreview>(payload));
+      setStatus("idle");
+    } catch (error) {
+      setStatus("error");
+      setPreview(null);
+      setMessage(error instanceof Error ? error.message : "تعذر قراءة ملف Excel.");
+    }
+  }
+
+  async function importFile() {
+    if (!file || !canImport) return;
+
+    setStatus("importing");
+    setMessage("");
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${API_URL}/dashboard/products/import`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: formData
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? "تعذر استيراد المنتجات.");
+
+      const result = unwrapData<{ importedCount: number }>(payload);
+      onImported(result.importedCount);
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر استيراد المنتجات.");
+    }
+  }
+
+  function selectFile(nextFile: File | null) {
+    setFile(nextFile);
+    setPreview(null);
+    setMessage("");
+    if (nextFile) void previewFile(nextFile);
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <section className="confirm-dialog product-import-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title-row">
+          <h2>استيراد منتجات Excel</h2>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="إغلاق">×</button>
+        </div>
+        <div className="import-actions">
+          <button className="secondary-action" type="button" onClick={() => void downloadTemplate()}>
+            <FileSpreadsheet size={18} />
+            تحميل نموذج Excel
+          </button>
+          <label
+            className="import-dropzone"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              selectFile(event.dataTransfer.files?.[0] ?? null);
+            }}
+          >
+            <input accept=".xlsx" type="file" onChange={(event) => selectFile(event.target.files?.[0] ?? null)} />
+            <Upload size={22} />
+            <span>{file ? file.name : "اسحب ملف .xlsx هنا أو اختره"}</span>
+          </label>
+        </div>
+
+        {message ? <p className="form-message">{message}</p> : null}
+        {preview ? (
+          <div className="import-preview">
+            <div className="restaurant-panel-meta">
+              <span>عرض {preview.summary.totalRows} صف</span>
+              <span>صالح: {preview.summary.validRows}</span>
+              <span>غير صالح: {preview.summary.invalidRows}</span>
+              <span>الصور: {preview.summary.imagesCount}</span>
+              <span>عدد الصفحات: {preview.summary.pages}</span>
+            </div>
+            {preview.globalErrors.length ? (
+              <ul className="import-error-list">
+                {preview.globalErrors.map((error) => <li key={error}>{error}</li>)}
+              </ul>
+            ) : null}
+            <div className="table-scroll">
+              <table className="restaurant-table import-preview-table">
+                <thead>
+                  <tr>
+                    <th>الصف</th>
+                    <th>المنتج</th>
+                    <th>القسم</th>
+                    <th>السعر</th>
+                    <th>الصور</th>
+                    <th>الحالة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.rows.slice(0, 30).map((row) => (
+                    <tr key={row.rowNumber} className={row.isValid ? undefined : "import-invalid-row"}>
+                      <td>{row.rowNumber}</td>
+                      <td>{row.name || "-"}</td>
+                      <td>{row.category || "-"}</td>
+                      <td>{row.basePrice ?? "-"}</td>
+                      <td>{row.imagesCount}</td>
+                      <td>{row.isValid ? "جاهز" : row.errors.join(" | ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="confirm-actions">
+          <button className="secondary-action" type="button" onClick={onClose}>إلغاء</button>
+          <button className="primary-action" type="button" disabled={!canImport || status === "importing"} onClick={() => void importFile()}>
+            {status === "importing" || status === "previewing" ? <Loader2 className="spin" size={18} /> : <Save size={18} />}
+            استيراد المنتجات
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function unwrapData<T>(payload: unknown): T {
+  const record = payload && typeof payload === "object" ? payload as { data?: T } : {};
+  return (record.data ?? payload) as T;
 }
 
 export function RestaurantCategoriesClient() {
@@ -1096,6 +1322,7 @@ function DashboardToolbar({
   search,
   onSearch,
   onApply,
+  actions,
   children
 }: {
   addHref?: string;
@@ -1103,12 +1330,14 @@ function DashboardToolbar({
   search?: string;
   onSearch?: (value: string) => void;
   onApply?: () => void;
+  actions?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
     <section className="restaurant-toolbar">
       <div>
         {addHref ? <Link className="primary-action" href={addHref}><Plus size={20} />إضافة</Link> : <button className="primary-action" type="button" onClick={onAdd}><Plus size={20} />إضافة</button>}
+        {actions}
         <button className="secondary-action" type="button"><Upload size={20} />تصدير</button>
       </div>
       <div className="toolbar-filter-controls">
