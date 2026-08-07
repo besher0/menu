@@ -323,6 +323,30 @@ export class ProductsService {
     return this.serializeProduct(updated);
   }
 
+  async updatePrice(restaurantId: string, id: string, basePrice: number) {
+    const product = await this.prisma.product.findFirst({
+      where: { id, restaurantId, deletedAt: null }
+    });
+
+    if (!product) {
+      throw new NotFoundException("Product not found");
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: { basePrice },
+      include: {
+        category: true,
+        images: true,
+        media3d: true,
+        vrMedia: true,
+        options: { include: { options: true } }
+      }
+    });
+
+    return this.serializeProduct(updated);
+  }
+
   async reorder(restaurantId: string, items: Array<{ id: string; sortOrder: number }>) {
     const products = await this.prisma.product.findMany({
       where: { restaurantId, id: { in: items.map((item) => item.id) }, deletedAt: null },
@@ -421,7 +445,7 @@ export class ProductsService {
   }
 
   private productImageInputs(dto: CreateProductDto) {
-    const images = dto.images?.length
+    const images = dto.images !== undefined
       ? dto.images
       : dto.imageUrl
         ? [{ url: dto.imageUrl, altText: dto.name }]

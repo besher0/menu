@@ -33,15 +33,22 @@ function uniqueOrigins(values: Array<string | null | undefined>) {
   );
 }
 
+function originList(value?: string | null) {
+  return (value ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
   const bodyLimit = `${readPositiveInt("REQUEST_BODY_LIMIT_KB", 256)}kb`;
   const allowedOrigins = uniqueOrigins([
     ...readStringList("CORS_ORIGINS"),
-    config.get<string>("WEB_ORIGIN") ?? "http://localhost:3000",
-    config.get<string>("API_ORIGIN") ?? "http://localhost:5000",
-    process.env.NEXT_PUBLIC_API_URL
+    ...originList(config.get<string>("WEB_ORIGIN") ?? "http://localhost:3000"),
+    ...originList(config.get<string>("API_ORIGIN") ?? "http://localhost:5000"),
+    ...originList(process.env.NEXT_PUBLIC_API_URL)
   ]);
   const trustProxy = config.get<string>("TRUST_PROXY");
 

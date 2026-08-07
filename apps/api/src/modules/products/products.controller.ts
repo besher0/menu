@@ -5,6 +5,7 @@ import { RestaurantContextGuard } from "../../common/guards/restaurant-context.g
 import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsQueryDto } from "./dto/list-products-query.dto";
 import { ReorderProductsDto } from "./dto/reorder-products.dto";
+import { UpdateProductPriceDto } from "./dto/update-product-price.dto";
 import { UpdateProductSortDto } from "./dto/update-product-sort.dto";
 import { ProductsService } from "./products.service";
 
@@ -51,6 +52,11 @@ export class ProductsController {
   @Patch(":id/toggle-availability")
   toggleAvailability(@Req() request: AppRequest, @Param("id") id: string) {
     return this.productsService.toggleAvailability(request.restaurant!.id, id);
+  }
+
+  @Patch(":id/price")
+  updatePrice(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpdateProductPriceDto) {
+    return this.productsService.updatePrice(request.restaurant!.id, id, dto.basePrice);
   }
 
   @Patch(":id/sort-order")

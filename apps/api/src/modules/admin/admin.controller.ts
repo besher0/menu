@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { GlobalRoles } from "../../common/global-role.decorator";
 import { GlobalRoleGuard } from "../../common/guards/global-role.guard";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -29,6 +29,16 @@ export class AdminController {
   @Patch("restaurants/:id/subscription")
   updateRestaurantSubscription(@Param("id") id: string, @Body() dto: { planKey: string }) {
     return this.adminService.updateRestaurantSubscription(id, dto.planKey);
+  }
+
+  @Patch("restaurants/:id/status")
+  updateRestaurantStatus(@Param("id") id: string, @Body() dto: { isActive: boolean }) {
+    return this.adminService.updateRestaurantStatus(id, dto.isActive);
+  }
+
+  @Delete("restaurants/:id")
+  deleteRestaurant(@Param("id") id: string) {
+    return this.adminService.deleteRestaurantPermanently(id);
   }
 
   @Get("subscriptions")

@@ -413,6 +413,91 @@ export class AdminService {
     };
   }
 
+  async updateRestaurantStatus(restaurantId: string, isActive: boolean) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      select: { id: true }
+    });
+
+    if (!restaurant) {
+      throw new BadRequestException("Restaurant was not found.");
+    }
+
+    const updated = await this.prisma.restaurant.update({
+      where: { id: restaurantId },
+      data: { isActive }
+    });
+
+    return {
+      id: updated.id,
+      isActive: updated.isActive
+    };
+  }
+
+  async deleteRestaurantPermanently(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, deletedAt: null },
+      select: { id: true }
+    });
+
+    if (!restaurant) {
+      throw new BadRequestException("Restaurant was not found.");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const [products, productGroups, menus, pages, orders, branches, mediaAssets] = await Promise.all([
+        tx.product.findMany({ where: { restaurantId }, select: { id: true } }),
+        tx.productOptionGroup.findMany({ where: { product: { restaurantId } }, select: { id: true } }),
+        tx.menu.findMany({ where: { restaurantId }, select: { id: true } }),
+        tx.menuPage.findMany({ where: { menu: { restaurantId } }, select: { id: true } }),
+        tx.order.findMany({ where: { restaurantId }, select: { id: true } }),
+        tx.branch.findMany({ where: { restaurantId }, select: { id: true } }),
+        tx.mediaAsset.findMany({ where: { restaurantId }, select: { id: true } })
+      ]);
+      const productIds = products.map((item) => item.id);
+      const productGroupIds = productGroups.map((item) => item.id);
+      const menuIds = menus.map((item) => item.id);
+      const pageIds = pages.map((item) => item.id);
+      const orderIds = orders.map((item) => item.id);
+      const branchIds = branches.map((item) => item.id);
+      const mediaIds = mediaAssets.map((item) => item.id);
+
+      await tx.analyticsEvent.deleteMany({ where: { restaurantId } });
+      await tx.syncJob.deleteMany({ where: { restaurantId } });
+      await tx.qrCode.deleteMany({ where: { restaurantId } });
+      await tx.customDomain.deleteMany({ where: { restaurantId } });
+      await tx.restaurantSubscription.deleteMany({ where: { restaurantId } });
+      await tx.restaurantThemeSettings.deleteMany({ where: { restaurantId } });
+      await tx.imageRule.deleteMany({ where: { restaurantId } });
+      await tx.auditLog.deleteMany({ where: { restaurantId } });
+
+      await tx.branchOpeningHour.deleteMany({ where: { branchId: { in: branchIds } } });
+      await tx.menuSection.deleteMany({ where: { pageId: { in: pageIds } } });
+      await tx.menuVersion.deleteMany({ where: { menuId: { in: menuIds } } });
+      await tx.menuPage.deleteMany({ where: { menuId: { in: menuIds } } });
+      await tx.menu.deleteMany({ where: { restaurantId } });
+
+      await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.order.deleteMany({ where: { restaurantId } });
+
+      await tx.productImage.deleteMany({ where: { productId: { in: productIds } } });
+      await tx.productOption.deleteMany({ where: { groupId: { in: productGroupIds } } });
+      await tx.productOptionGroup.deleteMany({ where: { productId: { in: productIds } } });
+      await tx.product3DModel.deleteMany({ where: { productId: { in: productIds } } });
+      await tx.productVrMedia.deleteMany({ where: { productId: { in: productIds } } });
+      await tx.product.deleteMany({ where: { restaurantId } });
+      await tx.category.deleteMany({ where: { restaurantId } });
+
+      await tx.mediaVariant.deleteMany({ where: { mediaId: { in: mediaIds } } });
+      await tx.mediaAsset.deleteMany({ where: { restaurantId } });
+      await tx.restaurantMember.deleteMany({ where: { restaurantId } });
+      await tx.branch.deleteMany({ where: { restaurantId } });
+      await tx.restaurant.delete({ where: { id: restaurantId } });
+    });
+
+    return { deleted: true };
+  }
+
   private async loadRestaurantDesignSource(restaurantId: string) {
     const source = await this.prisma.restaurant.findFirst({
       where: { id: restaurantId, deletedAt: null },

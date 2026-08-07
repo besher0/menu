@@ -105,6 +105,16 @@ export function ThemeBuilderClient() {
     }));
   }
 
+  function updatePublicUi<K extends keyof NonNullable<ThemeSettings["publicUi"]>>(key: K, value: NonNullable<ThemeSettings["publicUi"]>[K]) {
+    setTheme((current) => ({
+      ...current,
+      publicUi: {
+        ...current.publicUi,
+        [key]: value
+      }
+    }));
+  }
+
   async function saveTheme() {
     setStatus("saving");
     setMessage("");
@@ -192,6 +202,52 @@ export function ThemeBuilderClient() {
               <label>
                 <span>Section radius</span>
                 <input value={theme.radius.section} onChange={(event) => updateRadius("section", event.target.value)} />
+              </label>
+            </div>
+          </section>
+
+          <section>
+            <h2>واجهة المستخدم</h2>
+            <div className="theme-color-grid">
+              <label>
+                <span>Product placeholder</span>
+                <div>
+                  <input
+                    aria-label="Product placeholder"
+                    type="color"
+                    value={theme.publicUi?.productImagePlaceholderBackground ?? "#e5e7eb"}
+                    onChange={(event) => updatePublicUi("productImagePlaceholderBackground", event.target.value)}
+                  />
+                  <input
+                    value={theme.publicUi?.productImagePlaceholderBackground ?? "#e5e7eb"}
+                    onChange={(event) => updatePublicUi("productImagePlaceholderBackground", event.target.value)}
+                  />
+                </div>
+              </label>
+              <label>
+                <span>Mood label color</span>
+                <div>
+                  <input
+                    aria-label="Mood label color"
+                    type="color"
+                    value={theme.publicUi?.moodChipLabelColor ?? "#ffffff"}
+                    onChange={(event) => updatePublicUi("moodChipLabelColor", event.target.value)}
+                  />
+                  <input
+                    value={theme.publicUi?.moodChipLabelColor ?? "#ffffff"}
+                    onChange={(event) => updatePublicUi("moodChipLabelColor", event.target.value)}
+                  />
+                </div>
+              </label>
+            </div>
+            <div className="theme-fields">
+              <label>
+                <span>Mood label font size</span>
+                <input
+                  value={theme.publicUi?.moodChipLabelFontSize ?? "16px"}
+                  onChange={(event) => updatePublicUi("moodChipLabelFontSize", event.target.value)}
+                  placeholder="16px"
+                />
               </label>
             </div>
           </section>
@@ -298,6 +354,7 @@ function mergeTheme(theme: ThemeSettings): ThemeSettings {
     colors: { ...ABO_MALEK_THEME.colors, ...theme.colors },
     typography: { ...ABO_MALEK_THEME.typography, ...theme.typography },
     radius: { ...ABO_MALEK_THEME.radius, ...theme.radius },
-    layout: { ...ABO_MALEK_THEME.layout, ...theme.layout }
+    layout: { ...ABO_MALEK_THEME.layout, ...theme.layout },
+    publicUi: { ...ABO_MALEK_THEME.publicUi, ...theme.publicUi }
   };
 }

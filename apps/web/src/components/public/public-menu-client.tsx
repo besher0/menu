@@ -366,8 +366,8 @@ function formatOpeningHours(hours?: Array<Record<string, unknown>> | Record<stri
   return rows.length ? rows : null;
 }
 
-function productImage(product: PublicProduct) {
-  return product.imageUrl ?? product.images?.[0]?.url ?? "/assets/public/menu-products.png";
+function productImage(product: Pick<PublicProduct, "imageUrl" | "images">) {
+  return product.imageUrl ?? product.images?.find((image) => image.url)?.url ?? null;
 }
 
 function productImages(product: PublicProduct) {
@@ -383,8 +383,34 @@ function productImages(product: PublicProduct) {
     }
   });
 
-  const values = Array.from(uniqueImages.values());
-  return values.length ? values : [{ url: "/assets/public/menu-products.png", altText: product.name }];
+  return Array.from(uniqueImages.values());
+}
+
+function ProductImageMedia({
+  product,
+  image,
+  decorative = false
+}: {
+  product: Pick<PublicProduct, "name" | "imageUrl" | "images">;
+  image?: { url?: string | null; altText?: string | null } | null;
+  decorative?: boolean;
+}) {
+  const imageUrl = image?.url?.trim() || productImage(product) || "";
+
+  if (imageUrl) {
+    return <img src={imageUrl} alt={decorative ? "" : image?.altText || product.name} aria-hidden={decorative || undefined} />;
+  }
+
+  return (
+    <span
+      className="product-image-placeholder"
+      role={decorative ? undefined : "img"}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : product.name}
+    >
+      <ImageIcon size={24} />
+    </span>
+  );
 }
 
 function isFeatured(product: PublicProduct) {
@@ -1172,7 +1198,7 @@ function HomeView({
             const product = featured[index];
             return product ? (
             <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref)} className="wide-product">
-              <img src={productImage(product)} alt={product.name} />
+              <ProductImageMedia product={product} />
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
               <em>{t.mealDetails}</em>
@@ -1505,7 +1531,7 @@ function MenuView({
     const productContent = (
       <>
         <span className="menu-product-image-link">
-          <img src={productImage(product)} alt={product.name} />
+          <ProductImageMedia product={product} />
         </span>
         <div className="menu-product-copy">
           <b>{product.name}</b>
@@ -1608,7 +1634,7 @@ function MenuView({
                 onTouchEnd={handleSpotlightTouchEnd}
               >
                 <button type="button" className="category-spotlight-open" onClick={() => openProduct(spotlightProduct)}>
-                  <img src={productImage(spotlightProduct)} alt={spotlightProduct.name} />
+                  <ProductImageMedia product={spotlightProduct} />
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
                     {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
@@ -1707,6 +1733,27 @@ function ProductQuickViewModal({
   }, [product.slug]);
 
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousPosition = document.body.style.position;
+    const previousTop = document.body.style.top;
+    const previousWidth = document.body.style.width;
+    const scrollY = window.scrollY;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.position = previousPosition;
+      document.body.style.top = previousTop;
+      document.body.style.width = previousWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
+  useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         onClose();
@@ -1729,8 +1776,8 @@ function ProductQuickViewModal({
           <X size={14} />
         </button>
         <div className="product-quick-photo">
-          <img src={activeImage.url} alt={activeImage.altText || product.name} />
-          <span>{activeImageIndex + 1}/{gallery.length}</span>
+          <ProductImageMedia product={product} image={activeImage} />
+          {gallery.length ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
           {gallery.length > 1 ? (
             <>
               <button type="button" className="prev" onClick={() => moveImage(-1)} aria-label="الصورة السابقة">
@@ -1906,14 +1953,18 @@ function CartView({
             <section className="cart-page-list">
               {cart.map((item) => {
                 const product = productBySlug.get(item.slug);
-                const imageUrl = item.imageUrl ?? (product ? productImage(product) : "/assets/public/menu-products.png");
+                const imageUrl = item.imageUrl ?? (product ? productImage(product) : null);
                 const ingredientNames = product
                   ? productIngredients(product).map((ingredient) => ingredient.name).filter(Boolean).join(" - ")
                   : "";
 
                 return (
                   <article key={item.slug} className="cart-page-item">
-                    <img src={imageUrl} alt={item.name} />
+                    {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
+                      <span className="product-image-placeholder" role="img" aria-label={item.name}>
+                        <ImageIcon size={24} />
+                      </span>
+                    )}
                     <div className="cart-page-copy">
                       <b>{item.name}</b>
                       {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
@@ -2228,15 +2279,15 @@ function ProductView({
             </div>
           ) : (
             <div className="product-model-stage product-model-fallback">
-              <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
+              <ProductImageMedia product={product} image={activeImage} />
               <a href={model3dUrl} rel="ar">
-                <img src={activeImage.url} alt="" aria-hidden="true" />
+                {activeImage ? <img src={activeImage.url} alt="" aria-hidden="true" /> : null}
                 فتح 3D على الآيفون
               </a>
             </div>
           )
         ) : (
-          <img src={activeImage.url} alt={activeImage.altText ?? product.name} />
+          <ProductImageMedia product={product} image={activeImage} />
         )}
         <button
           type="button"
@@ -2258,7 +2309,7 @@ function ProductView({
             </button>
           </>
         ) : null}
-        {mediaMode === "image" ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
+        {mediaMode === "image" && gallery.length ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
       </div>
       <section className="product-sheet">
         <div className="product-title-row">
@@ -2386,7 +2437,7 @@ function ProductRail({
           <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
             <Link href={productHref(restaurantSlug, product, returnHref)} scroll onClick={() => window.scrollTo(0, 0)}>
-              <img src={productImage(product)} alt={product.name} />
+              <ProductImageMedia product={product} />
             </Link>
             <b>{product.name}</b>
             {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" /> : null}

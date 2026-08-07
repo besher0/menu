@@ -61,6 +61,11 @@ export type ThemeSettings = {
     animation?: string;
     instances?: IconRenderConfig[];
   };
+  publicUi?: {
+    productImagePlaceholderBackground?: string;
+    moodChipLabelColor?: string;
+    moodChipLabelFontSize?: string;
+  };
 };
 
 export const ABO_MALEK_THEME: ThemeSettings = {
@@ -100,6 +105,11 @@ export const ABO_MALEK_THEME: ThemeSettings = {
     borderRadius: "14px",
     shadow: "0 8px 20px rgb(16 24 40 / 10%)",
     instances: []
+  },
+  publicUi: {
+    productImagePlaceholderBackground: "#e5e7eb",
+    moodChipLabelColor: "#ffffff",
+    moodChipLabelFontSize: "16px"
   }
 };
 
@@ -125,6 +135,9 @@ export function themeToCssVariables(theme: ThemeSettings): Record<string, string
     "--icon-hover-color": theme.icons?.hoverColor ?? theme.colors.primary,
     "--icon-background": theme.icons?.backgroundColor ?? theme.colors.surface,
     "--icon-radius": theme.icons?.borderRadius ?? theme.radius.button,
-    "--icon-shadow": theme.icons?.shadow ?? "none"
+    "--icon-shadow": theme.icons?.shadow ?? "none",
+    "--product-image-placeholder-bg": theme.publicUi?.productImagePlaceholderBackground ?? "#e5e7eb",
+    "--mood-chip-label-color": theme.publicUi?.moodChipLabelColor ?? "#ffffff",
+    "--mood-chip-label-font-size": theme.publicUi?.moodChipLabelFontSize ?? "16px"
   };
 }

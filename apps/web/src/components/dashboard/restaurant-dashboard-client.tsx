@@ -1,16 +1,13 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, Fragment, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import Link from "next/link";
 import {
-  ArrowDown,
-  ArrowUp,
-  ChevronLeft,
-  ChevronRight,
   Edit3,
   ImagePlus,
   Loader2,
+  Menu,
   Plus,
   Save,
   Trash2,
@@ -131,6 +128,13 @@ const defaultSplashScreenSettings: SplashScreenSettings = {
 };
 const texturedBackground =
   "radial-gradient(circle at 18% 20%, rgba(255,255,255,.18), transparent 18%), linear-gradient(135deg, #b91c12, #e53322 58%, #7f120b)";
+const pageIncrement = 10;
+
+type ProductGroup = {
+  key: string;
+  name: string;
+  items: Product[];
+};
 
 function useRestaurantGate() {
   const [status, setStatus] = useState<"checking" | "ready" | "select">("checking");
@@ -267,19 +271,24 @@ export function RestaurantProductsClient() {
 function ProductsTable() {
   const [products, setProducts] = useState<Product[]>([]);
   const [meta, setMeta] = useState<Meta>({ page: 1, limit: 10, total: 0, pages: 1 });
+  const [visibleLimit, setVisibleLimit] = useState(pageIncrement);
   const [status, setStatus] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [availability, setAvailability] = useState<"all" | "available" | "unavailable">("all");
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState("");
+  const [dragProduct, setDragProduct] = useState<{ id: string; categoryKey: string } | null>(null);
+  const cancelledPriceEditRef = useRef<string | null>(null);
 
-  const load = useCallback(async (page = meta.page) => {
+  const load = useCallback(async (limit = visibleLimit, nextSearch = search) => {
     try {
       const params = new URLSearchParams({
-        page: String(page),
-        limit: String(meta.limit),
+        page: "1",
+        limit: String(limit),
         sort: "sortOrder",
         availability,
-        ...(search ? { search } : {})
+        ...(nextSearch ? { search: nextSearch } : {})
       });
       const result = await apiFetch<PageResult<Product>>(`/dashboard/products?${params.toString()}`);
       setProducts(result.data);
@@ -289,10 +298,11 @@ function ProductsTable() {
       setMessage(error instanceof Error ? error.message : "تعذر تحميل المنيو.");
       setStatus("error");
     }
-  }, [availability, meta.limit, meta.page, search]);
+  }, [availability, search, visibleLimit]);
 
   useEffect(() => {
-    void load(1);
+    setVisibleLimit(pageIncrement);
+    void load(pageIncrement, search);
   }, [availability]);
 
   async function toggle(product: Product) {
@@ -307,42 +317,106 @@ function ProductsTable() {
     }
   }
 
-  async function move(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= products.length) return;
-    const next = [...products];
-    [next[index], next[target]] = [next[target], next[index]];
-    const base = (meta.page - 1) * meta.limit;
+  async function saveOrder(next: Product[]) {
     setProducts(next);
     await apiFetch<PageResult<Product>>("/dashboard/products/reorder", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: next.map((product, itemIndex) => ({ id: product.id, sortOrder: base + itemIndex })) })
+      body: JSON.stringify({ items: next.map((product, itemIndex) => ({ id: product.id, sortOrder: itemIndex })) })
     });
-    void load(meta.page);
+    void load(visibleLimit);
+  }
+
+  async function dropProduct(targetProduct: Product) {
+    if (!dragProduct || dragProduct.id === targetProduct.id) return;
+    if (dragProduct.categoryKey !== productCategoryKey(targetProduct)) return;
+
+    const fromIndex = products.findIndex((product) => product.id === dragProduct.id);
+    const toIndex = products.findIndex((product) => product.id === targetProduct.id);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const next = [...products];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setDragProduct(null);
+    await saveOrder(next);
+  }
+
+  function startPriceEdit(product: Product) {
+    setEditingPriceId(product.id);
+    setPriceDraft(String(product.basePrice));
+  }
+
+  function cancelPriceEdit() {
+    cancelledPriceEditRef.current = editingPriceId;
+    setEditingPriceId(null);
+    setPriceDraft("");
+  }
+
+  async function savePrice(product: Product) {
+    if (cancelledPriceEditRef.current === product.id) {
+      cancelledPriceEditRef.current = null;
+      return;
+    }
+    if (editingPriceId !== product.id) return;
+    const nextPrice = Number(priceDraft);
+    if (!Number.isFinite(nextPrice) || nextPrice < 0) {
+      setMessage("السعر يجب أن يكون رقماً أكبر أو يساوي صفر.");
+      setStatus("error");
+      return;
+    }
+
+    setEditingPriceId(null);
+    setStatus("saving");
+    try {
+      const updated = await apiFetch<Product>(`/dashboard/products/${product.id}/price`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ basePrice: nextPrice })
+      });
+      setProducts((current) => current.map((item) => (item.id === product.id ? updated : item)));
+      setPriceDraft("");
+      setStatus("ready");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "تعذر تحديث السعر.");
+      setStatus("error");
+    }
   }
 
   async function remove(product: Product) {
     setStatus("saving");
     try {
       await apiFetch<{ deleted: boolean }>(`/dashboard/products/${product.id}`, { method: "DELETE" });
-      void load(meta.page);
+      void load(visibleLimit);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر حذف الصنف.");
       setStatus("error");
     }
   }
 
+  function applyFilters() {
+    setVisibleLimit(pageIncrement);
+    void load(pageIncrement, search);
+  }
+
+  function loadMore() {
+    const nextLimit = visibleLimit + pageIncrement;
+    setVisibleLimit(nextLimit);
+    void load(nextLimit);
+  }
+
+  const productGroups = groupProducts(products);
+
   return (
     <div className="restaurant-dashboard-page">
-      <DashboardToolbar addHref="/dashboard/products/new" search={search} onSearch={setSearch} onApply={() => void load(1)}>
+      <DashboardToolbar addHref="/dashboard/products/new" search={search} onSearch={setSearch} onApply={applyFilters}>
         <select value={availability} onChange={(event) => setAvailability(event.target.value as typeof availability)}>
           <option value="all">كل الحالات</option>
           <option value="available">متوفر</option>
           <option value="unavailable">غير متوفر</option>
         </select>
       </DashboardToolbar>
-      <DataPanel meta={meta} onPage={(page) => void load(page)}>
+      <DataPanel meta={meta} shown={products.length} onLoadMore={loadMore} loadingMore={status === "saving"}>
         {status === "loading" ? <LoadingState label="يتم تحميل المنيو" /> : null}
         {status === "error" ? <EmptyState title="حدث خطأ" text={message} /> : null}
         {status !== "loading" && products.length === 0 ? <EmptyState title="لا توجد أصناف" text="أضف الأصناف من زر إضافة لتظهر في صفحة المستخدم." /> : null}
@@ -361,17 +435,65 @@ function ProductsTable() {
               </tr>
             </thead>
             <tbody>
-              {products.map((product, index) => (
-                <tr key={product.id}>
-                  <td><NameCell title={product.name} imageUrl={product.images?.[0]?.url} /></td>
-                  <td>{product.category?.name ?? "-"}</td>
-                  <td>{product.basePrice} {product.currency}</td>
-                  <td><button className="bare" type="button" onClick={() => void toggle(product)}><StatusPill active={product.isAvailable} /></button></td>
-                  <td><span className="soft-pill purple">{product.isNew ? "جديد" : "عادي"}</span></td>
-                  <td>{product.views ?? 0}</td>
-                  <td><ReorderButtons index={index} length={products.length} onMove={move} /></td>
-                  <td><RowActions editHref={`/dashboard/products/${product.id}/edit`} onDelete={() => void remove(product)} /></td>
-                </tr>
+              {productGroups.map((group) => (
+                <Fragment key={group.key}>
+                  <tr className="table-group-row">
+                    <td colSpan={8}>{group.name}</td>
+                  </tr>
+                  {group.items.map((product) => (
+                    <tr
+                      key={product.id}
+                      className={dragProduct?.id === product.id ? "dragging-row" : undefined}
+                      onDragOver={(event) => {
+                        if (dragProduct?.categoryKey === productCategoryKey(product)) event.preventDefault();
+                      }}
+                      onDrop={() => void dropProduct(product)}
+                    >
+                      <td><NameCell title={product.name} imageUrl={product.images?.[0]?.url} /></td>
+                      <td>{product.category?.name ?? "-"}</td>
+                      <td className="editable-price-cell">
+                        {editingPriceId === product.id ? (
+                          <input
+                            autoFocus
+                            className="inline-price-input"
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={priceDraft}
+                            onBlur={() => void savePrice(product)}
+                            onChange={(event) => setPriceDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                              if (event.key === "Escape") cancelPriceEdit();
+                            }}
+                          />
+                        ) : (
+                          <button className="inline-price" type="button" onDoubleClick={() => startPriceEdit(product)}>
+                            {product.basePrice} {product.currency}
+                          </button>
+                        )}
+                      </td>
+                      <td><button className="bare" type="button" onClick={() => void toggle(product)}><StatusPill active={product.isAvailable} /></button></td>
+                      <td><span className="soft-pill purple">{product.isNew ? "جديد" : "عادي"}</span></td>
+                      <td>{product.views ?? 0}</td>
+                      <td>
+                        <DragHandle
+                          disabled={false}
+                          onDragEnd={() => setDragProduct(null)}
+                          onDragStart={() => setDragProduct({ id: product.id, categoryKey: productCategoryKey(product) })}
+                        />
+                      </td>
+                      <td>
+                        <RowActions
+                          editHref={`/dashboard/products/${product.id}/edit`}
+                          deleteMessage={`سيتم حذف المنتج "${product.name}" بعد التأكيد. لا يتم تنفيذ الحذف قبل الضغط على زر التأكيد.`}
+                          deleteTitle="تأكيد حذف المنتج"
+                          onDelete={() => remove(product)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -388,13 +510,15 @@ export function RestaurantCategoriesClient() {
 function CategoriesTable() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [meta, setMeta] = useState<Meta>({ page: 1, limit: 10, total: 0, pages: 1 });
+  const [visibleLimit, setVisibleLimit] = useState(pageIncrement);
   const [status, setStatus] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  const [dragCategoryId, setDragCategoryId] = useState<string | null>(null);
 
-  const load = useCallback(async (page = 1, nextSearch = search) => {
+  const load = useCallback(async (limit = visibleLimit, nextSearch = search) => {
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(meta.limit), sort: "sortOrder", ...(nextSearch ? { search: nextSearch } : {}) });
+      const params = new URLSearchParams({ page: "1", limit: String(limit), sort: "sortOrder", ...(nextSearch ? { search: nextSearch } : {}) });
       const result = await apiFetch<PageResult<Category>>(`/dashboard/categories?${params.toString()}`);
       setCategories(result.data);
       setMeta(result.meta);
@@ -403,15 +527,16 @@ function CategoriesTable() {
       setMessage(error instanceof Error ? error.message : "تعذر تحميل الأقسام.");
       setStatus("error");
     }
-  }, [meta.limit, search]);
+  }, [search, visibleLimit]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void load(1, search);
+      setVisibleLimit(pageIncrement);
+      void load(pageIncrement, search);
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [load, search]);
+  }, [search]);
 
   async function addCategory() {
     setStatus("saving");
@@ -428,7 +553,7 @@ function CategoriesTable() {
           sortOrder: meta.total
         })
       });
-      void load(meta.page);
+      void load(visibleLimit);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إضافة القسم.");
       setStatus("error");
@@ -445,37 +570,58 @@ function CategoriesTable() {
     setCategories((current) => current.map((item) => (item.id === category.id ? updated : item)));
   }
 
-  async function move(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= categories.length) return;
-    if (categories[index]?.slug === "all" || categories[target]?.slug === "all") return;
-    const next = [...categories];
-    [next[index], next[target]] = [next[target], next[index]];
-    const base = (meta.page - 1) * meta.limit;
+  async function saveCategoryOrder(next: Category[]) {
     setCategories(next);
     await apiFetch<PageResult<Category>>("/dashboard/categories/reorder", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: next.map((category, itemIndex) => ({ id: category.id, sortOrder: base + itemIndex })) })
+      body: JSON.stringify({ items: next.map((category, itemIndex) => ({ id: category.id, sortOrder: itemIndex })) })
     });
-    void load(meta.page);
+    void load(visibleLimit);
+  }
+
+  async function dropCategory(targetCategory: Category) {
+    if (!dragCategoryId || dragCategoryId === targetCategory.id || targetCategory.slug === "all") return;
+    const fromIndex = categories.findIndex((category) => category.id === dragCategoryId);
+    const toIndex = categories.findIndex((category) => category.id === targetCategory.id);
+    if (fromIndex < 0 || toIndex < 0 || categories[fromIndex]?.slug === "all") return;
+
+    const next = [...categories];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    if (next[0]?.slug !== "all") {
+      next.sort((first, second) => (first.slug === "all" ? -1 : second.slug === "all" ? 1 : 0));
+    }
+    setDragCategoryId(null);
+    await saveCategoryOrder(next);
   }
 
   async function remove(category: Category) {
     setStatus("saving");
     try {
       await apiFetch<Category>(`/dashboard/categories/${category.id}`, { method: "DELETE" });
-      void load(meta.page);
+      void load(visibleLimit);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر حذف القسم.");
       setStatus("error");
     }
   }
 
+  function applySearch() {
+    setVisibleLimit(pageIncrement);
+    void load(pageIncrement, search);
+  }
+
+  function loadMore() {
+    const nextLimit = visibleLimit + pageIncrement;
+    setVisibleLimit(nextLimit);
+    void load(nextLimit);
+  }
+
   return (
     <div className="restaurant-dashboard-page">
-      <DashboardToolbar addHref="/dashboard/categories/new" search={search} onSearch={setSearch} onApply={() => void load(1, search)} />
-      <DataPanel meta={meta} onPage={(page) => void load(page)}>
+      <DashboardToolbar addHref="/dashboard/categories/new" search={search} onSearch={setSearch} onApply={applySearch} />
+      <DataPanel meta={meta} shown={categories.length} onLoadMore={loadMore} loadingMore={status === "saving"}>
         {status === "loading" ? <LoadingState label="يتم تحميل الأقسام" /> : null}
         {status === "error" ? <EmptyState title="حدث خطأ" text={message} /> : null}
         {status !== "loading" && categories.length === 0 ? <EmptyState title="لا توجد أقسام" text="أضف أول قسم ليظهر في صفحة المستخدم." /> : null}
@@ -496,11 +642,18 @@ function CategoriesTable() {
               </tr>
             </thead>
             <tbody>
-              {categories.map((category, index) => {
+              {categories.map((category) => {
                 const isAllCategory = category.slug === "all";
 
                 return (
-                <tr key={category.id}>
+                <tr
+                  key={category.id}
+                  className={dragCategoryId === category.id ? "dragging-row" : undefined}
+                  onDragOver={(event) => {
+                    if (dragCategoryId && !isAllCategory) event.preventDefault();
+                  }}
+                  onDrop={() => void dropCategory(category)}
+                >
                   <td><span className="category-bg" style={visualBackground(category)} /></td>
                   <td>{category.name}</td>
                   <td>{category.imageUrl ? <img className="category-icon" src={category.imageUrl} alt="" /> : <span className="category-icon empty" />}</td>
@@ -523,8 +676,21 @@ function CategoriesTable() {
                     />
                   </td>
                   <td><input checked={category.visualScrollEnabled} type="checkbox" onChange={(event) => void update(category, { visualScrollEnabled: event.target.checked })} /></td>
-                    <td><ReorderButtons index={index} length={categories.length} locked={isAllCategory} minIndex={categories[0]?.slug === "all" ? 1 : 0} onMove={move} /></td>
-                  <td><RowActions editHref={`/dashboard/categories/${category.id}/edit`} onDelete={isAllCategory ? undefined : () => void remove(category)} /></td>
+                    <td>
+                      <DragHandle
+                        disabled={isAllCategory}
+                        onDragEnd={() => setDragCategoryId(null)}
+                        onDragStart={() => setDragCategoryId(category.id)}
+                      />
+                    </td>
+                  <td>
+                    <RowActions
+                      editHref={`/dashboard/categories/${category.id}/edit`}
+                      deleteMessage={`سيتم حذف القسم "${category.name}" بعد التأكيد. لا يتم تنفيذ الحذف قبل الضغط على زر التأكيد.`}
+                      deleteTitle="تأكيد حذف القسم"
+                      onDelete={isAllCategory ? undefined : () => remove(category)}
+                    />
+                  </td>
                 </tr>
                 );
               })}
@@ -656,7 +822,13 @@ function BannersTable() {
                   <td><input value={banner.title ?? ""} onChange={(event) => void update(banner, { title: event.target.value })} /></td>
                   <td><input value={banner.targetUrl ?? ""} onChange={(event) => void update(banner, { targetUrl: event.target.value })} placeholder="رابط الانتقال" /></td>
                   <td><button className="bare" type="button" onClick={() => void update(banner, { isActive: !banner.isActive })}><StatusPill active={banner.isActive} label={banner.isActive ? "ظاهر" : "مخفي"} /></button></td>
-                  <td><RowActions onDelete={() => void remove(banner)} /></td>
+                  <td>
+                    <RowActions
+                      deleteMessage={`سيتم حذف البنر "${banner.title ?? "بدون عنوان"}" بعد التأكيد. لا يتم تنفيذ الحذف قبل الضغط على زر التأكيد.`}
+                      deleteTitle="تأكيد حذف البنر"
+                      onDelete={() => remove(banner)}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -948,17 +1120,34 @@ function DashboardToolbar({
   );
 }
 
-function DataPanel({ children, meta, onPage }: { children: React.ReactNode; meta: Meta; onPage: (page: number) => void }) {
+function DataPanel({
+  children,
+  meta,
+  shown,
+  onLoadMore,
+  loadingMore
+}: {
+  children: React.ReactNode;
+  meta: Meta;
+  shown: number;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+}) {
+  const canLoadMore = shown < meta.total;
+
   return (
     <section className="restaurant-data-panel">
       <div className="table-scroll">{children}</div>
       <footer>
-        <div className="restaurant-pagination">
-          <button disabled={meta.page <= 1} type="button" onClick={() => onPage(meta.page - 1)}><ChevronRight size={16} /></button>
-          <span>{meta.page} / {meta.pages}</span>
-          <button disabled={meta.page >= meta.pages} type="button" onClick={() => onPage(meta.page + 1)}><ChevronLeft size={16} /></button>
+        <div className="restaurant-panel-meta">
+          <span>عرض {shown} من {meta.total}</span>
+          <span>عدد الصفحات: {meta.pages}</span>
         </div>
-        <span>عرض {meta.total ? (meta.page - 1) * meta.limit + 1 : 0} من {meta.total}</span>
+        {onLoadMore ? (
+          <button className="restaurant-load-more" disabled={!canLoadMore || loadingMore} type="button" onClick={onLoadMore}>
+            {loadingMore ? "جار التحميل..." : "عرض المزيد"}
+          </button>
+        ) : null}
       </footer>
     </section>
   );
@@ -985,6 +1174,27 @@ function DashboardList({ title, href, items, mode }: { title: string; href: stri
   );
 }
 
+function productCategoryKey(product: Product) {
+  return product.category?.name?.trim() || "بدون قسم";
+}
+
+function groupProducts(products: Product[]): ProductGroup[] {
+  const groups = new Map<string, ProductGroup>();
+
+  products.forEach((product) => {
+    const key = productCategoryKey(product);
+    const group = groups.get(key) ?? { key, name: key, items: [] };
+    group.items.push(product);
+    groups.set(key, group);
+  });
+
+  return Array.from(groups.values()).sort((first, second) => {
+    if (first.name === "بدون قسم") return 1;
+    if (second.name === "بدون قسم") return -1;
+    return first.name.localeCompare(second.name, "ar");
+  });
+}
+
 function visualBackground(category: Pick<Category, "backgroundType" | "backgroundValue" | "color" | "backgroundCss">): React.CSSProperties {
   const value = category.backgroundValue || category.color || "#ed1f2b";
   if (category.backgroundCss) return { background: category.backgroundCss };
@@ -1007,29 +1217,105 @@ function StatusPill({ active, label }: { active: boolean; label?: string }) {
   return <span className="status-switch"><i className={active ? "on" : ""} />{label ?? (active ? "متوفر" : "غير متوفر")}</span>;
 }
 
-function ReorderButtons({
-  index,
-  length,
-  locked,
-  minIndex = 0,
-  onMove
+function DragHandle({
+  disabled,
+  onDragEnd,
+  onDragStart
 }: {
-  index: number;
-  length: number;
-  locked?: boolean;
-  minIndex?: number;
-  onMove: (index: number, direction: -1 | 1) => void;
+  disabled?: boolean;
+  onDragEnd: () => void;
+  onDragStart: () => void;
 }) {
   return (
-    <span className="reorder-buttons">
-      <button disabled={locked || index <= minIndex} type="button" onClick={() => void onMove(index, -1)}><ArrowUp size={16} /></button>
-      <button disabled={locked || index === length - 1} type="button" onClick={() => void onMove(index, 1)}><ArrowDown size={16} /></button>
+    <button
+      aria-label="سحب لتغيير الترتيب"
+      className="drag-handle"
+      disabled={disabled}
+      draggable={!disabled}
+      title={disabled ? "هذا العنصر مثبت" : "اسحب لتغيير الترتيب"}
+      type="button"
+      onDragEnd={onDragEnd}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+    >
+      <Menu size={18} />
+    </button>
+  );
+}
+
+function RowActions({
+  editHref,
+  onDelete,
+  deleteTitle = "تأكيد الحذف",
+  deleteMessage = "سيتم تنفيذ الحذف فقط بعد الضغط على زر التأكيد."
+}: {
+  editHref?: string;
+  onDelete?: () => Promise<void> | void;
+  deleteTitle?: string;
+  deleteMessage?: string;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function confirmDelete() {
+    if (!onDelete) return;
+    setBusy(true);
+    await onDelete();
+    setBusy(false);
+    setConfirmOpen(false);
+  }
+
+  return (
+    <span className="row-actions">
+      {editHref ? <Link href={editHref} aria-label="تعديل"><Edit3 size={20} /></Link> : null}
+      {onDelete ? <button type="button" aria-label="حذف" onClick={() => setConfirmOpen(true)}><Trash2 size={20} /></button> : null}
+      {confirmOpen ? (
+        <ConfirmDialog
+          busy={busy}
+          confirmLabel="تأكيد الحذف"
+          message={deleteMessage}
+          title={deleteTitle}
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
     </span>
   );
 }
 
-function RowActions({ editHref, onDelete }: { editHref?: string; onDelete?: () => void }) {
-  return <span className="row-actions">{editHref ? <Link href={editHref} aria-label="تعديل"><Edit3 size={20} /></Link> : null}{onDelete ? <button type="button" aria-label="حذف" onClick={onDelete}><Trash2 size={20} /></button> : null}</span>;
+function ConfirmDialog({
+  busy,
+  cancelLabel = "إلغاء",
+  confirmLabel = "تأكيد",
+  message,
+  title,
+  onCancel,
+  onConfirm
+}: {
+  busy?: boolean;
+  cancelLabel?: string;
+  confirmLabel?: string;
+  message: string;
+  title: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void> | void;
+}) {
+  return (
+    <div className="confirm-backdrop" role="presentation">
+      <div aria-modal="true" className="confirm-dialog" role="dialog">
+        <h2>{title}</h2>
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button className="ghost-action" disabled={busy} type="button" onClick={onCancel}>{cancelLabel}</button>
+          <button className="danger-action" disabled={busy} type="button" onClick={() => void onConfirm()}>
+            {busy ? "جار التنفيذ..." : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, value, textarea, onChange }: { label: string; value: string; textarea?: boolean; onChange: (value: string) => void }) {

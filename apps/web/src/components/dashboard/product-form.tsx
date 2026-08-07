@@ -202,6 +202,30 @@ function mealDetailKey(detail: Pick<MealDetailFormItem, "label" | "value" | "ico
   return `${detail.label.trim().toLocaleLowerCase()}|${detail.value.trim().toLocaleLowerCase()}|${detail.icon}|${detail.iconUrl?.trim().toLocaleLowerCase() ?? ""}`;
 }
 
+function emptyProductForm(): FormState {
+  return {
+    name: "",
+    categoryId: "",
+    description: "",
+    basePrice: "",
+    currency: "ل.س",
+    imageUrl: "",
+    imageUrls: [],
+    moodKeys: [],
+    ingredients: [],
+    mealDetails: DEFAULT_MEAL_DETAILS.map((detail) => ({ ...detail })),
+    model3dUrl: "",
+    model3dFormat: "GLB",
+    vrUrl: "",
+    isNew: false,
+    isPopular: false
+  };
+}
+
+function normalizedProductImageUrls(urls: string[]) {
+  return Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
+}
+
 export function ProductForm({ productId }: { productId?: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "saving" | "error" | "success">("idle");
@@ -221,30 +245,14 @@ export function ProductForm({ productId }: { productId?: string }) {
   const [mealDetailSearch, setMealDetailSearch] = useState("");
   const [mealDetailLibraryStatus, setMealDetailLibraryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailIconSearch, setDetailIconSearch] = useState("");
-  const [form, setForm] = useState<FormState>({
-    name: "",
-    categoryId: "",
-    description: "",
-    basePrice: "",
-    currency: "ل.س",
-    imageUrl: "",
-    imageUrls: [],
-    moodKeys: [],
-    ingredients: [],
-    mealDetails: DEFAULT_MEAL_DETAILS,
-    model3dUrl: "",
-    model3dFormat: "GLB",
-    vrUrl: "",
-    isNew: false,
-    isPopular: false
-  });
+  const [form, setForm] = useState<FormState>(() => emptyProductForm());
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   function setProductImages(urls: string[]) {
-    const uniqueUrls = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
+    const uniqueUrls = normalizedProductImageUrls(urls);
     setForm((current) => ({
       ...current,
       imageUrl: uniqueUrls[0] ?? "",
@@ -610,6 +618,18 @@ export function ProductForm({ productId }: { productId?: string }) {
   }, [selectedRestaurantId, restaurants]);
 
   useEffect(() => {
+    if (productId) {
+      return;
+    }
+
+    setForm(emptyProductForm());
+    setStatus("idle");
+    setUploadStatus("idle");
+    setModelUploadStatus("idle");
+    setMessage("");
+  }, [productId]);
+
+  useEffect(() => {
     if (!productId || !selectedRestaurantId) {
       return;
     }
@@ -660,6 +680,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     setMessage("");
 
     try {
+      const productImageUrls = normalizedProductImageUrls(form.imageUrls);
       const headers = {
         "Content-Type": "application/json",
         ...selectedRestaurantHeaders()
@@ -676,14 +697,11 @@ export function ProductForm({ productId }: { productId?: string }) {
           categoryId: form.categoryId || undefined,
           moodKey: form.moodKeys[0] || undefined,
           moodKeys: form.moodKeys,
-          imageUrl: form.imageUrl,
-          images: (form.imageUrls.length ? form.imageUrls : [form.imageUrl])
-            .map((url) => url.trim())
-            .filter(Boolean)
-            .map((url, index) => ({
-              url,
-              altText: index === 0 ? form.name : `${form.name} ${index + 1}`
-            })),
+          imageUrl: productImageUrls[0] || undefined,
+          images: productImageUrls.map((url, index) => ({
+            url,
+            altText: index === 0 ? form.name : `${form.name} ${index + 1}`
+          })),
           ingredients: form.ingredients
             .map((item) => ({
               name: item.name.trim(),
@@ -793,7 +811,7 @@ export function ProductForm({ productId }: { productId?: string }) {
         if (url) uploadedUrls.push(url);
       }
 
-      setProductImages([...(form.imageUrls.length ? form.imageUrls : form.imageUrl ? [form.imageUrl] : []), ...uploadedUrls]);
+      setProductImages([...form.imageUrls, ...uploadedUrls]);
       setUploadStatus("idle");
     } catch (error) {
       setUploadStatus("error");
@@ -906,7 +924,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     }
   }
 
-  const productGalleryUrls = form.imageUrls.length ? form.imageUrls : form.imageUrl ? [form.imageUrl] : [];
+  const productGalleryUrls = form.imageUrls;
   const selectedIngredientKeys = useMemo(
     () => new Set(form.ingredients.map((ingredient) => ingredientKey(ingredient.name)).filter(Boolean)),
     [form.ingredients]
@@ -1119,6 +1137,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           <label>
             <span>السعر</span>
             <input
+              className="no-number-spin"
               value={form.basePrice}
               onChange={(event) => update("basePrice", event.target.value)}
               type="number"
@@ -1377,7 +1396,13 @@ export function ProductForm({ productId }: { productId?: string }) {
             <ImagePlus size={32} />
             <span>معاينة المنتج</span>
           </div>
-          <img src={form.imageUrl || "/assets/public/menu-products.png"} alt={form.name || "معاينة"} />
+          {form.imageUrl ? (
+            <img src={form.imageUrl} alt={form.name || "معاينة"} />
+          ) : (
+            <span className="product-preview-placeholder" aria-hidden="true">
+              <ImagePlus size={34} />
+            </span>
+          )}
           <h2>{form.name || "اسم المنتج"}</h2>
           <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
           {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}

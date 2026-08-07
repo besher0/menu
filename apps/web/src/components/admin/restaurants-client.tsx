@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Download, ExternalLink, Plus, Store } from "lucide-react";
+import { Download, ExternalLink, Plus, Power, PowerOff, Store, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/client-api";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { StatCard } from "./stat-card";
@@ -35,6 +35,9 @@ export function RestaurantsClient() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
+  const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const [deletingRestaurantId, setDeletingRestaurantId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<Restaurant | null>(null);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -114,6 +117,43 @@ export function RestaurantsClient() {
     }
   }
 
+  async function updateStatus(restaurant: Restaurant) {
+    setSavingStatusId(restaurant.id);
+    setMessage("");
+
+    try {
+      const updated = await apiFetch<{ id: string; isActive: boolean }>(`/admin/restaurants/${restaurant.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !restaurant.isActive })
+      });
+
+      setRestaurants((current) =>
+        current.map((item) => (item.id === restaurant.id ? { ...item, isActive: updated.isActive } : item))
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "تعذر تغيير حالة المطعم.");
+    } finally {
+      setSavingStatusId(null);
+    }
+  }
+
+  async function deleteRestaurant() {
+    if (!deleteCandidate) return;
+    setDeletingRestaurantId(deleteCandidate.id);
+    setMessage("");
+
+    try {
+      await apiFetch<{ deleted: boolean }>(`/admin/restaurants/${deleteCandidate.id}`, { method: "DELETE" });
+      setRestaurants((current) => current.filter((restaurant) => restaurant.id !== deleteCandidate.id));
+      setDeleteCandidate(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "تعذر حذف المطعم.");
+    } finally {
+      setDeletingRestaurantId(null);
+    }
+  }
+
   return (
     <>
       <div className="admin-grid four">
@@ -156,6 +196,7 @@ export function RestaurantsClient() {
                 <th>المنتجات</th>
                 <th>الحالة</th>
                 <th>الرابط</th>
+                <th>الإجراءات</th>
               </tr>
             </thead>
             <tbody>
@@ -202,12 +243,44 @@ export function RestaurantsClient() {
                       </Link>
                     </div>
                   </td>
+                  <td>
+                    <div className="table-actions-inline">
+                      <button
+                        className="table-icon-action"
+                        disabled={savingStatusId === restaurant.id}
+                        type="button"
+                        onClick={() => void updateStatus(restaurant)}
+                      >
+                        {restaurant.isActive ? <PowerOff size={16} /> : <Power size={16} />}
+                        {restaurant.isActive ? "إيقاف" : "تفعيل"}
+                      </button>
+                      <button
+                        className="table-icon-action danger"
+                        disabled={deletingRestaurantId === restaurant.id}
+                        type="button"
+                        onClick={() => setDeleteCandidate(restaurant)}
+                      >
+                        <Trash2 size={16} />
+                        حذف
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : null}
       </section>
+      {deleteCandidate ? (
+        <ConfirmDialog
+          busy={deletingRestaurantId === deleteCandidate.id}
+          confirmLabel="حذف المطعم نهائياً"
+          message={`سيتم حذف المطعم "${deleteCandidate.name}" وسجلاته المرتبطة من قاعدة البيانات بعد التأكيد. لا يتم حذف ملفات الصور من التخزين، ولا يتم تنفيذ الحذف قبل الضغط على زر التأكيد.`}
+          title="تأكيد حذف المطعم"
+          onCancel={() => setDeleteCandidate(null)}
+          onConfirm={deleteRestaurant}
+        />
+      ) : null}
     </>
   );
 }
@@ -217,6 +290,39 @@ function EmptyState({ title, text }: { title: string; text: string }) {
     <div className="empty-state">
       <b>{title}</b>
       <p>{text}</p>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  busy,
+  cancelLabel = "إلغاء",
+  confirmLabel = "تأكيد",
+  message,
+  title,
+  onCancel,
+  onConfirm
+}: {
+  busy?: boolean;
+  cancelLabel?: string;
+  confirmLabel?: string;
+  message: string;
+  title: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void> | void;
+}) {
+  return (
+    <div className="confirm-backdrop" role="presentation">
+      <div aria-modal="true" className="confirm-dialog" role="dialog">
+        <h2>{title}</h2>
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button className="ghost-action" disabled={busy} type="button" onClick={onCancel}>{cancelLabel}</button>
+          <button className="danger-action" disabled={busy} type="button" onClick={() => void onConfirm()}>
+            {busy ? "جار التنفيذ..." : confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
