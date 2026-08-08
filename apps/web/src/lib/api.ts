@@ -129,6 +129,7 @@ export type PublicMenuData = {
             isActive?: boolean;
           }>;
           moodItems?: Array<{
+            key?: string;
             label: string;
             targetUrl?: string;
             iconUrl?: string;

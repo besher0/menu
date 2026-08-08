@@ -156,16 +156,16 @@ export async function parseProductImportWorkbook(buffer: Buffer, fallbackMoodOpt
 export function parseBoolean(value: string, label = "القيمة") {
   const normalized = value.trim().toLocaleLowerCase();
   if (!normalized) return { valid: true, value: false, error: "" };
-  if (normalized === "true") return { valid: true, value: true, error: "" };
-  if (normalized === "false") return { valid: true, value: false, error: "" };
-  return { valid: false, value: false, error: `${label} تقبل true أو false أو فراغ فقط` };
+  if (["true", "yes", "y", "1", "نعم", "صح"].includes(normalized)) return { valid: true, value: true, error: "" };
+  if (["false", "no", "n", "0", "لا", "غلط", "خطأ", "خطا"].includes(normalized)) return { valid: true, value: false, error: "" };
+  return { valid: false, value: false, error: `${label} تقبل true أو false أو نعم/لا أو فراغ فقط` };
 }
 
 export function parseMoodSelection(value: string, moodOptions: ProductImportMoodOption[]) {
   const trimmed = value.trim();
   if (!trimmed) return { keys: [] as string[], errors: [] as string[] };
 
-  const tokens = value.split(",");
+  const tokens = value.split(/[,،]/g);
   const errors: string[] = [];
   const keys: string[] = [];
   const normalizedOptions = normalizeMoodOptions(moodOptions);
@@ -240,7 +240,7 @@ function normalizeMoodOptions(options: ProductImportMoodOption[]): NormalizedMoo
 
 function isBooleanToken(value: string) {
   const normalized = value.trim().toLocaleLowerCase();
-  return !normalized || normalized === "true" || normalized === "false";
+  return !normalized || ["true", "yes", "y", "1", "نعم", "صح", "false", "no", "n", "0", "لا", "غلط", "خطأ", "خطا"].includes(normalized);
 }
 
 function normalizeLookupValue(value: string) {

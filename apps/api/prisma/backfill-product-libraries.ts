@@ -20,6 +20,16 @@ function jsonArray(value: unknown): unknown[] {
   if (Array.isArray(record.items)) return record.items;
   if (Array.isArray(record.data)) return record.data;
   if (Array.isArray(record.values)) return record.values;
+  if (
+    text(record.adminName) ||
+    text(record.displayName) ||
+    text(record.name) ||
+    text(record.label) ||
+    text(record.title) ||
+    text(record.value)
+  ) {
+    return [value];
+  }
   return [];
 }
 

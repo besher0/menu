@@ -88,15 +88,17 @@ describe("product import parser", () => {
     expect(parsed.rows[0].errors).toContain("السعر يجب أن يكون رقم 0 أو أكبر");
   });
 
-  it("accepts only blank/true/false booleans", () => {
+  it("accepts blank and common boolean values", () => {
     expect(parseBoolean("", "جديدنا")).toMatchObject({ valid: true, value: false });
     expect(parseBoolean("TRUE", "جديدنا")).toMatchObject({ valid: true, value: true });
     expect(parseBoolean("false", "جديدنا")).toMatchObject({ valid: true, value: false });
-    expect(parseBoolean("yes", "جديدنا")).toMatchObject({ valid: false });
+    expect(parseBoolean("yes", "جديدنا")).toMatchObject({ valid: true, value: true });
+    expect(parseBoolean("لا", "جديدنا")).toMatchObject({ valid: true, value: false });
   });
 
   it("parses positional mood selections and preserves blanks", () => {
     expect(parseMoodSelection("true,,true", ["a", "b", "c"])).toEqual({ keys: ["a", "c"], errors: [] });
+    expect(parseMoodSelection("نعم، لا، نعم", ["a", "b", "c"])).toEqual({ keys: ["a", "c"], errors: [] });
     expect(parseMoodSelection("", ["a"])).toEqual({ keys: [], errors: [] });
   });
 

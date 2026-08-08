@@ -418,8 +418,8 @@ export class ProductsImportService {
 
     return this.extractMoodItems(section?.settings)
       .map((item) => {
-        const label = item.label?.trim() ?? "";
-        const key = item.key?.trim() || label;
+        const label = this.moodItemText(item.label) || this.moodItemText(item.name) || this.moodItemText(item.title) || this.moodItemText(item.text);
+        const key = this.moodItemText(item.key) || this.moodItemText(item.id) || this.moodItemText(item.value) || label;
         return label ? { key, label } : null;
       })
       .filter((item): item is { key: string; label: string } => Boolean(item));
@@ -429,7 +429,11 @@ export class ProductsImportService {
     if (!settings || typeof settings !== "object" || Array.isArray(settings)) return [];
     const record = settings as { moodItems?: unknown; items?: unknown };
     const items = Array.isArray(record.moodItems) ? record.moodItems : Array.isArray(record.items) ? record.items : [];
-    return items.filter((item): item is { key?: string; label?: string } => Boolean(item && typeof item === "object" && !Array.isArray(item)));
+    return items.filter((item): item is Record<string, Prisma.JsonValue> => Boolean(item && typeof item === "object" && !Array.isArray(item)));
+  }
+
+  private moodItemText(value: Prisma.JsonValue | undefined) {
+    return typeof value === "string" ? value.trim() : "";
   }
 
   private normalize(value: string) {

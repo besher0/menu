@@ -171,6 +171,7 @@ const translations = {
 type PublicTranslations = Record<keyof typeof translations.ar, string>;
 
 type MoodItem = {
+  key?: string;
   label: string;
   href: string;
   iconUrl?: string;
@@ -221,8 +222,8 @@ function productPrice(product: PublicProduct) {
   return product.price ?? product.basePrice;
 }
 
-function moodMenuHref(restaurantSlug: string, label: string) {
-  return `/m/${restaurantSlug}/menu?mood=${encodeURIComponent(label)}`;
+function moodMenuHref(restaurantSlug: string, key: string) {
+  return `/m/${restaurantSlug}/menu?mood=${encodeURIComponent(key)}`;
 }
 
 function collectionMenuHref(restaurantSlug: string, collection: "popular" | "new") {
@@ -1035,9 +1036,11 @@ function HomeView({
       .filter((item) => item.label?.trim())
       .map((item) => {
         const label = item.label.trim();
+        const key = item.key?.trim() || label;
         return {
+          key,
           label,
-          href: moodMenuHref(data.restaurant.slug, label),
+          href: moodMenuHref(data.restaurant.slug, key),
           iconUrl: item.iconUrl,
         iconPosition: "manual",
         iconX: item.iconX,
@@ -1266,6 +1269,21 @@ function MenuView({
   const allCategory = data.categories.find((category) => category.slug === "all");
   const regularCategories = data.categories.filter((category) => category.slug !== "all");
   const selectedMoodKey = normalizeMenuKey(selectedMood);
+  const moodAliases = new Set([selectedMoodKey]);
+  data.menus?.forEach((menu) => {
+    menu.pages?.forEach((page) => {
+      page.sections?.forEach((section) => {
+        section.settings?.moodItems?.forEach((item) => {
+          const key = item.key?.trim() || "";
+          const label = item.label?.trim() || "";
+          if ([key, label].some((value) => normalizeMenuKey(value) === selectedMoodKey)) {
+            if (key) moodAliases.add(normalizeMenuKey(key));
+            if (label) moodAliases.add(normalizeMenuKey(label));
+          }
+        });
+      });
+    });
+  });
   const moodProducts = selectedMood
     ? data.products.filter((product) => {
       const productCategorySlug = product.category?.slug ?? product.categorySlug ?? "";
@@ -1276,7 +1294,7 @@ function MenuView({
         product.category?.name,
         category?.slug,
         category?.name
-      ].some((value) => normalizeMenuKey(value) === selectedMoodKey);
+      ].some((value) => moodAliases.has(normalizeMenuKey(value)));
     })
     : [];
   const collectionProducts = selectedCollection === "popular"

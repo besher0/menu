@@ -38,12 +38,28 @@ export class ProductLibraryService {
   async listIngredients(restaurantId: string) {
     try {
       await this.backfillLegacyIngredients(restaurantId);
-      const data = await this.prisma.ingredientLibraryItem.findMany({
+      const [data, legacy] = await Promise.all([
+        this.prisma.ingredientLibraryItem.findMany({
         where: { restaurantId },
         orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
-      });
+        }),
+        this.collectLegacyIngredients(restaurantId)
+      ]);
+      const libraryKeys = new Set(data.map((item) => item.adminNameNormalized));
+      const legacyRows = Array.from(legacy.entries())
+        .filter(([key]) => !libraryKeys.has(key))
+        .map(([key, item]) => ({
+          id: `legacy-ingredient-${key}`,
+          restaurantId,
+          adminName: item.adminName,
+          adminNameNormalized: key,
+          displayName: item.displayName,
+          imageUrl: this.cleanOptional(item.imageUrl),
+          isActive: true,
+          isLegacy: true
+        }));
 
-      return { data };
+      return { data: [...data, ...legacyRows] };
     } catch (error) {
       this.handleDatabaseError(error);
       throw error;
@@ -111,12 +127,30 @@ export class ProductLibraryService {
   async listMealDetails(restaurantId: string) {
     try {
       await this.backfillLegacyMealDetails(restaurantId);
-      const data = await this.prisma.mealDetailLibraryItem.findMany({
+      const [data, legacy] = await Promise.all([
+        this.prisma.mealDetailLibraryItem.findMany({
         where: { restaurantId },
         orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
-      });
+        }),
+        this.collectLegacyMealDetails(restaurantId)
+      ]);
+      const libraryKeys = new Set(data.map((item) => item.adminNameNormalized));
+      const legacyRows = Array.from(legacy.entries())
+        .filter(([key]) => !libraryKeys.has(key))
+        .map(([key, item]) => ({
+          id: `legacy-meal-detail-${key}`,
+          restaurantId,
+          adminName: item.adminName,
+          adminNameNormalized: key,
+          displayName: item.displayName,
+          value: this.cleanOptional(item.value),
+          icon: this.cleanOptional(item.icon) ?? "utensils",
+          iconUrl: this.cleanOptional(item.iconUrl),
+          isActive: true,
+          isLegacy: true
+        }));
 
-      return { data };
+      return { data: [...data, ...legacyRows] };
     } catch (error) {
       this.handleDatabaseError(error);
       throw error;
@@ -286,6 +320,10 @@ export class ProductLibraryService {
   }
 
   private async backfillLegacyIngredients(restaurantId: string) {
+    await this.createMissingIngredients(restaurantId, await this.collectLegacyIngredients(restaurantId));
+  }
+
+  private async collectLegacyIngredients(restaurantId: string) {
     const products = await this.prisma.product.findMany({
       where: { restaurantId, deletedAt: null },
       select: { ingredients: true },
@@ -319,10 +357,14 @@ export class ProductLibraryService {
       }
     }
 
-    await this.createMissingIngredients(restaurantId, drafts);
+    return drafts;
   }
 
   private async backfillLegacyMealDetails(restaurantId: string) {
+    await this.createMissingMealDetails(restaurantId, await this.collectLegacyMealDetails(restaurantId));
+  }
+
+  private async collectLegacyMealDetails(restaurantId: string) {
     const products = await this.prisma.product.findMany({
       where: { restaurantId, deletedAt: null },
       select: { nutrition: true },
@@ -346,7 +388,7 @@ export class ProductLibraryService {
       }
     }
 
-    await this.createMissingMealDetails(restaurantId, drafts);
+    return drafts;
   }
 
   private async createMissingIngredients(
@@ -497,6 +539,16 @@ export class ProductLibraryService {
     if (Array.isArray(record.items)) return record.items;
     if (Array.isArray(record.data)) return record.data;
     if (Array.isArray(record.values)) return record.values;
+    if (
+      this.scalarText(record.adminName) ||
+      this.scalarText(record.displayName) ||
+      this.scalarText(record.name) ||
+      this.scalarText(record.label) ||
+      this.scalarText(record.title) ||
+      this.scalarText(record.value)
+    ) {
+      return [value];
+    }
     return [];
   }
 
