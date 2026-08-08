@@ -546,7 +546,7 @@ export class ProductsService {
     if (sort === "priceAsc") return [{ basePrice: "asc" }, { sortOrder: "asc" }];
     if (sort === "priceDesc") return [{ basePrice: "desc" }, { sortOrder: "asc" }];
     if (sort === "name") return [{ name: "asc" }];
-    return [{ sortOrder: "asc" }, { createdAt: "desc" }];
+    return [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }];
   }
 
   private productImageInputs(dto: CreateProductDto) {

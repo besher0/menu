@@ -4439,6 +4439,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .rail-scroll a,
 .rail-scroll img {
   -webkit-user-drag: none;
+  touch-action: manipulation;
   user-select: none;
 }
 
@@ -4456,6 +4457,12 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .rail-product-cartable {
   min-height: 144px;
+}
+
+.rail-product a {
+  color: inherit;
+  display: block;
+  text-decoration: none;
 }
 
 .rail-product-badge {
@@ -5018,32 +5025,6 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .product-list > div {
   scroll-margin-top: 85px;
-}
-
-.menu-products-pagination {
-  align-items: center;
-  color: #596171;
-  display: grid;
-  font-size: 13px;
-  font-weight: 800;
-  gap: 10px;
-  justify-items: center;
-  padding: 4px 0 18px;
-}
-
-.menu-products-pagination button {
-  align-items: center;
-  background: var(--color-secondary);
-  border: 0;
-  border-radius: 999px;
-  color: #fff;
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  justify-content: center;
-  min-height: 42px;
-  min-width: 138px;
-  padding: 0 18px;
 }
 
 .category-spotlight {

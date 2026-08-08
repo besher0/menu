@@ -25,7 +25,6 @@ type NormalizedMealDetail = { label: string; value: string; icon: string; iconUr
 
 const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 const MENU_SECTION_SCROLL_GAP = 6;
-const MENU_PRODUCTS_PAGE_SIZE = 10;
 const BANNER_AUTO_ADVANCE_MS = 3000;
 
 const translations = {
@@ -1266,7 +1265,6 @@ function MenuView({
   const manualCategoryScrollUntil = useRef(0);
   const categoryStripRef = useRef<HTMLElement | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>(selectedDisplayParam);
-  const [visibleMenuProductCount, setVisibleMenuProductCount] = useState(MENU_PRODUCTS_PAGE_SIZE);
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = useMemo(() => data.categories.find((category) => category.slug === "all"), [data.categories]);
   const regularCategories = useMemo(() => data.categories.filter((category) => category.slug !== "all"), [data.categories]);
@@ -1332,40 +1330,10 @@ function MenuView({
     ? visibleProducts
     : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
   const spotlightProduct = activeProducts[activeProducts.length ? activeSpotlightIndex % activeProducts.length : 0];
-  const orderedListProducts = useMemo(() => {
-    const items: Array<{ product: PublicProduct; categorySlug: string }> = [];
-
-    regularCategories.forEach((category) => {
-      categoryProductsSource
-        .filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug)
-        .forEach((product) => items.push({ product, categorySlug: category.slug }));
-    });
-
-    categoryProductsSource
-      .filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
-      .forEach((product) => items.push({ product, categorySlug: "__uncategorized" }));
-
-    return items;
-  }, [categoryProductsSource, regularCategories]);
-  const visibleOrderedListProducts = useMemo(() => orderedListProducts.slice(0, visibleMenuProductCount), [orderedListProducts, visibleMenuProductCount]);
-  const visibleCategoryGroups = useMemo(() => regularCategories
-    .map((category) => ({
-      category,
-      products: visibleOrderedListProducts
-        .filter((item) => item.categorySlug === category.slug)
-        .map((item) => item.product)
-    }))
-    .filter((group) => group.products.length), [regularCategories, visibleOrderedListProducts]);
-  const visibleProductsWithoutCategory = useMemo(() => visibleOrderedListProducts
-    .filter((item) => item.categorySlug === "__uncategorized")
-    .map((item) => item.product), [visibleOrderedListProducts]);
-  const hasMoreListProducts = visibleMenuProductCount < orderedListProducts.length;
-  const shownListProductsCount = Math.min(visibleMenuProductCount, orderedListProducts.length);
+  const productsWithoutCategory = selectedCategorySlug === "all"
+    ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
+    : [];
   const headerCategories = useMemo(() => data.categories, [data.categories]);
-
-  useEffect(() => {
-    setVisibleMenuProductCount(MENU_PRODUCTS_PAGE_SIZE);
-  }, [data.products.length, selectedCollection, selectedMood]);
 
   useEffect(() => {
     if (selectedMood || selectedCollection) {
@@ -1421,8 +1389,9 @@ function MenuView({
       return;
     }
 
-    const categorySections = visibleCategoryGroups
-      .map((group) => ({ slug: group.category.slug, id: `category-section-${group.category.slug}` }));
+    const categorySections = regularCategories
+      .filter((category) => categoryProductsSource.some((product) => (product.category?.slug ?? product.categorySlug) === category.slug))
+      .map((category) => ({ slug: category.slug, id: `category-section-${category.slug}` }));
 
     function syncActiveCategoryToScroll() {
       if (Date.now() < manualCategoryScrollUntil.current) {
@@ -1456,7 +1425,7 @@ function MenuView({
       window.removeEventListener("scroll", syncActiveCategoryToScroll);
       window.removeEventListener("resize", syncActiveCategoryToScroll);
     };
-  }, [menuDisplayMode, selectedCategorySlug, showNestedCategoryStrip, visibleCategoryGroups]);
+  }, [categoryProductsSource, menuDisplayMode, regularCategories, selectedCategorySlug, showNestedCategoryStrip]);
 
   useEffect(() => {
     if (!showNestedCategoryStrip || !selectedCategorySlug) {
@@ -1497,14 +1466,7 @@ function MenuView({
   function selectCategory(slug: string) {
     manualCategoryScrollUntil.current = Date.now() + 900;
     setSelectedCategorySlug(slug);
-    const productIndex = orderedListProducts.findIndex((item) => item.categorySlug === slug);
-    const shouldExpand = menuDisplayMode === "list" && slug !== "all" && productIndex >= visibleMenuProductCount;
-
-    if (shouldExpand) {
-      setVisibleMenuProductCount(Math.ceil((productIndex + 1) / MENU_PRODUCTS_PAGE_SIZE) * MENU_PRODUCTS_PAGE_SIZE);
-    }
-
-    window.setTimeout(() => scrollToCategory(slug), shouldExpand ? 80 : 0);
+    scrollToCategory(slug);
   }
 
   function moveSpotlight(direction: -1 | 1) {
@@ -1781,7 +1743,12 @@ function MenuView({
 
           {menuDisplayMode === "list" ? (
             <section className={`product-list category-product-list-${productListLayout}`} id="menu-products-start">
-              {visibleCategoryGroups.map(({ category, products }) => {
+              {regularCategories.map((category) => {
+                const products = categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
+                if (!products.length) {
+                  return null;
+                }
+
                 return (
                   <div key={category.slug} id={`category-section-${category.slug}`}>
                     <h2 className="category-section-title">
@@ -1793,24 +1760,14 @@ function MenuView({
                   </div>
                 );
               })}
-              {visibleProductsWithoutCategory.length ? (
+              {productsWithoutCategory.length ? (
                 <div id="category-section-all-products">
                   <h2 className="category-section-title">
                     <span>{selectedMood || activeCategory?.name || allCategory?.name || "الكل"}</span>
                   </h2>
                   <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
-                    {visibleProductsWithoutCategory.map(renderProduct)}
+                    {productsWithoutCategory.map(renderProduct)}
                   </div>
-                </div>
-              ) : null}
-              {orderedListProducts.length ? (
-                <div className="menu-products-pagination">
-                  <span>عرض {shownListProductsCount} من {orderedListProducts.length}</span>
-                  {hasMoreListProducts ? (
-                    <button type="button" onClick={() => setVisibleMenuProductCount((current) => current + MENU_PRODUCTS_PAGE_SIZE)}>
-                      عرض المزيد
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
             </section>
@@ -2542,6 +2499,7 @@ function ProductRail({
   const railStartScrollLeft = useRef(0);
   const railDragMoved = useRef(false);
   const railRtlScrollType = useRef<"negative" | "reverse" | null>(null);
+  const railDragThreshold = 8;
 
   if (!products.length && !fillPlaceholders) {
     return null;
@@ -2580,6 +2538,7 @@ function ProductRail({
 
   const handleRailPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if ((event.target as HTMLElement | null)?.closest("a, button")) return;
     if (maxRailScroll(event.currentTarget) <= 1) return;
 
     railPointerId.current = event.pointerId;
@@ -2594,7 +2553,7 @@ function ProductRail({
     if (!rail || railPointerId.current !== event.pointerId) return;
 
     const deltaX = event.clientX - railPointerX.current;
-    if (Math.abs(deltaX) > 3) {
+    if (Math.abs(deltaX) > railDragThreshold) {
       railDragMoved.current = true;
     }
 
@@ -2643,17 +2602,16 @@ function ProductRail({
               scroll
               onClick={(event) => {
                 if (railDragMoved.current) {
-                  event.preventDefault();
-                  return;
+                  railDragMoved.current = false;
                 }
 
                 window.scrollTo(0, 0);
               }}
             >
               <ProductImageMedia product={product} />
+              <b>{product.name}</b>
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" /> : null}
             </Link>
-            <b>{product.name}</b>
-            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" /> : null}
             {onAddToCart ? (
               <button type="button" onClick={() => onAddToCart(product)} aria-label={`${t.addToCart} ${product.name}`}>
                 <ShoppingCart size={14} />

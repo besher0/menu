@@ -30,8 +30,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@menu.test");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [message, setMessage] = useState("");
 
@@ -109,11 +109,6 @@ export function LoginForm() {
           </button>
         </form>
 
-        <div className="login-hints">
-          <b>حسابات seed</b>
-          <span>Super Admin: admin@menu.test / password123</span>
-          <span>Owner: owner@abomalek.test / password123</span>
-        </div>
       </section>
 
       <section className="login-preview">
