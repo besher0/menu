@@ -88,7 +88,7 @@ export async function parseProductImportWorkbook(buffer: Buffer, fallbackMoodOpt
 
   const workbookMoodOptions = readMoodOptions(workbook);
   const fallbackMoodOptionRecords = normalizeMoodOptions(fallbackMoodOptions);
-  const moodOptionRecords = workbookMoodOptions.length ? workbookMoodOptions : fallbackMoodOptionRecords;
+  const moodOptionRecords = fallbackMoodOptionRecords.length ? fallbackMoodOptionRecords : workbookMoodOptions;
   const moodOptions = moodOptionRecords.map((item) => item.key);
   if (workbook.getWorksheet("__meta") && !workbookMoodOptions.length) {
     globalErrors.push("بيانات المزاج داخل النموذج غير موجودة. حمّل النموذج من الداشبورد واستخدمه للاستيراد.");

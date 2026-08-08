@@ -5020,6 +5020,32 @@ body:has(.public-page)::-webkit-scrollbar {
   scroll-margin-top: 85px;
 }
 
+.menu-products-pagination {
+  align-items: center;
+  color: #596171;
+  display: grid;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 10px;
+  justify-items: center;
+  padding: 4px 0 18px;
+}
+
+.menu-products-pagination button {
+  align-items: center;
+  background: var(--color-secondary);
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  justify-content: center;
+  min-height: 42px;
+  min-width: 138px;
+  padding: 0 18px;
+}
+
 .category-spotlight {
   align-items: center;
   display: grid;
