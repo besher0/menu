@@ -7,20 +7,33 @@ function normalize(value: string) {
 }
 
 function text(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return "";
+}
+
+function jsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.items)) return record.items;
+  if (Array.isArray(record.data)) return record.data;
+  if (Array.isArray(record.values)) return record.values;
+  return [];
 }
 
 function ingredientName(item: unknown) {
   if (typeof item === "string") return item.trim();
   if (!item || typeof item !== "object" || Array.isArray(item)) return "";
   const record = item as Record<string, unknown>;
-  return text(record.adminName) || text(record.displayName) || text(record.name);
+  return text(record.adminName) || text(record.displayName) || text(record.name) || text(record.label) || text(record.title) || text(record.value);
 }
 
 function ingredientDisplayName(item: unknown, fallback: string) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return fallback;
   const record = item as Record<string, unknown>;
-  return text(record.displayName) || text(record.name) || fallback;
+  return text(record.displayName) || text(record.name) || text(record.label) || text(record.title) || fallback;
 }
 
 function ingredientImageUrl(item: unknown) {
@@ -29,9 +42,13 @@ function ingredientImageUrl(item: unknown) {
 }
 
 function mealDetails(nutrition: unknown) {
-  if (!nutrition || typeof nutrition !== "object" || Array.isArray(nutrition)) return [];
+  if (Array.isArray(nutrition)) return nutrition;
+  if (!nutrition || typeof nutrition !== "object") return [];
   const record = nutrition as Record<string, unknown>;
-  if (Array.isArray(record.details)) return record.details;
+  const details = jsonArray(record.details);
+  if (details.length) return details;
+  const items = jsonArray(record.items);
+  if (items.length) return items;
 
   return [
     { label: "الوزن التقريبي", value: text(record.weight), icon: "scale" },
@@ -44,13 +61,13 @@ function mealDetails(nutrition: unknown) {
 function mealDetailAdminName(item: unknown) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return "";
   const record = item as Record<string, unknown>;
-  return text(record.adminName) || text(record.displayName) || text(record.label);
+  return text(record.adminName) || text(record.displayName) || text(record.label) || text(record.name) || text(record.title);
 }
 
 function mealDetailDisplayName(item: unknown, fallback: string) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return fallback;
   const record = item as Record<string, unknown>;
-  return text(record.displayName) || text(record.label) || fallback;
+  return text(record.displayName) || text(record.label) || text(record.name) || text(record.title) || fallback;
 }
 
 async function main() {
@@ -62,8 +79,7 @@ async function main() {
   let details = 0;
 
   for (const product of products) {
-    if (Array.isArray(product.ingredients)) {
-      for (const item of product.ingredients) {
+    for (const item of jsonArray(product.ingredients)) {
         const adminName = ingredientName(item);
         if (!adminName) continue;
         await prisma.ingredientLibraryItem.upsert({
@@ -84,7 +100,6 @@ async function main() {
           }
         });
         ingredients += 1;
-      }
     }
 
     for (const item of mealDetails(product.nutrition)) {
@@ -104,9 +119,9 @@ async function main() {
           adminName,
           adminNameNormalized: normalize(adminName),
           displayName: mealDetailDisplayName(item, adminName),
-          value: text(record.value) || null,
+          value: text(record.value) || text(record.amount) || null,
           icon: text(record.icon) || "utensils",
-          iconUrl: text(record.iconUrl) || null,
+          iconUrl: text(record.iconUrl) || text(record.imageUrl) || null,
           isActive: true
         }
       });

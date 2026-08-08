@@ -55,7 +55,14 @@ export type ProductImportParseResult = {
   totalImages: number;
 };
 
-export async function parseProductImportWorkbook(buffer: Buffer): Promise<ProductImportParseResult> {
+export type ProductImportMoodOption = string | { key: string; label?: string };
+
+type NormalizedMoodOption = {
+  key: string;
+  label: string;
+};
+
+export async function parseProductImportWorkbook(buffer: Buffer, fallbackMoodOptions: ProductImportMoodOption[] = []): Promise<ProductImportParseResult> {
   const globalErrors: string[] = [];
   const workbook = new ExcelJS.Workbook();
 
@@ -79,8 +86,11 @@ export async function parseProductImportWorkbook(buffer: Buffer): Promise<Produc
     return { globalErrors: ["لا يوجد sheet قابل للاستيراد داخل ملف Excel"], rows: [], moodOptions: [], totalImages: 0 };
   }
 
-  const moodOptions = readMoodOptions(workbook);
-  if (workbook.getWorksheet("__meta") && !moodOptions.length) {
+  const workbookMoodOptions = readMoodOptions(workbook);
+  const fallbackMoodOptionRecords = normalizeMoodOptions(fallbackMoodOptions);
+  const moodOptionRecords = workbookMoodOptions.length ? workbookMoodOptions : fallbackMoodOptionRecords;
+  const moodOptions = moodOptionRecords.map((item) => item.key);
+  if (workbook.getWorksheet("__meta") && !workbookMoodOptions.length) {
     globalErrors.push("بيانات المزاج داخل النموذج غير موجودة. حمّل النموذج من الداشبورد واستخدمه للاستيراد.");
   }
 
@@ -113,7 +123,7 @@ export async function parseProductImportWorkbook(buffer: Buffer): Promise<Produc
     const price = parsePrice(cellText(row.getCell(4)));
     const popular = parseBoolean(cellText(row.getCell(6)), "الأكثر طلباً");
     const isNew = parseBoolean(cellText(row.getCell(7)), "جديدنا");
-    const mood = parseMoodSelection(cellText(row.getCell(8)), moodOptions);
+    const mood = parseMoodSelection(cellText(row.getCell(8)), moodOptionRecords);
     const images = imagesByRow.get(rowNumber) ?? [];
 
     if (!name) errors.push("اسم الوجبة مطلوب");
@@ -151,32 +161,53 @@ export function parseBoolean(value: string, label = "القيمة") {
   return { valid: false, value: false, error: `${label} تقبل true أو false أو فراغ فقط` };
 }
 
-export function parseMoodSelection(value: string, moodOptions: string[]) {
+export function parseMoodSelection(value: string, moodOptions: ProductImportMoodOption[]) {
   const trimmed = value.trim();
   if (!trimmed) return { keys: [] as string[], errors: [] as string[] };
 
   const tokens = value.split(",");
   const errors: string[] = [];
   const keys: string[] = [];
+  const normalizedOptions = normalizeMoodOptions(moodOptions);
+  const positionalMode = tokens.every((token) => isBooleanToken(token));
 
-  tokens.forEach((token, index) => {
-    const parsed = parseBoolean(token, `شو مزاجك اليوم - الخيار ${index + 1}`);
-    if (!parsed.valid) {
-      errors.push(parsed.error);
-      return;
-    }
-
-    if (parsed.value) {
-      const moodKey = moodOptions[index];
-      if (moodKey) {
-        keys.push(moodKey);
-      } else {
-        errors.push(`لا يوجد خيار مزاج بالترتيب ${index + 1}`);
+  if (positionalMode) {
+    tokens.forEach((token, index) => {
+      const parsed = parseBoolean(token, `شو مزاجك اليوم - الخيار ${index + 1}`);
+      if (!parsed.valid) {
+        errors.push(parsed.error);
+        return;
       }
+
+      if (parsed.value) {
+        const moodKey = normalizedOptions[index]?.key;
+        if (moodKey) {
+          keys.push(moodKey);
+        } else {
+          errors.push(`لا يوجد خيار مزاج بالترتيب ${index + 1}`);
+        }
+      }
+    });
+
+    return { keys: uniqueStrings(keys), errors };
+  }
+
+  const byName = new Map<string, string>();
+  normalizedOptions.forEach((option) => {
+    byName.set(normalizeLookupValue(option.key), option.key);
+    byName.set(normalizeLookupValue(option.label), option.key);
+  });
+
+  splitNames(value).forEach((name) => {
+    const moodKey = byName.get(normalizeLookupValue(name));
+    if (moodKey) {
+      keys.push(moodKey);
+    } else {
+      errors.push(`خيار المزاج "${name}" غير موجود`);
     }
   });
 
-  return { keys, errors };
+  return { keys: uniqueStrings(keys), errors };
 }
 
 export function splitNames(value: string) {
@@ -190,6 +221,40 @@ export function splitNames(value: string) {
       seen.add(key);
       return true;
     });
+}
+
+function normalizeMoodOptions(options: ProductImportMoodOption[]): NormalizedMoodOption[] {
+  return options
+    .map((option) => {
+      if (typeof option === "string") {
+        const key = option.trim();
+        return key ? { key, label: key } : null;
+      }
+
+      const key = option.key.trim();
+      const label = option.label?.trim() || key;
+      return key ? { key, label } : null;
+    })
+    .filter((option): option is NormalizedMoodOption => Boolean(option));
+}
+
+function isBooleanToken(value: string) {
+  const normalized = value.trim().toLocaleLowerCase();
+  return !normalized || normalized === "true" || normalized === "false";
+}
+
+function normalizeLookupValue(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = normalizeLookupValue(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function repairNamespacedXlsx(buffer: Buffer) {
@@ -263,23 +328,24 @@ function validateHeaders(worksheet: ExcelJS.Worksheet) {
   return errors;
 }
 
-function readMoodOptions(workbook: ExcelJS.Workbook) {
+function readMoodOptions(workbook: ExcelJS.Workbook): NormalizedMoodOption[] {
   const meta = workbook.getWorksheet("__meta");
   if (!meta) return [];
 
-  const moods: Array<{ index: number; key: string }> = [];
+  const moods: Array<{ index: number; key: string; label: string }> = [];
   meta.eachRow((row) => {
     const type = cellText(row.getCell(1));
     if (type !== "mood") return;
 
     const index = Number(cellText(row.getCell(2)));
     const key = cellText(row.getCell(3)) || cellText(row.getCell(4));
+    const label = cellText(row.getCell(4)) || key;
     if (Number.isInteger(index) && index > 0 && key) {
-      moods.push({ index, key });
+      moods.push({ index, key, label });
     }
   });
 
-  return moods.sort((left, right) => left.index - right.index).map((item) => item.key);
+  return moods.sort((left, right) => left.index - right.index).map((item) => ({ key: item.key, label: item.label }));
 }
 
 function mapWorksheetImages(workbook: ExcelJS.Workbook, worksheet: ExcelJS.Worksheet) {

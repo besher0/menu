@@ -142,6 +142,11 @@ type ImportPreviewRow = {
   name: string;
   category: string;
   basePrice: number | null;
+  isPopular: boolean;
+  isNew: boolean;
+  moodKeys: string[];
+  ingredients: string[];
+  mealDetails: string[];
   imagesCount: number;
   isValid: boolean;
   errors: string[];
@@ -556,7 +561,8 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
   const [status, setStatus] = useState<"idle" | "previewing" | "importing" | "error">("idle");
   const [message, setMessage] = useState("");
 
-  const canImport = Boolean(file && preview && !preview.globalErrors.length && preview.rows.every((row) => row.isValid));
+  const importBlockReason = getImportBlockReason(file, preview);
+  const canImport = Boolean(file && preview && !importBlockReason);
 
   async function downloadTemplate() {
     setMessage("");
@@ -599,7 +605,7 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
         body: formData
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.message ?? "تعذر قراءة ملف Excel.");
+      if (!response.ok) throw new Error(readApiErrorMessage(payload, "تعذر قراءة ملف Excel."));
 
       setPreview(unwrapData<ImportPreview>(payload));
       setStatus("idle");
@@ -611,7 +617,11 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
   }
 
   async function importFile() {
-    if (!file || !canImport) return;
+    if (!file || !preview || !canImport) {
+      setStatus("error");
+      setMessage(importBlockReason || "اختر ملف Excel صالح قبل الاستيراد.");
+      return;
+    }
 
     setStatus("importing");
     setMessage("");
@@ -625,9 +635,12 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
         body: formData
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.message ?? "تعذر استيراد المنتجات.");
+      if (!response.ok) throw new Error(readApiErrorMessage(payload, "تعذر استيراد المنتجات."));
 
       const result = unwrapData<{ importedCount: number }>(payload);
+      if (!Number.isFinite(result.importedCount) || result.importedCount < 1) {
+        throw new Error("انتهى الاستيراد بدون إضافة منتجات. تأكد أن الملف يحتوي صفوف صالحة.");
+      }
       onImported(result.importedCount);
     } catch (error) {
       setStatus("error");
@@ -678,6 +691,7 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
               <span>الصور: {preview.summary.imagesCount}</span>
               <span>عدد الصفحات: {preview.summary.pages}</span>
             </div>
+            {importBlockReason ? <p className="form-message import-block-message">{importBlockReason}</p> : null}
             {preview.globalErrors.length ? (
               <ul className="import-error-list">
                 {preview.globalErrors.map((error) => <li key={error}>{error}</li>)}
@@ -691,6 +705,11 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
                     <th>المنتج</th>
                     <th>القسم</th>
                     <th>السعر</th>
+                    <th>الأكثر طلباً</th>
+                    <th>جديدنا</th>
+                    <th>شو مزاجك اليوم</th>
+                    <th>المكونات</th>
+                    <th>تفاصيل الوجبة</th>
                     <th>الصور</th>
                     <th>الحالة</th>
                   </tr>
@@ -702,6 +721,11 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
                       <td>{row.name || "-"}</td>
                       <td>{row.category || "-"}</td>
                       <td>{row.basePrice ?? "-"}</td>
+                      <td>{row.isPopular ? "نعم" : "-"}</td>
+                      <td>{row.isNew ? "نعم" : "-"}</td>
+                      <td>{formatImportPreviewList(row.moodKeys)}</td>
+                      <td>{formatImportPreviewList(row.ingredients)}</td>
+                      <td>{formatImportPreviewList(row.mealDetails)}</td>
                       <td>{row.imagesCount}</td>
                       <td>{row.isValid ? "جاهز" : row.errors.join(" | ")}</td>
                     </tr>
@@ -727,6 +751,31 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
 function unwrapData<T>(payload: unknown): T {
   const record = payload && typeof payload === "object" ? payload as { data?: T } : {};
   return (record.data ?? payload) as T;
+}
+
+function getImportBlockReason(file: File | null, preview: ImportPreview | null) {
+  if (!file) return "";
+  if (!preview) return "بانتظار قراءة ملف Excel.";
+  if (preview.globalErrors.length) return preview.globalErrors[0];
+  if (preview.summary.invalidRows > 0) return `يوجد ${preview.summary.invalidRows} صف غير صالح. أصلح الأخطاء الظاهرة في الجدول ثم أعد الاستيراد.`;
+  if (preview.summary.validRows < 1) return "لا يوجد منتجات صالحة للاستيراد داخل الملف.";
+  return "";
+}
+
+function formatImportPreviewList(values: string[] | undefined) {
+  return values?.length ? values.join("، ") : "-";
+}
+
+function readApiErrorMessage(payload: unknown, fallback: string) {
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const data = record.data && typeof record.data === "object" ? record.data as Record<string, unknown> : {};
+  const preview = (record.preview && typeof record.preview === "object" ? record.preview : data.preview) as ImportPreview | undefined;
+  const message = record.message ?? record.error ?? data.message;
+
+  if (Array.isArray(message)) return message.join(" | ");
+  if (typeof message === "string" && message.trim()) return message;
+  if (preview?.globalErrors?.length) return preview.globalErrors.join(" | ");
+  return fallback;
 }
 
 export function RestaurantCategoriesClient() {

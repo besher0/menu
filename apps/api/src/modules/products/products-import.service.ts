@@ -9,6 +9,7 @@ import {
   parseProductImportWorkbook,
   PRODUCT_IMPORT_COLUMNS,
   PRODUCT_IMPORT_LIMITS,
+  ProductImportMoodOption,
   ProductImportParsedImage,
   ProductImportParsedRow
 } from "./import/product-import-parser";
@@ -63,9 +64,23 @@ export class ProductsImportService {
       { width: 36 }
     ];
     products.getRow(1).font = { bold: true };
-    products.getCell("H2").note = "مثال: true,,true يعني اختيار المزاج الأول والثالث حسب ترتيب الشيت المخفي.";
+    const moodLabels = context.moodOptions.map((item) => item.label).join("، ");
+    const moodPrompt = moodLabels
+      ? `اكتب true,,true حسب الترتيب، أو اكتب أسماء الخيارات مفصولة بفواصل: ${moodLabels}`
+      : "لا يوجد خيارات مزاج فعالة لهذا المطعم.";
+    products.getCell("H2").note = moodPrompt;
     products.getCell("F2").note = "اكتب true أو false أو اتركها فارغة.";
     products.getCell("G2").note = "اكتب true أو false أو اتركها فارغة.";
+    for (let rowNumber = 2; rowNumber <= 501; rowNumber += 1) {
+      products.getCell(`H${rowNumber}`).dataValidation = {
+        type: "textLength",
+        operator: "greaterThanOrEqual",
+        formulae: [0],
+        showInputMessage: true,
+        promptTitle: "شو مزاجك اليوم",
+        prompt: moodPrompt.slice(0, 255)
+      };
+    }
 
     const instructions = workbook.addWorksheet("Instructions", { views: [{ rightToLeft: true }] });
     instructions.addRows([
@@ -74,7 +89,8 @@ export class ProductsImportService {
       ["2. ضع صور المنتج كصور embedded داخل الخلية/منطقة العمود A في نفس صف المنتج."],
       ["3. أسماء الأقسام والمكونات وتفاصيل الوجبة يجب أن تطابق اسم الإدارة."],
       ["4. قيم true/false يجب كتابتها بالإنكليزي، والفراغ يعني false."],
-      ["5. شو مزاجك اليوم يستخدم ترتيب الخيارات: true,,true يعني الأول والثالث."],
+      ["5. شو مزاجك اليوم يقبل true,,true حسب الترتيب، أو أسماء الخيارات مباشرة مفصولة بفواصل."],
+      ["خيارات شو مزاجك اليوم المتاحة", moodLabels || "لا يوجد خيارات حالياً"],
       [],
       ["الأقسام المتاحة"],
       ...Array.from(context.categories.values()).flat().map((category) => [category.name]),
@@ -89,6 +105,14 @@ export class ProductsImportService {
       ...context.moodOptions.map((item, index) => [`${index + 1}`, item.key, item.label])
     ]);
     instructions.columns = [{ width: 32 }, { width: 36 }, { width: 24 }];
+
+    const mood = workbook.addWorksheet("Mood Options", { views: [{ rightToLeft: true }] });
+    mood.addRow(["الترتيب", "اسم الإدارة / المفتاح", "الاسم الظاهر"]);
+    context.moodOptions.forEach((item, index) => {
+      mood.addRow([index + 1, item.key, item.label]);
+    });
+    mood.columns = [{ width: 14 }, { width: 32 }, { width: 32 }];
+    mood.getRow(1).font = { bold: true };
 
     const meta = workbook.addWorksheet("__meta");
     meta.state = "hidden";
@@ -109,8 +133,8 @@ export class ProductsImportService {
 
   async preview(restaurantId: string, file: Express.Multer.File) {
     this.assertExcelFile(file);
-    const parsed = await this.parseWorkbookOrThrow(file.buffer);
     const context = await this.loadContext(restaurantId);
+    const parsed = await this.parseWorkbookOrThrow(file.buffer, context.moodOptions);
     const validatedRows = this.validateRows(parsed.rows, context);
     const validRows = validatedRows.filter((row) => row.isValid).length;
     const globalErrors = [...parsed.globalErrors, ...this.limitErrors(context, validRows)];
@@ -141,8 +165,8 @@ export class ProductsImportService {
       });
     }
 
-    const parsed = await this.parseWorkbookOrThrow(file.buffer);
     const context = await this.loadContext(restaurantId);
+    const parsed = await this.parseWorkbookOrThrow(file.buffer, context.moodOptions);
     const rows = this.validateRows(parsed.rows, context).filter((row) => row.isValid);
     const uploaded: StoredUpload[] = [];
 
@@ -189,6 +213,8 @@ export class ProductsImportService {
   }
 
   private async loadContext(restaurantId: string): Promise<ImportContext> {
+    await this.productLibrary.backfillLegacyLibrary(restaurantId);
+
     const [restaurant, categories, ingredients, mealDetails, productCount, productLimit, maxSort, moodOptions] = await Promise.all([
       this.prisma.restaurant.findUniqueOrThrow({
         where: { id: restaurantId },
@@ -345,9 +371,9 @@ export class ProductsImportService {
     };
   }
 
-  private async parseWorkbookOrThrow(buffer: Buffer) {
+  private async parseWorkbookOrThrow(buffer: Buffer, fallbackMoodOptions: ProductImportMoodOption[] = []) {
     try {
-      return await parseProductImportWorkbook(buffer);
+      return await parseProductImportWorkbook(buffer, fallbackMoodOptions);
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : "ملف Excel غير صالح");
     }
@@ -380,27 +406,30 @@ export class ProductsImportService {
   private async loadMoodOptions(restaurantId: string) {
     const sections = await this.prisma.menuSection.findMany({
       where: {
-        type: "MOOD_STRIP",
         isActive: true,
         page: { menu: { restaurantId } }
       },
-      select: { settings: true, sortOrder: true },
-      orderBy: { sortOrder: "asc" },
-      take: 3
+      select: { type: true, settings: true, sortOrder: true },
+      orderBy: { sortOrder: "asc" }
     });
-    const section = sections.find((item) => {
-      const settings = item.settings as Record<string, unknown>;
-      return Array.isArray(settings?.moodItems) && settings.moodItems.length;
-    });
-    const settings = section?.settings as { moodItems?: Array<{ key?: string; label?: string }> } | undefined;
 
-    return (settings?.moodItems ?? [])
+    const section = sections.find((item) => item.type === "MOOD_STRIP" && this.extractMoodItems(item.settings).length)
+      ?? sections.find((item) => this.extractMoodItems(item.settings).length);
+
+    return this.extractMoodItems(section?.settings)
       .map((item) => {
         const label = item.label?.trim() ?? "";
         const key = item.key?.trim() || label;
         return label ? { key, label } : null;
       })
       .filter((item): item is { key: string; label: string } => Boolean(item));
+  }
+
+  private extractMoodItems(settings: Prisma.JsonValue | undefined) {
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) return [];
+    const record = settings as { moodItems?: unknown; items?: unknown };
+    const items = Array.isArray(record.moodItems) ? record.moodItems : Array.isArray(record.items) ? record.items : [];
+    return items.filter((item): item is { key?: string; label?: string } => Boolean(item && typeof item === "object" && !Array.isArray(item)));
   }
 
   private normalize(value: string) {

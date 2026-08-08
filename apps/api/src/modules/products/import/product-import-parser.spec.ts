@@ -38,6 +38,15 @@ async function workbookBuffer(rows: unknown[][], images: Array<{ row: number; co
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
+async function workbookBufferWithoutMeta(rows: unknown[][]) {
+  const workbook = new ExcelJS.Workbook();
+  const products = workbook.addWorksheet("Products");
+  products.addRow([...PRODUCT_IMPORT_COLUMNS]);
+  rows.forEach((row) => products.addRow(row));
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 describe("product import parser", () => {
   it("parses a product with one embedded image", async () => {
     const buffer = await workbookBuffer([
@@ -89,6 +98,26 @@ describe("product import parser", () => {
   it("parses positional mood selections and preserves blanks", () => {
     expect(parseMoodSelection("true,,true", ["a", "b", "c"])).toEqual({ keys: ["a", "c"], errors: [] });
     expect(parseMoodSelection("", ["a"])).toEqual({ keys: [], errors: [] });
+  });
+
+  it("parses mood selections by key or label", () => {
+    expect(parseMoodSelection("hot, سريع, hot", [
+      { key: "hot", label: "حار" },
+      { key: "fast", label: "سريع" }
+    ])).toEqual({ keys: ["hot", "fast"], errors: [] });
+    expect(parseMoodSelection("غير موجود", [{ key: "hot", label: "حار" }]).errors).toContain("خيار المزاج \"غير موجود\" غير موجود");
+  });
+
+  it("uses fallback mood options when the workbook has no meta sheet", async () => {
+    const buffer = await workbookBufferWithoutMeta([
+      ["", "ظ…ظ†طھط¬", "ظ‚ط³ظ…", 10, "", "", "", "true,,true", "", ""]
+    ]);
+
+    const parsed = await parseProductImportWorkbook(buffer, ["ط®ظپظٹظپ", "ط­ط§ط±", "ط¨ط§ط±ط¯"]);
+
+    expect(parsed.globalErrors).toEqual([]);
+    expect(parsed.moodOptions).toEqual(["ط®ظپظٹظپ", "ط­ط§ط±", "ط¨ط§ط±ط¯"]);
+    expect(parsed.rows[0].moodKeys).toEqual(["ط®ظپظٹظپ", "ط¨ط§ط±ط¯"]);
   });
 
   it("removes duplicate split names", () => {

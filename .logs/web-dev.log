@@ -1,0 +1,22 @@
+
+> @menu/web@0.1.0 dev
+> next dev -p 3000 --hostname 0.0.0.0
+
+   ▲ Next.js 15.5.19
+   - Local:        http://localhost:3000
+   - Network:      http://0.0.0.0:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.3s
+ ○ Compiling /login ...
+ ✓ Compiled /login in 969ms (555 modules)
+ GET /login 200 in 1435ms
+ ○ Compiling /dashboard/media ...
+ ✓ Compiled /dashboard/media in 653ms (686 modules)
+ GET /dashboard/media 200 in 1128ms
+ ○ Compiling /dashboard/categories ...
+ ✓ Compiled /dashboard/categories in 749ms (708 modules)
+ GET /dashboard/categories 200 in 967ms
+ ✓ Compiled /dashboard in 365ms (713 modules)
+ GET /dashboard 200 in 488ms

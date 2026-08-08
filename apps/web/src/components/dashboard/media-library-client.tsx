@@ -1,57 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ImageIcon, Loader2, Plus, RefreshCcw, Rotate3D, Save, Settings2, View } from "lucide-react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { Loader2, Plus, RefreshCcw } from "lucide-react";
 import { authHeaders } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
-type MediaType = "IMAGE" | "MODEL_3D" | "VR_PANORAMA" | "SVG_ICON" | "PNG_ICON";
-type ImageRuleTarget = "PRODUCT_IMAGE" | "CATEGORY_IMAGE" | "HERO_IMAGE" | "GALLERY_IMAGE" | "LOGO" | "ICON";
-type MediaPageTab = "media" | "ingredients" | "meal-details";
-
-type MediaVariant = {
-  id: string;
-  kind: string;
-  url: string;
-  width?: number | null;
-  height?: number | null;
-  format: string;
-  quality?: number | null;
-};
-
-type MediaAsset = {
-  id: string;
-  url: string;
-  originalUrl?: string | null;
-  type: MediaType;
-  altText?: string | null;
-  filename?: string | null;
-  originalFilename?: string | null;
-  mimeType?: string | null;
-  width?: number | null;
-  height?: number | null;
-  size?: number | null;
-  provider: string;
-  blurDataUrl?: string | null;
-  createdAt: string;
-  variants?: MediaVariant[];
-};
-
-type ImageRule = {
-  id: string;
-  target: ImageRuleTarget;
-  maxWidth?: number | null;
-  maxHeight?: number | null;
-  jpegQuality: number;
-  webpQuality: number;
-  cropMode: string;
-  aspectRatio?: string | null;
-  generateAvif: boolean;
-  generateWebp: boolean;
-  lazyLoad: boolean;
-  progressive: boolean;
-};
+type MediaPageTab = "ingredients" | "meal-details";
 
 type IngredientLibraryItem = {
   id: string;
@@ -85,87 +40,23 @@ type MealDetailDraft = {
   iconUrl: string;
 };
 
-type RuleDraft = {
-  target: ImageRuleTarget;
-  maxWidth: string;
-  maxHeight: string;
-  jpegQuality: string;
-  webpQuality: string;
-  cropMode: string;
-  aspectRatio: string;
-  generateAvif: boolean;
-  generateWebp: boolean;
-  lazyLoad: boolean;
-  progressive: boolean;
-};
-
 type ApiPayload<T> = {
   data?: T;
-};
-
-const typeOptions: Array<{ value: MediaType; label: string }> = [
-  { value: "IMAGE", label: "صورة" },
-  { value: "SVG_ICON", label: "أيقونة SVG" },
-  { value: "PNG_ICON", label: "أيقونة PNG" },
-  { value: "MODEL_3D", label: "ملف 3D" },
-  { value: "VR_PANORAMA", label: "بانوراما VR" }
-];
-
-const targetLabels: Record<ImageRuleTarget, string> = {
-  PRODUCT_IMAGE: "صور المنتجات",
-  CATEGORY_IMAGE: "صور التصنيفات",
-  HERO_IMAGE: "صور الهيرو",
-  GALLERY_IMAGE: "المعرض",
-  LOGO: "الشعارات",
-  ICON: "الأيقونات"
-};
-
-const defaultRuleDraft: RuleDraft = {
-  target: "PRODUCT_IMAGE",
-  maxWidth: "1920",
-  maxHeight: "1440",
-  jpegQuality: "82",
-  webpQuality: "82",
-  cropMode: "contain",
-  aspectRatio: "",
-  generateAvif: true,
-  generateWebp: true,
-  lazyLoad: true,
-  progressive: true
 };
 
 const defaultIngredientDraft: IngredientDraft = { adminName: "", displayName: "", imageUrl: "" };
 const defaultMealDetailDraft: MealDetailDraft = { adminName: "", displayName: "", value: "", icon: "utensils", iconUrl: "" };
 
 export function MediaLibraryClient() {
-  const [activeTab, setActiveTab] = useState<MediaPageTab>("media");
-  const [assets, setAssets] = useState<MediaAsset[]>([]);
-  const [rules, setRules] = useState<ImageRule[]>([]);
+  const [activeTab, setActiveTab] = useState<MediaPageTab>("ingredients");
   const [ingredients, setIngredients] = useState<IngredientLibraryItem[]>([]);
   const [mealDetails, setMealDetails] = useState<MealDetailLibraryItem[]>([]);
   const [ingredientDraft, setIngredientDraft] = useState<IngredientDraft>(defaultIngredientDraft);
   const [mealDetailDraft, setMealDetailDraft] = useState<MealDetailDraft>(defaultMealDetailDraft);
-  const [ruleDraft, setRuleDraft] = useState<RuleDraft>(defaultRuleDraft);
-  const [url, setUrl] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [type, setType] = useState<MediaType>("IMAGE");
-  const [altText, setAltText] = useState("");
-  const [filter, setFilter] = useState<MediaType | "ALL">("ALL");
+  const [ingredientImageFile, setIngredientImageFile] = useState<File | null>(null);
+  const [mealDetailIconFile, setMealDetailIconFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
-
-  const selectedRule = useMemo(
-    () => rules.find((rule) => rule.target === ruleDraft.target),
-    [ruleDraft.target, rules]
-  );
-
-  useEffect(() => {
-    void loadAssets();
-  }, [filter]);
-
-  useEffect(() => {
-    void loadRules();
-  }, []);
 
   useEffect(() => {
     if (activeTab === "ingredients") {
@@ -176,146 +67,18 @@ export function MediaLibraryClient() {
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    if (!selectedRule) {
-      return;
-    }
-
-    setRuleDraft({
-      target: selectedRule.target,
-      maxWidth: String(selectedRule.maxWidth ?? ""),
-      maxHeight: String(selectedRule.maxHeight ?? ""),
-      jpegQuality: String(selectedRule.jpegQuality),
-      webpQuality: String(selectedRule.webpQuality),
-      cropMode: selectedRule.cropMode,
-      aspectRatio: selectedRule.aspectRatio ?? "",
-      generateAvif: selectedRule.generateAvif,
-      generateWebp: selectedRule.generateWebp,
-      lazyLoad: selectedRule.lazyLoad,
-      progressive: selectedRule.progressive
-    });
-  }, [selectedRule?.id]);
-
-  async function loadAssets() {
+  async function loadIngredients() {
     setStatus("loading");
     setMessage("");
-
-    try {
-      const query = filter === "ALL" ? "" : `?type=${filter}`;
-      const response = await fetch(`${API_URL}/dashboard/media${query}`, {
-        headers: authHeaders()
-      });
-
-      if (!response.ok) {
-        throw new Error("تعذر تحميل مكتبة الوسائط.");
-      }
-
-      const payload = (await response.json()) as ApiPayload<MediaAsset[]> | MediaAsset[];
-      setAssets(Array.isArray(payload) ? payload : payload.data ?? []);
-      setStatus("idle");
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر تحميل مكتبة الوسائط.");
-    }
-  }
-
-  async function loadRules() {
-    try {
-      const response = await fetch(`${API_URL}/dashboard/media/rules`, {
-        headers: authHeaders()
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      const payload = (await response.json()) as ApiPayload<ImageRule[]> | ImageRule[];
-      setRules(Array.isArray(payload) ? payload : payload.data ?? []);
-    } catch {
-      // The media library can still work if rules are not available yet.
-    }
-  }
-
-  async function createAsset(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus("saving");
-    setMessage("");
-
-    try {
-      const response = await fetch(`${API_URL}/dashboard/media`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders()
-        },
-        body: JSON.stringify({ url, type, altText })
-      });
-
-      if (!response.ok) {
-        throw new Error("تعذر إضافة الملف. تأكد أن الباقة تدعم نوع الوسائط المختار.");
-      }
-
-      const payload = (await response.json()) as ApiPayload<MediaAsset> | MediaAsset;
-      const asset = unwrapAsset(payload);
-      setAssets((current) => [asset, ...current]);
-      setUrl("");
-      setAltText("");
-      setStatus("success");
-      setMessage("تمت إضافة الوسائط وإنشاء النسخ المحسنة.");
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر إضافة الوسائط.");
-    }
-  }
-
-  async function uploadAsset() {
-    if (!file) {
-      setStatus("error");
-      setMessage("اختر ملفاً أولاً.");
-      return;
-    }
-
-    setStatus("saving");
-    setMessage("");
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", type);
-      formData.append("altText", altText || file.name);
-
-      const response = await fetch(`${API_URL}/dashboard/media/upload`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error("تعذر رفع الملف. تحقق من الباقة وحجم الملف.");
-      }
-
-      const payload = (await response.json()) as ApiPayload<MediaAsset> | MediaAsset;
-      const asset = unwrapAsset(payload);
-      setAssets((current) => [asset, ...current]);
-      setFile(null);
-      setAltText("");
-      setStatus("success");
-      setMessage("تم رفع الملف وإضافته إلى محرك الوسائط.");
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر رفع الوسائط.");
-    }
-  }
-
-  async function loadIngredients() {
     try {
       const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
         headers: authHeaders(),
         cache: "no-store"
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error("تعذر تحميل مكتبة المكونات.");
+      if (!response.ok) throw new Error(readApiErrorMessage(payload, "تعذر تحميل مكتبة المكونات."));
       setIngredients(unwrapList<IngredientLibraryItem>(payload));
+      setStatus("idle");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر تحميل مكتبة المكونات.");
@@ -328,18 +91,22 @@ export function MediaLibraryClient() {
     setMessage("");
 
     try {
+      const imageUrl = ingredientImageFile
+        ? await uploadLibraryFile(ingredientImageFile, "IMAGE", ingredientDraft.displayName || ingredientDraft.adminName || ingredientImageFile.name)
+        : ingredientDraft.imageUrl || undefined;
       const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           adminName: ingredientDraft.adminName,
           displayName: ingredientDraft.displayName,
-          imageUrl: ingredientDraft.imageUrl || undefined
+          imageUrl
         })
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.message ?? "تعذر حفظ المكون.");
+      if (!response.ok) throw new Error(readApiErrorMessage(payload, "تعذر حفظ المكون."));
       setIngredientDraft(defaultIngredientDraft);
+      setIngredientImageFile(null);
       setIngredients((current) => [unwrapData<IngredientLibraryItem>(payload), ...current]);
       setStatus("success");
       setMessage("تم حفظ المكون في المكتبة.");
@@ -358,11 +125,27 @@ export function MediaLibraryClient() {
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       setStatus("error");
-      setMessage(payload?.message ?? "تعذر تعديل المكون.");
+      setMessage(readApiErrorMessage(payload, "تعذر تعديل المكون."));
       return;
     }
     const updated = unwrapData<IngredientLibraryItem>(payload);
     setIngredients((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+  }
+
+  async function uploadIngredientImage(item: IngredientLibraryItem, file: File | null) {
+    if (!file) return;
+    setStatus("saving");
+    setMessage("");
+
+    try {
+      const imageUrl = await uploadLibraryFile(file, "IMAGE", item.displayName || item.adminName || file.name);
+      await updateIngredient(item, { imageUrl });
+      setStatus("success");
+      setMessage("تم تحديث صورة المكون.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع صورة المكون.");
+    }
   }
 
   async function deleteIngredient(item: IngredientLibraryItem) {
@@ -370,23 +153,27 @@ export function MediaLibraryClient() {
       method: "DELETE",
       headers: authHeaders()
     });
+    const payload = await response.json().catch(() => null);
     if (!response.ok) {
       setStatus("error");
-      setMessage("تعذر حذف المكون.");
+      setMessage(readApiErrorMessage(payload, "تعذر حذف المكون."));
       return;
     }
     setIngredients((current) => current.map((entry) => entry.id === item.id ? { ...entry, isActive: false } : entry));
   }
 
   async function loadMealDetails() {
+    setStatus("loading");
+    setMessage("");
     try {
       const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
         headers: authHeaders(),
         cache: "no-store"
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error("تعذر تحميل تفاصيل الوجبة.");
+      if (!response.ok) throw new Error(readApiErrorMessage(payload, "تعذر تحميل تفاصيل الوجبة."));
       setMealDetails(unwrapList<MealDetailLibraryItem>(payload));
+      setStatus("idle");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر تحميل تفاصيل الوجبة.");
@@ -399,6 +186,9 @@ export function MediaLibraryClient() {
     setMessage("");
 
     try {
+      const iconUrl = mealDetailIconFile
+        ? await uploadLibraryFile(mealDetailIconFile, "IMAGE", mealDetailDraft.displayName || mealDetailDraft.adminName || mealDetailIconFile.name)
+        : mealDetailDraft.iconUrl || undefined;
       const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -407,12 +197,13 @@ export function MediaLibraryClient() {
           displayName: mealDetailDraft.displayName,
           value: mealDetailDraft.value || undefined,
           icon: mealDetailDraft.icon || "utensils",
-          iconUrl: mealDetailDraft.iconUrl || undefined
+          iconUrl
         })
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.message ?? "تعذر حفظ التفصيل.");
+      if (!response.ok) throw new Error(readApiErrorMessage(payload, "تعذر حفظ التفصيل."));
       setMealDetailDraft(defaultMealDetailDraft);
+      setMealDetailIconFile(null);
       setMealDetails((current) => [unwrapData<MealDetailLibraryItem>(payload), ...current]);
       setStatus("success");
       setMessage("تم حفظ التفصيل في المكتبة.");
@@ -431,11 +222,27 @@ export function MediaLibraryClient() {
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       setStatus("error");
-      setMessage(payload?.message ?? "تعذر تعديل التفصيل.");
+      setMessage(readApiErrorMessage(payload, "تعذر تعديل التفصيل."));
       return;
     }
     const updated = unwrapData<MealDetailLibraryItem>(payload);
     setMealDetails((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+  }
+
+  async function uploadMealDetailIcon(item: MealDetailLibraryItem, file: File | null) {
+    if (!file) return;
+    setStatus("saving");
+    setMessage("");
+
+    try {
+      const iconUrl = await uploadLibraryFile(file, "IMAGE", item.displayName || item.adminName || file.name);
+      await updateMealDetail(item, { iconUrl });
+      setStatus("success");
+      setMessage("تم تحديث صورة التفصيل.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع صورة التفصيل.");
+    }
   }
 
   async function deleteMealDetail(item: MealDetailLibraryItem) {
@@ -443,66 +250,29 @@ export function MediaLibraryClient() {
       method: "DELETE",
       headers: authHeaders()
     });
+    const payload = await response.json().catch(() => null);
     if (!response.ok) {
       setStatus("error");
-      setMessage("تعذر حذف التفصيل.");
+      setMessage(readApiErrorMessage(payload, "تعذر حذف التفصيل."));
       return;
     }
     setMealDetails((current) => current.map((entry) => entry.id === item.id ? { ...entry, isActive: false } : entry));
-  }
-
-  async function saveRule(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus("saving");
-    setMessage("");
-
-    try {
-      const response = await fetch(`${API_URL}/dashboard/media/rules`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders()
-        },
-        body: JSON.stringify({
-          target: ruleDraft.target,
-          maxWidth: toNumber(ruleDraft.maxWidth),
-          maxHeight: toNumber(ruleDraft.maxHeight),
-          jpegQuality: toNumber(ruleDraft.jpegQuality),
-          webpQuality: toNumber(ruleDraft.webpQuality),
-          cropMode: ruleDraft.cropMode,
-          aspectRatio: ruleDraft.aspectRatio || undefined,
-          generateAvif: ruleDraft.generateAvif,
-          generateWebp: ruleDraft.generateWebp,
-          lazyLoad: ruleDraft.lazyLoad,
-          progressive: ruleDraft.progressive
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error("تعذر حفظ قواعد الصور.");
-      }
-
-      const payload = (await response.json()) as ApiPayload<ImageRule> | ImageRule;
-      const savedRule = unwrapRule(payload);
-      setRules((current) => [savedRule, ...current.filter((rule) => rule.target !== savedRule.target)]);
-      setStatus("success");
-      setMessage("تم حفظ قواعد الصور لهذا النوع.");
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر حفظ قواعد الصور.");
-    }
   }
 
   return (
     <div className="media-page">
       <section className="builder-top">
         <div>
-          <span className="eyebrow">Media Engine</span>
-          <h1>مكتبة الوسائط ومحرك الصور</h1>
-          <p>أدر الصور والأيقونات وملفات 3D من مكان واحد مع نسخ محسنة، تحميل تدريجي، وقواعد منفصلة لكل نوع.</p>
+          <span className="eyebrow">Library</span>
+          <h1>المكتبة</h1>
+          <p>أدر المكونات وتفاصيل الوجبة من مكان واحد.</p>
         </div>
         <div className="builder-actions">
-          <button type="button" onClick={loadAssets} disabled={status === "loading"}>
+          <button
+            type="button"
+            onClick={() => activeTab === "ingredients" ? void loadIngredients() : void loadMealDetails()}
+            disabled={status === "loading"}
+          >
             {status === "loading" ? <Loader2 className="spin" size={20} /> : <RefreshCcw size={20} />}
             تحديث
           </button>
@@ -512,159 +282,22 @@ export function MediaLibraryClient() {
       {message ? <p className={status === "success" ? "form-message success" : "form-message"}>{message}</p> : null}
 
       <div className="media-page-tabs">
-        <button type="button" className={activeTab === "media" ? "active" : ""} onClick={() => setActiveTab("media")}>الوسائط</button>
-        <button type="button" className={activeTab === "ingredients" ? "active" : ""} onClick={() => setActiveTab("ingredients")}>مكتبة المكونات</button>
+        <button type="button" className={activeTab === "ingredients" ? "active" : ""} onClick={() => setActiveTab("ingredients")}>المكونات</button>
         <button type="button" className={activeTab === "meal-details" ? "active" : ""} onClick={() => setActiveTab("meal-details")}>تفاصيل الوجبة</button>
       </div>
 
-      {activeTab === "media" ? (
-      <section className="media-layout">
-        <div className="media-sidebar">
-          <form className="media-form" onSubmit={createAsset}>
-            <h2>إضافة وسائط</h2>
-            <label>
-              <span>النوع</span>
-              <select value={type} onChange={(event) => setType(event.target.value as MediaType)}>
-                {typeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>الرابط</span>
-              <input value={url} onChange={(event) => setUrl(event.target.value)} required />
-            </label>
-            <label>
-              <span>أو ارفع ملف</span>
-              <input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-            </label>
-            <label>
-              <span>النص البديل</span>
-              <input value={altText} onChange={(event) => setAltText(event.target.value)} />
-            </label>
-            <button className="primary-action" type="submit" disabled={status === "saving"}>
-              {status === "saving" ? <Loader2 className="spin" size={20} /> : <Plus size={20} />}
-              إضافة من رابط
-            </button>
-            <button className="outline-action" type="button" onClick={uploadAsset} disabled={status === "saving"}>
-              رفع الملف
-            </button>
-          </form>
-
-          <form className="media-form media-rules-form" onSubmit={saveRule}>
-            <h2>
-              <Settings2 size={18} />
-              قواعد الصور
-            </h2>
-            <label>
-              <span>النوع</span>
-              <select
-                value={ruleDraft.target}
-                onChange={(event) => setRuleDraft((current) => ({ ...current, target: event.target.value as ImageRuleTarget }))}
-              >
-                {(Object.keys(targetLabels) as ImageRuleTarget[]).map((target) => (
-                  <option key={target} value={target}>
-                    {targetLabels[target]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="media-rule-grid">
-              <label>
-                <span>أقصى عرض</span>
-                <input value={ruleDraft.maxWidth} onChange={(event) => setRuleDraft((current) => ({ ...current, maxWidth: event.target.value }))} />
-              </label>
-              <label>
-                <span>أقصى ارتفاع</span>
-                <input value={ruleDraft.maxHeight} onChange={(event) => setRuleDraft((current) => ({ ...current, maxHeight: event.target.value }))} />
-              </label>
-              <label>
-                <span>JPEG</span>
-                <input value={ruleDraft.jpegQuality} onChange={(event) => setRuleDraft((current) => ({ ...current, jpegQuality: event.target.value }))} />
-              </label>
-              <label>
-                <span>WEBP</span>
-                <input value={ruleDraft.webpQuality} onChange={(event) => setRuleDraft((current) => ({ ...current, webpQuality: event.target.value }))} />
-              </label>
-            </div>
-            <label>
-              <span>نمط القص</span>
-              <select value={ruleDraft.cropMode} onChange={(event) => setRuleDraft((current) => ({ ...current, cropMode: event.target.value }))}>
-                <option value="contain">Contain</option>
-                <option value="cover">Cover</option>
-                <option value="fill">Fill</option>
-              </select>
-            </label>
-            <label>
-              <span>النسبة</span>
-              <input value={ruleDraft.aspectRatio} onChange={(event) => setRuleDraft((current) => ({ ...current, aspectRatio: event.target.value }))} placeholder="4:3" />
-            </label>
-            <div className="media-switches">
-              {[
-                ["generateWebp", "WebP"],
-                ["generateAvif", "AVIF"],
-                ["lazyLoad", "Lazy"],
-                ["progressive", "Progressive"]
-              ].map(([key, label]) => (
-                <label key={key}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(ruleDraft[key as keyof RuleDraft])}
-                    onChange={(event) => setRuleDraft((current) => ({ ...current, [key]: event.target.checked }))}
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
-            </div>
-            <button className="primary-action" type="submit" disabled={status === "saving"}>
-              <Save size={18} />
-              حفظ القواعد
-            </button>
-          </form>
-        </div>
-
-        <section className="media-panel">
-          <div className="media-tabs">
-            {(["ALL", "IMAGE", "SVG_ICON", "PNG_ICON", "MODEL_3D", "VR_PANORAMA"] as const).map((value) => (
-              <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>
-                {value === "ALL" ? "الكل" : typeOptions.find((option) => option.value === value)?.label}
-              </button>
-            ))}
-          </div>
-          <div className="media-grid">
-            {assets.map((asset) => (
-              <article className="media-card" key={asset.id}>
-                <div className="media-thumb">
-                  {asset.type === "IMAGE" || asset.type === "PNG_ICON" || asset.type === "SVG_ICON" ? (
-                    <img src={bestPreviewUrl(asset)} alt={asset.altText ?? "Media asset"} loading="lazy" />
-                  ) : (
-                    mediaIcon(asset.type)
-                  )}
-                </div>
-                <section>
-                  <h2>{asset.altText || asset.originalFilename || asset.type}</h2>
-                  <p>{asset.url}</p>
-                  <div className="media-card-meta">
-                    <span>{asset.provider}</span>
-                    <span>{asset.variants?.length ?? 0} نسخ</span>
-                  </div>
-                </section>
-              </article>
-            ))}
-          </div>
-        </section>
-      </section>
-      ) : activeTab === "ingredients" ? (
+      {activeTab === "ingredients" ? (
         <IngredientLibraryPanel
           draft={ingredientDraft}
           items={ingredients}
           saving={status === "saving"}
           onDraftChange={setIngredientDraft}
+          onFileChange={setIngredientImageFile}
           onSubmit={saveIngredient}
           onUpdate={(item, patch) => void updateIngredient(item, patch)}
+          onUploadImage={(item, file) => void uploadIngredientImage(item, file)}
           onDelete={(item) => void deleteIngredient(item)}
+          selectedFileName={ingredientImageFile?.name}
         />
       ) : (
         <MealDetailLibraryPanel
@@ -672,9 +305,12 @@ export function MediaLibraryClient() {
           items={mealDetails}
           saving={status === "saving"}
           onDraftChange={setMealDetailDraft}
+          onFileChange={setMealDetailIconFile}
           onSubmit={saveMealDetail}
           onUpdate={(item, patch) => void updateMealDetail(item, patch)}
+          onUploadIcon={(item, file) => void uploadMealDetailIcon(item, file)}
           onDelete={(item) => void deleteMealDetail(item)}
+          selectedFileName={mealDetailIconFile?.name}
         />
       )}
     </div>
@@ -686,17 +322,23 @@ function IngredientLibraryPanel({
   items,
   saving,
   onDraftChange,
+  onFileChange,
   onSubmit,
   onUpdate,
-  onDelete
+  onUploadImage,
+  onDelete,
+  selectedFileName
 }: {
   draft: IngredientDraft;
   items: IngredientLibraryItem[];
   saving: boolean;
   onDraftChange: (draft: IngredientDraft) => void;
+  onFileChange: (file: File | null) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdate: (item: IngredientLibraryItem, patch: Partial<IngredientLibraryItem>) => void;
+  onUploadImage: (item: IngredientLibraryItem, file: File | null) => void;
   onDelete: (item: IngredientLibraryItem) => void;
+  selectedFileName?: string;
 }) {
   return (
     <section className="library-panel">
@@ -711,8 +353,9 @@ function IngredientLibraryPanel({
           <input value={draft.displayName} onChange={(event) => onDraftChange({ ...draft, displayName: event.target.value })} required />
         </label>
         <label>
-          <span>رابط الصورة</span>
-          <input value={draft.imageUrl} onChange={(event) => onDraftChange({ ...draft, imageUrl: event.target.value })} placeholder="https://..." />
+          <span>صورة المكون</span>
+          <input accept="image/*" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} type="file" />
+          {selectedFileName ? <small className="library-file-name">{selectedFileName}</small> : null}
         </label>
         <button className="primary-action" type="submit" disabled={saving}>
           {saving ? <Loader2 className="spin" size={18} /> : <Plus size={18} />}
@@ -732,15 +375,25 @@ function IngredientLibraryPanel({
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {items.length ? items.map((item) => (
               <tr key={item.id}>
                 <td>{item.imageUrl ? <img className="library-thumb" src={item.imageUrl} alt="" /> : "-"}</td>
                 <td><input value={item.adminName} onChange={(event) => onUpdate(item, { adminName: event.target.value })} /></td>
                 <td><input value={item.displayName} onChange={(event) => onUpdate(item, { displayName: event.target.value })} /></td>
                 <td><button className="bare" type="button" onClick={() => onUpdate(item, { isActive: !item.isActive })}><StatusPill active={item.isActive} /></button></td>
-                <td><button className="danger-link" type="button" onClick={() => onDelete(item)}>حذف</button></td>
+                <td>
+                  <label className="library-upload-action">
+                    <input accept="image/*" disabled={saving} type="file" onChange={(event) => handleRowFile(event, (file) => onUploadImage(item, file))} />
+                    رفع صورة
+                  </label>
+                  <button className="danger-link" type="button" onClick={() => onDelete(item)}>حذف</button>
+                </td>
               </tr>
-            ))}
+            )) : (
+              <tr>
+                <td colSpan={5}><div className="library-empty">لا توجد مكونات محفوظة بعد.</div></td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -753,17 +406,23 @@ function MealDetailLibraryPanel({
   items,
   saving,
   onDraftChange,
+  onFileChange,
   onSubmit,
   onUpdate,
-  onDelete
+  onUploadIcon,
+  onDelete,
+  selectedFileName
 }: {
   draft: MealDetailDraft;
   items: MealDetailLibraryItem[];
   saving: boolean;
   onDraftChange: (draft: MealDetailDraft) => void;
+  onFileChange: (file: File | null) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onUpdate: (item: MealDetailLibraryItem, patch: Partial<MealDetailLibraryItem>) => void;
+  onUploadIcon: (item: MealDetailLibraryItem, file: File | null) => void;
   onDelete: (item: MealDetailLibraryItem) => void;
+  selectedFileName?: string;
 }) {
   return (
     <section className="library-panel">
@@ -786,8 +445,9 @@ function MealDetailLibraryPanel({
           <input value={draft.icon} onChange={(event) => onDraftChange({ ...draft, icon: event.target.value })} />
         </label>
         <label>
-          <span>رابط صورة الأيقونة</span>
-          <input value={draft.iconUrl} onChange={(event) => onDraftChange({ ...draft, iconUrl: event.target.value })} placeholder="https://..." />
+          <span>صورة التفصيل</span>
+          <input accept="image/*" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} type="file" />
+          {selectedFileName ? <small className="library-file-name">{selectedFileName}</small> : null}
         </label>
         <button className="primary-action" type="submit" disabled={saving}>
           {saving ? <Loader2 className="spin" size={18} /> : <Plus size={18} />}
@@ -808,45 +468,31 @@ function MealDetailLibraryPanel({
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {items.length ? items.map((item) => (
               <tr key={item.id}>
                 <td><input value={item.adminName} onChange={(event) => onUpdate(item, { adminName: event.target.value })} /></td>
                 <td><input value={item.displayName} onChange={(event) => onUpdate(item, { displayName: event.target.value })} /></td>
                 <td><input value={item.value ?? ""} onChange={(event) => onUpdate(item, { value: event.target.value })} /></td>
-                <td><input value={item.iconUrl || item.icon} onChange={(event) => onUpdate(item, event.target.value.startsWith("http") ? { iconUrl: event.target.value } : { icon: event.target.value })} /></td>
+                <td>{item.iconUrl ? <img className="library-thumb" src={item.iconUrl} alt="" /> : <input value={item.icon} onChange={(event) => onUpdate(item, { icon: event.target.value })} />}</td>
                 <td><button className="bare" type="button" onClick={() => onUpdate(item, { isActive: !item.isActive })}><StatusPill active={item.isActive} /></button></td>
-                <td><button className="danger-link" type="button" onClick={() => onDelete(item)}>حذف</button></td>
+                <td>
+                  <label className="library-upload-action">
+                    <input accept="image/*" disabled={saving} type="file" onChange={(event) => handleRowFile(event, (file) => onUploadIcon(item, file))} />
+                    رفع صورة
+                  </label>
+                  <button className="danger-link" type="button" onClick={() => onDelete(item)}>حذف</button>
+                </td>
               </tr>
-            ))}
+            )) : (
+              <tr>
+                <td colSpan={6}><div className="library-empty">لا توجد تفاصيل وجبة محفوظة بعد.</div></td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
     </section>
   );
-}
-
-function mediaIcon(type: MediaType) {
-  if (type === "MODEL_3D") {
-    return <Rotate3D size={42} />;
-  }
-
-  if (type === "VR_PANORAMA") {
-    return <View size={42} />;
-  }
-
-  return <ImageIcon size={42} />;
-}
-
-function bestPreviewUrl(asset: MediaAsset) {
-  return asset.variants?.find((variant) => variant.kind === "SMALL")?.url ?? asset.blurDataUrl ?? asset.url;
-}
-
-function unwrapAsset(payload: ApiPayload<MediaAsset> | MediaAsset): MediaAsset {
-  return (payload as ApiPayload<MediaAsset>).data ?? (payload as MediaAsset);
-}
-
-function unwrapRule(payload: ApiPayload<ImageRule> | ImageRule): ImageRule {
-  return (payload as ApiPayload<ImageRule>).data ?? (payload as ImageRule);
 }
 
 function unwrapData<T>(payload: unknown): T {
@@ -860,11 +506,46 @@ function unwrapList<T>(payload: unknown): T[] {
   return data?.data ?? [];
 }
 
-function StatusPill({ active }: { active: boolean }) {
-  return <span className={`status-pill ${active ? "active" : "inactive"}`}>{active ? "فعال" : "متوقف"}</span>;
+async function uploadLibraryFile(file: File, type: "IMAGE" | "PNG_ICON", altText: string) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("type", type);
+  body.append("altText", altText || file.name);
+
+  const response = await fetch(`${API_URL}/dashboard/media/upload`, {
+    method: "POST",
+    headers: authHeaders(),
+    body
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(readApiErrorMessage(payload, "تعذر رفع الصورة."));
+  }
+
+  const url = payload?.data?.url ?? payload?.url;
+  if (typeof url !== "string" || !url) {
+    throw new Error("تم الرفع بدون رابط صالح للصورة.");
+  }
+
+  return url;
 }
 
-function toNumber(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+function handleRowFile(event: ChangeEvent<HTMLInputElement>, onFile: (file: File | null) => void) {
+  onFile(event.target.files?.[0] ?? null);
+  event.target.value = "";
+}
+
+function readApiErrorMessage(payload: unknown, fallback: string) {
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const data = record.data && typeof record.data === "object" ? record.data as Record<string, unknown> : {};
+  const message = record.message ?? record.error ?? data.message;
+
+  if (Array.isArray(message)) return message.join(" | ");
+  if (typeof message === "string" && message.trim()) return message;
+  return fallback;
+}
+
+function StatusPill({ active }: { active: boolean }) {
+  return <span className={`status-pill ${active ? "active" : "inactive"}`}>{active ? "فعال" : "متوقف"}</span>;
 }

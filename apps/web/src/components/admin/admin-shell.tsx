@@ -50,7 +50,7 @@ const restaurantAdminNavItems = [
   { href: "/dashboard/analytics", label: "التحليلات", icon: BarChart3 },
   { href: "/dashboard/banners", label: "البنرات", icon: Image },
   { href: "/dashboard/builder", label: "منشئ الواجهة", icon: PanelsTopLeft },
-  { href: "/dashboard/media", label: "الوسائط", icon: Image },
+  { href: "/dashboard/media", label: "مكتبة", icon: Image },
   { href: "/dashboard/theme", label: "الثيمات", icon: Palette },
   { href: "/dashboard/branches", label: "الفروع", icon: MapPinned },
   { href: "/dashboard/qr", label: "رموز QR", icon: QrCode },

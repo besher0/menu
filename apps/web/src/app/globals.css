@@ -9738,6 +9738,40 @@ body {
   width: 100%;
 }
 
+.library-file-name {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 6px;
+}
+
+.library-upload-action {
+  align-items: center;
+  background: #eef2ff;
+  border-radius: 8px;
+  color: #3730a3;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 900;
+  justify-content: center;
+  margin-inline-end: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.library-upload-action input {
+  display: none;
+}
+
+.library-empty {
+  color: #64748b;
+  font-weight: 900;
+  padding: 18px;
+  text-align: center;
+}
+
 .library-thumb {
   border-radius: 8px;
   height: 42px;
