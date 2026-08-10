@@ -4424,7 +4424,7 @@ body:has(.public-page)::-webkit-scrollbar {
   overscroll-behavior-inline: contain;
   padding: 0 16px 10px;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: auto;
   user-select: none;
 }
 
@@ -4691,6 +4691,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .wide-product b {
   align-self: end;
+  color: #ffffff;
   font-size: 20px;
   font-weight: 900;
   line-height: 1.15;
@@ -5097,7 +5098,7 @@ body:has(.public-page)::-webkit-scrollbar {
   align-items: center;
   direction: ltr;
   display: flex;
-  bottom: 18px;
+  bottom: 30px;
   justify-content: center;
   left: 22px;
   padding: 0;
@@ -5106,20 +5107,11 @@ body:has(.public-page)::-webkit-scrollbar {
   z-index: 2;
 }
 
-.category-spotlight-controls .quantity-control {
-  flex-direction: column;
-  gap: 5px;
-  justify-self: flex-end;
-}
-
 .category-spotlight-controls .product-price {
   justify-content: flex-end;
 }
 
-.category-spotlight-copy .spotlight-price {
-  grid-row: 2;
-  justify-content: flex-start;
-  justify-self: start;
+.category-spotlight-controls .spotlight-price {
   line-height: 1.05;
   margin-top: 0;
 }
@@ -5180,7 +5172,17 @@ body:has(.public-page)::-webkit-scrollbar {
   align-items: center;
   display: flex;
   justify-content: center;
+  min-height: 34px;
+  position: relative;
   width: 100%;
+}
+
+.spotlight-actions .spotlight-quantity {
+  flex-direction: row;
+  left: 22px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .spotlight-pager {
@@ -5215,7 +5217,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .category-section-title::after {
-  background: linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--color-secondary) 18%, transparent) 12%, color-mix(in srgb, var(--color-secondary) 58%, #c9cdd4) 50%, color-mix(in srgb, var(--color-secondary) 18%, transparent) 88%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--color-text) 18%, transparent) 12%, color-mix(in srgb, var(--color-text) 58%, #c9cdd4) 50%, color-mix(in srgb, var(--color-text) 18%, transparent) 88%, transparent 100%);
   border-radius: 999px;
   box-shadow: none;
   content: "";

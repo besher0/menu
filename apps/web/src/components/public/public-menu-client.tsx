@@ -1715,20 +1715,21 @@ function MenuView({
                   <ProductImageMedia product={spotlightProduct} />
                   <div className="category-spotlight-copy">
                     <b>{spotlightProduct.name}</b>
-                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
                     {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
                   </div>
                 </button>
                 <div className="category-spotlight-controls">
-                  <QuantityControl
-                    quantity={getCartQuantity(spotlightProduct.slug)}
-                    onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
-                    onIncrease={() => addToCart(spotlightProduct)}
-                    label={spotlightProduct.name}
-                  />
+                  {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
                 </div>
               </article>
               <div className="spotlight-actions">
+                <QuantityControl
+                  className="spotlight-quantity"
+                  quantity={getCartQuantity(spotlightProduct.slug)}
+                  onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
+                  onIncrease={() => addToCart(spotlightProduct)}
+                  label={spotlightProduct.name}
+                />
                 <div className="spotlight-pager">
                   <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
                     <ChevronRight size={22} />
