@@ -4,7 +4,11 @@ import { restaurantSlugFromHost } from "@/lib/public-routes";
 const PUBLIC_FILE_PATTERN = /\/[^/]+\.[^/]+$/;
 
 export function middleware(request: NextRequest) {
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? request.nextUrl.host;
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const hostHeader = request.headers.get("host");
+
+  const host = forwardedHost ?? hostHeader ?? "";
+
   const restaurantSlug = restaurantSlugFromHost(host);
 
   if (!restaurantSlug) {
@@ -18,21 +22,27 @@ export function middleware(request: NextRequest) {
   }
 
   const rewriteUrl = request.nextUrl.clone();
-  rewriteUrl.pathname = `/m/${restaurantSlug}${pathname === "/" ? "" : pathname}`;
+
+  rewriteUrl.pathname =
+    pathname === "/"
+      ? `/m/${restaurantSlug}`
+      : `/m/${restaurantSlug}${pathname}`;
 
   return NextResponse.rewrite(rewriteUrl);
 }
 
 function shouldBypass(pathname: string) {
-  return pathname.startsWith("/_next")
-    || pathname.startsWith("/api")
-    || pathname.startsWith("/assets")
-    || pathname === "/m"
-    || pathname.startsWith("/m/")
-    || pathname === "/favicon.ico"
-    || pathname === "/manifest.webmanifest"
-    || pathname === "/sw.js"
-    || PUBLIC_FILE_PATTERN.test(pathname);
+  return (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/assets") ||
+    pathname === "/m" ||
+    pathname.startsWith("/m/") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/sw.js" ||
+    PUBLIC_FILE_PATTERN.test(pathname)
+  );
 }
 
 export const config = {
