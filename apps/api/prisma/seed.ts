@@ -166,8 +166,7 @@ async function seedRestaurant() {
   await prisma.restaurantThemeSettings.upsert({
     where: { restaurantId: restaurant.id },
     update: {
-      themeId: theme.id,
-      settings: ABO_MALEK_RESTAURANT.theme
+      themeId: theme.id
     },
     create: {
       restaurantId: restaurant.id,
@@ -276,33 +275,35 @@ async function seedRestaurant() {
     }
   });
 
-  await prisma.menuSection.deleteMany({ where: { pageId: homePage.id } });
-  await prisma.menuSection.createMany({
-    data: [
-      {
-        pageId: homePage.id,
-        type: "HERO",
-        sortOrder: 0,
-        settings: {
-          title: "شو مزاجك اليوم؟",
-          subtitle: "اختار أحد الأصناف وتصفح",
-          backgroundImageUrl: "/assets/public/menu-home.png"
+  const existingSectionCount = await prisma.menuSection.count({ where: { pageId: homePage.id } });
+  if (existingSectionCount === 0) {
+    await prisma.menuSection.createMany({
+      data: [
+        {
+          pageId: homePage.id,
+          type: "HERO",
+          sortOrder: 0,
+          settings: {
+            title: "شو مزاجك اليوم؟",
+            subtitle: "اختار أحد الأصناف وتصفح",
+            backgroundImageUrl: "/assets/public/menu-home.png"
+          }
+        },
+        {
+          pageId: homePage.id,
+          type: "CATEGORY_GRID",
+          sortOrder: 1,
+          settings: { layout: "horizontal-chips" }
+        },
+        {
+          pageId: homePage.id,
+          type: "FEATURED_PRODUCTS",
+          sortOrder: 2,
+          settings: { title: "الأكثر طلباً" }
         }
-      },
-      {
-        pageId: homePage.id,
-        type: "CATEGORY_GRID",
-        sortOrder: 1,
-        settings: { layout: "horizontal-chips" }
-      },
-      {
-        pageId: homePage.id,
-        type: "FEATURED_PRODUCTS",
-        sortOrder: 2,
-        settings: { title: "الأكثر طلباً" }
-      }
-    ]
-  });
+      ]
+    });
+  }
 
   await prisma.qrCode.upsert({
     where: { id: `${restaurant.id}-main-qr` },

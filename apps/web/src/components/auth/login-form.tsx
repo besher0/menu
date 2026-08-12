@@ -135,7 +135,7 @@ export function LoginForm() {
       <section className="login-preview">
         <img src="/assets/public/menu-home.png" alt="Abo Malek menu preview" />
         <div>
-          <b>منيوك جاهز للبناء</b>
+          <b>المنيو الخاص بك جاهز للبناء</b>
           <span>ابدأ بإضافة مطعمك الحقيقي ثم المنتجات والفروع والثيم.</span>
         </div>
       </section>

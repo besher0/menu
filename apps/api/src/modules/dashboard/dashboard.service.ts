@@ -535,16 +535,25 @@ export class DashboardService {
 
   async updateTheme(restaurantId: string, dto: UpdateThemeDto) {
     await this.featureFlags.assertFeature(restaurantId, "CUSTOM_THEMES");
+    const existing = await this.prisma.restaurantThemeSettings.findUnique({
+      where: { restaurantId }
+    });
+    const existingSettings = this.asJsonObject(existing?.settings);
+    const themeSettings = this.themeOwnedSettings(dto.settings);
+    const nextSettings = {
+      ...existingSettings,
+      ...themeSettings
+    };
 
     return this.prisma.restaurantThemeSettings.upsert({
       where: { restaurantId },
       create: {
         restaurantId,
-        settings: dto.settings as Prisma.InputJsonObject,
+        settings: nextSettings as Prisma.InputJsonObject,
         customCss: dto.customCss
       },
       update: {
-        settings: dto.settings as Prisma.InputJsonObject,
+        settings: nextSettings as Prisma.InputJsonObject,
         customCss: dto.customCss
       },
       include: { theme: true }
@@ -1051,6 +1060,17 @@ export class DashboardService {
 
   private asJsonObject(value: Prisma.JsonValue | undefined | null): Record<string, any> {
     return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {};
+  }
+
+  private themeOwnedSettings(value: Record<string, unknown>) {
+    const source = this.asJsonObject(value as Prisma.JsonValue);
+    const next: Record<string, unknown> = {};
+    for (const key of ["colors", "typography", "radius", "layout", "publicUi"] as const) {
+      if (source[key] !== undefined) {
+        next[key] = source[key];
+      }
+    }
+    return next;
   }
 
   private categoryOrderBy(sort?: ListCategoriesQueryDto["sort"]): Prisma.CategoryOrderByWithRelationInput[] {

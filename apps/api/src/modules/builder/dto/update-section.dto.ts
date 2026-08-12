@@ -6,6 +6,10 @@ export class UpdateSectionDto {
   settings?: Record<string, unknown>;
 
   @IsOptional()
+  @IsObject()
+  settingsPatch?: Record<string, unknown>;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 

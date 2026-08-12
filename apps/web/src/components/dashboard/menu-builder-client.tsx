@@ -17,6 +17,7 @@ import {
 import {
   BUILDER_SECTION_TYPES,
   BuilderSection,
+  BuilderSectionSettings,
   BuilderSectionType,
   CATEGORY_NAV_VARIANTS,
   PRODUCT_CARD_VARIANTS,
@@ -53,35 +54,6 @@ const CATEGORY_NAV_VARIANT_LABELS: Record<string, string> = {
   "text-tabs": "أقسام نصية مثل Vertigo"
 };
 
-const initialSections: BuilderSection[] = [
-  {
-    id: "demo-hero",
-    type: "HERO",
-    sortOrder: 0,
-    isActive: true,
-    settings: {
-      ...defaultSectionSettings("HERO"),
-      title: "أهلا بك",
-      subtitle: "اختر أحد الأصناف وتصفح",
-      backgroundImageUrl: "/assets/public/menu-home.png"
-    }
-  },
-  {
-    id: "demo-categories",
-    type: "CATEGORY_GRID",
-    sortOrder: 1,
-    isActive: true,
-    settings: defaultSectionSettings("CATEGORY_GRID")
-  },
-  {
-    id: "demo-featured",
-    type: "FEATURED_PRODUCTS",
-    sortOrder: 2,
-    isActive: true,
-    settings: defaultSectionSettings("FEATURED_PRODUCTS")
-  }
-];
-
 function moodBackgroundStyle(item: {
   backgroundType?: MoodBackgroundType;
   backgroundValue?: string | null;
@@ -109,8 +81,8 @@ export function MenuBuilderClient() {
   const searchParams = useSearchParams();
   const requestedSectionType = searchParams.get("section");
   const requestedRestaurantId = searchParams.get("restaurantId");
-  const [sections, setSections] = useState<BuilderSection[]>(initialSections);
-  const [selectedId, setSelectedId] = useState(initialSections[0].id);
+  const [sections, setSections] = useState<BuilderSection[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [pageId, setPageId] = useState("");
   const [device, setDevice] = useState<"mobile" | "tablet" | "desktop">("mobile");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "publishing" | "error" | "success">("loading");
@@ -119,14 +91,20 @@ export function MenuBuilderClient() {
   const [restaurants, setRestaurants] = useState<RestaurantOption[]>([]);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [settingsPatches, setSettingsPatches] = useState<Record<string, Partial<BuilderSectionSettings>>>({});
+  const [dirtyStateIds, setDirtyStateIds] = useState<Set<string>>(() => new Set());
+  const [orderDirty, setOrderDirty] = useState(false);
 
-  const selected = sections.find((section) => section.id === selectedId) ?? sections[0];
+  const selected = sections.find((section) => section.id === selectedId) ?? null;
   const orderedSections = useMemo(() => [...sections].sort((a, b) => a.sortOrder - b.sortOrder), [sections]);
   const activeSections = useMemo(() => orderedSections.filter((section) => section.isActive), [orderedSections]);
   const focusedSectionType = BUILDER_SECTION_TYPES.includes(requestedSectionType as BuilderSectionType)
     ? (requestedSectionType as BuilderSectionType)
     : null;
   const isFocusedSectionMode = Boolean(focusedSectionType);
+  const isFocusedSectionMissing = Boolean(
+    focusedSectionType && status !== "loading" && !orderedSections.some((section) => section.type === focusedSectionType)
+  );
 
   function selectedRestaurantHeaders() {
     const selectedRestaurant = restaurants.find((restaurant) => restaurant.id === selectedRestaurantId);
@@ -189,35 +167,22 @@ export function MenuBuilderClient() {
         }
 
         const homePage = payload?.data?.pages?.find((page: any) => page.isHome) ?? payload?.data?.pages?.[0];
-        let apiSections = homePage?.sections ?? [];
+        const apiSections = homePage?.sections ?? [];
         const targetType = BUILDER_SECTION_TYPES.includes(requestedSectionType as BuilderSectionType)
           ? (requestedSectionType as BuilderSectionType)
           : null;
 
-        if (targetType && homePage?.id && !apiSections.some((section: BuilderSection) => section.type === targetType)) {
-          const createResponse = await fetch(`${API_URL}/dashboard/builder/sections`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...selectedRestaurantHeaders()
-            },
-            body: JSON.stringify({ pageId: homePage.id, type: targetType, sortOrder: apiSections.length })
-          });
-          const createPayload = await createResponse.json().catch(() => null);
-
-          if (createResponse.ok && createPayload?.data) {
-            apiSections = [...apiSections, createPayload.data];
-          }
-        }
-
         if (mounted) {
-          const normalizedSections = apiSections.length ? normalizeOrder(apiSections) : initialSections;
+          const normalizedSections = normalizeOrder(apiSections);
           const targetSection = targetType
             ? normalizedSections.find((section) => section.type === targetType)
             : null;
           setPageId(homePage?.id ?? "");
           setSections(normalizedSections);
-          setSelectedId(targetSection?.id ?? normalizedSections[0]?.id ?? initialSections[0].id);
+          setSelectedId(targetType ? targetSection?.id ?? "" : normalizedSections[0]?.id ?? "");
+          setSettingsPatches({});
+          setDirtyStateIds(new Set());
+          setOrderDirty(false);
           setStatus("idle");
         }
       } catch (error) {
@@ -314,6 +279,16 @@ export function MenuBuilderClient() {
       const section = payload.data as BuilderSection;
       setSections((current) => normalizeOrder([...current, section]));
       setSelectedId(section.id);
+      setSettingsPatches((current) => {
+        const next = { ...current };
+        delete next[section.id];
+        return next;
+      });
+      setDirtyStateIds((current) => {
+        const next = new Set(current);
+        next.delete(section.id);
+        return next;
+      });
       setStatus("success");
       setMessage("تمت إضافة القسم.");
     } catch (error) {
@@ -322,40 +297,71 @@ export function MenuBuilderClient() {
     }
   }
 
-  function updateSelected(partial: Partial<BuilderSection>) {
+  function markSettingsDirty(id: string, patch: Partial<BuilderSectionSettings>) {
+    if (id.startsWith("local-")) return;
+    setSettingsPatches((current) => ({
+      ...current,
+      [id]: {
+        ...(current[id] ?? {}),
+        ...patch
+      }
+    }));
+  }
+
+  function markStateDirty(id: string) {
+    if (id.startsWith("local-")) return;
+    setDirtyStateIds((current) => {
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
+  }
+
+  function updateSelected(partial: Partial<BuilderSection>, settingsPatch?: Partial<BuilderSectionSettings>) {
     if (!selected) return;
+    if (settingsPatch) {
+      markSettingsDirty(selected.id, settingsPatch);
+    }
+    if (typeof partial.isActive === "boolean") {
+      markStateDirty(selected.id);
+    }
     setSections((current) =>
       current.map((section) => (section.id === selected.id ? { ...section, ...partial } : section))
     );
   }
 
-  function updateSetting(key: string, value: string | boolean) {
+  function updateSetting<K extends keyof BuilderSectionSettings>(
+    key: K,
+    value: BuilderSectionSettings[K] | string | boolean
+  ) {
+    if (!selected) return;
     updateSelected({
       settings: {
         ...selected.settings,
         [key]: value
       }
-    });
+    }, { [key]: value } as Partial<BuilderSectionSettings>);
   }
 
   function addAdBanner() {
     if (!selected) return;
+    const adBanners = [
+      ...(selected.settings.adBanners ?? []),
+      {
+        title: "Banner",
+        subtitle: "",
+        imageUrl: selected.settings.backgroundImageUrl ?? "",
+        targetUrl: "/menu",
+        targetProductId: "",
+        badge: ""
+      }
+    ];
     updateSelected({
       settings: {
         ...selected.settings,
-        adBanners: [
-          ...(selected.settings.adBanners ?? []),
-          {
-            title: "بنر إعلاني",
-            subtitle: "",
-            imageUrl: selected.settings.backgroundImageUrl ?? "",
-            targetUrl: "/menu",
-            targetProductId: "",
-            badge: ""
-          }
-        ]
+        adBanners
       }
-    });
+    }, { adBanners });
   }
 
   function updateAdBanner(index: number, key: "title" | "subtitle" | "imageUrl" | "targetUrl" | "targetProductId" | "badge", value: string) {
@@ -367,39 +373,41 @@ export function MenuBuilderClient() {
         ...selected.settings,
         adBanners
       }
-    });
+    }, { adBanners });
   }
 
   function removeAdBanner(index: number) {
     if (!selected) return;
+    const adBanners = (selected.settings.adBanners ?? []).filter((_, bannerIndex) => bannerIndex !== index);
     updateSelected({
       settings: {
         ...selected.settings,
-        adBanners: (selected.settings.adBanners ?? []).filter((_, bannerIndex) => bannerIndex !== index)
+        adBanners
       }
-    });
+    }, { adBanners });
   }
 
   function addMoodItem() {
     if (!selected) return;
+    const moodItems = [
+      ...(selected.settings.moodItems ?? []),
+      {
+        label: "Mood",
+        targetUrl: "/menu",
+        iconX: 78,
+        iconY: 50,
+        iconWidth: 34,
+        iconHeight: 34,
+        color: "#d32f2f",
+        backgroundType: "COLOR" as const
+      }
+    ];
     updateSelected({
       settings: {
         ...selected.settings,
-        moodItems: [
-          ...(selected.settings.moodItems ?? []),
-          {
-            label: "مزاج جديد",
-            targetUrl: "/menu",
-            iconX: 78,
-            iconY: 50,
-            iconWidth: 34,
-            iconHeight: 34,
-            color: "#d32f2f",
-            backgroundType: "COLOR"
-          }
-        ]
+        moodItems
       }
-    });
+    }, { moodItems });
   }
 
   function updateMoodItem(
@@ -415,17 +423,18 @@ export function MenuBuilderClient() {
         ...selected.settings,
         moodItems
       }
-    });
+    }, { moodItems });
   }
 
   function removeMoodItem(index: number) {
     if (!selected) return;
+    const moodItems = (selected.settings.moodItems ?? []).filter((_, itemIndex) => itemIndex !== index);
     updateSelected({
       settings: {
         ...selected.settings,
-        moodItems: (selected.settings.moodItems ?? []).filter((_, itemIndex) => itemIndex !== index)
+        moodItems
       }
-    });
+    }, { moodItems });
   }
 
   async function uploadBackgroundImage(event: ChangeEvent<HTMLInputElement>) {
@@ -583,12 +592,13 @@ export function MenuBuilderClient() {
     const [item] = ordered.splice(index, 1);
     ordered.splice(targetIndex, 0, item);
     setSections(normalizeOrder(ordered));
+    setOrderDirty(true);
   }
 
   async function deleteSelected() {
     if (!selected) return;
 
-    if (!selected.id.startsWith("local-") && !selected.id.startsWith("demo-")) {
+    if (!selected.id.startsWith("local-")) {
       setStatus("saving");
       setMessage("");
 
@@ -612,6 +622,17 @@ export function MenuBuilderClient() {
     const next = sections.filter((section) => section.id !== selected.id);
     setSections(normalizeOrder(next));
     setSelectedId(next[0]?.id ?? "");
+    setOrderDirty(true);
+    setSettingsPatches((current) => {
+      const nextPatches = { ...current };
+      delete nextPatches[selected.id];
+      return nextPatches;
+    });
+    setDirtyStateIds((current) => {
+      const nextIds = new Set(current);
+      nextIds.delete(selected.id);
+      return nextIds;
+    });
     setStatus("success");
     setMessage("تم حذف القسم.");
   }
@@ -621,56 +642,60 @@ export function MenuBuilderClient() {
     setMessage("");
 
     try {
-      const persistentSections = sections.filter(
-        (section) => !section.id.startsWith("local-") && !section.id.startsWith("demo-")
-      );
+      const persistentSections = sections.filter((section) => !section.id.startsWith("local-"));
+      const dirtyIds = new Set([...Object.keys(settingsPatches), ...dirtyStateIds]);
+      const dirtySections = persistentSections.filter((section) => dirtyIds.has(section.id));
 
       await Promise.all(
-        persistentSections.map((section) =>
-          fetch(`${API_URL}/dashboard/builder/sections/${section.id}`, {
+        dirtySections.map((section) =>
+          fetch(API_URL + "/dashboard/builder/sections/" + section.id, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
               ...selectedRestaurantHeaders()
             },
             body: JSON.stringify({
-              settings: section.settings,
-              isActive: section.isActive,
-              sortOrder: section.sortOrder
+              ...(settingsPatches[section.id] ? { settingsPatch: settingsPatches[section.id] } : {}),
+              ...(dirtyStateIds.has(section.id) ? { isActive: section.isActive } : {})
             })
           }).then(async (response) => {
             if (!response.ok) {
               const payload = await response.json().catch(() => null);
-              throw new Error(payload?.message ?? "تعذر حفظ القسم.");
+              throw new Error(payload?.message ?? "Could not save section.");
             }
           })
         )
       );
 
-      const response = await fetch(`${API_URL}/dashboard/builder/sections/reorder`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...selectedRestaurantHeaders()
-        },
-        body: JSON.stringify({
-          sections: persistentSections.map((section) => ({
-            id: section.id,
-            sortOrder: section.sortOrder
-          }))
-        })
-      });
-      const payload = await response.json().catch(() => null);
+      if (orderDirty) {
+        const response = await fetch(API_URL + "/dashboard/builder/sections/reorder", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...selectedRestaurantHeaders()
+          },
+          body: JSON.stringify({
+            sections: persistentSections.map((section) => ({
+              id: section.id,
+              sortOrder: section.sortOrder
+            }))
+          })
+        });
+        const payload = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        throw new Error(payload?.message ?? "تعذر حفظ الترتيب.");
+        if (!response.ok) {
+          throw new Error(payload?.message ?? "Could not save section order.");
+        }
       }
 
+      setSettingsPatches({});
+      setDirtyStateIds(new Set());
+      setOrderDirty(false);
       setStatus("success");
-      setMessage("تم حفظ التغييرات.");
+      setMessage("Saved changes.");
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر الحفظ.");
+      setMessage(error instanceof Error ? error.message : "Could not save.");
     }
   }
 
@@ -774,6 +799,23 @@ export function MenuBuilderClient() {
         <section className="section-editor-panel">
           {status === "loading" ? (
             <SkeletonForm fields={7} />
+          ) : null}
+
+          {!selected && status !== "loading" ? (
+            <div className="empty-state">
+              <b>{isFocusedSectionMissing ? "Section not found" : "No sections"}</b>
+              <p>
+                {isFocusedSectionMissing
+                  ? `${SECTION_LABELS[focusedSectionType!]} is not available. Add it manually if needed.`
+                  : "Add a section to show it on the restaurant menu."}
+              </p>
+              {focusedSectionType ? (
+                <button type="button" onClick={() => void addSection(focusedSectionType)}>
+                  <Plus size={16} />
+                  Add section
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           {selected && status !== "loading" ? (

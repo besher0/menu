@@ -40,12 +40,27 @@ export class BuilderService {
   }
 
   async updateSection(restaurantId: string, id: string, dto: UpdateSectionDto) {
-    await this.assertSectionBelongsToRestaurant(restaurantId, id);
+    const section = await this.prisma.menuSection.findFirst({
+      where: { id, page: { menu: { restaurantId } } },
+      select: { id: true, settings: true }
+    });
+
+    if (!section) {
+      throw new NotFoundException("Section not found");
+    }
+
+    const existingSettings = this.asJsonObject(section.settings);
+    const settingsPatch = dto.settingsPatch ? this.asJsonObject(dto.settingsPatch as Prisma.JsonValue) : null;
+    const nextSettings = settingsPatch
+      ? this.mergeJsonObjects(existingSettings, settingsPatch)
+      : dto.settings
+        ? this.asJsonObject(dto.settings as Prisma.JsonValue)
+        : null;
 
     return this.prisma.menuSection.update({
       where: { id },
       data: {
-        ...(dto.settings ? { settings: dto.settings as Prisma.InputJsonValue } : {}),
+        ...(nextSettings ? { settings: nextSettings as Prisma.InputJsonValue } : {}),
         ...(typeof dto.isActive === "boolean" ? { isActive: dto.isActive } : {}),
         ...(typeof dto.sortOrder === "number" ? { sortOrder: dto.sortOrder } : {})
       }
@@ -219,5 +234,16 @@ export class BuilderService {
     if (!section) {
       throw new NotFoundException("Section not found");
     }
+  }
+
+  private asJsonObject(value: Prisma.JsonValue | Record<string, unknown> | undefined | null): Record<string, any> {
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {};
+  }
+
+  private mergeJsonObjects(current: Record<string, any>, patch: Record<string, any>) {
+    return {
+      ...current,
+      ...patch
+    };
   }
 }
