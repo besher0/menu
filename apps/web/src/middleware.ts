@@ -21,9 +21,13 @@ export function middleware(request: NextRequest) {
   }
 
   const host =
-    request.headers.get("host") ??
     request.headers.get("x-forwarded-host") ??
+    request.headers.get("host") ??
     "";
+  const protocol =
+    request.headers.get("x-forwarded-proto") ??
+    request.nextUrl.protocol.replace(":", "") ??
+    "https";
 
   const restaurantSlug = restaurantSlugFromHost(host);
 
@@ -49,6 +53,8 @@ export function middleware(request: NextRequest) {
       : `/m/${restaurantSlug}${pathname}`;
 
   const rewriteUrl = request.nextUrl.clone();
+  rewriteUrl.protocol = protocol;
+  rewriteUrl.host = host;
   rewriteUrl.pathname = internalPath;
   rewriteUrl.search = search;
 
