@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getPublicMenuOrNotFound, requireInternalRestaurantRewrite } from "@/lib/public-menu-page";
+import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
@@ -26,7 +26,6 @@ export async function generateMetadata({
   params: Promise<{ slug: string; productSlug: string }>;
 }): Promise<Metadata> {
   const { slug, productSlug } = await params;
-  await requireInternalRestaurantRewrite(slug);
   const data = await getPublicMenuOrNotFound(slug, { track: false });
   const product = data.products.find((item) => productMatchesRoute(item, productSlug));
   const title = product ? `${product.name} | ${data.restaurant.name}` : `${data.restaurant.name} | المنتج`;
@@ -54,7 +53,6 @@ export default async function ProductPage({
   params: Promise<{ slug: string; productSlug: string }>;
 }) {
   const { slug, productSlug } = await params;
-  await requireInternalRestaurantRewrite(slug);
   const data = await getPublicMenuOrNotFound(slug);
   return (
     <div className="public-page">

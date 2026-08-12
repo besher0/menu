@@ -2,20 +2,37 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   hostnameFromHostHeader,
   INTERNAL_RESTAURANT_REWRITE_HEADER,
-  INTERNAL_RESTAURANT_REWRITE_VALUE,
   INTERNAL_RESTAURANT_SLUG_HEADER,
   restaurantSlugFromHost
 } from "@/lib/public-routes";
 
 const PUBLIC_FILE_PATTERN = /\/[^/]+\.[^/]+$/;
+const INTERNAL_RESTAURANT_REWRITE_TOKEN =
+  process.env.INTERNAL_RESTAURANT_REWRITE_SECRET ??
+  globalThis.crypto?.randomUUID?.() ??
+  Math.random().toString(36).slice(2);
 
 export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
+  const incomingInternalToken = requestHeaders.get(INTERNAL_RESTAURANT_REWRITE_HEADER);
+  const incomingInternalSlug = requestHeaders.get(INTERNAL_RESTAURANT_SLUG_HEADER);
   requestHeaders.delete(INTERNAL_RESTAURANT_REWRITE_HEADER);
   requestHeaders.delete(INTERNAL_RESTAURANT_SLUG_HEADER);
   const { pathname, search } = request.nextUrl;
 
   if (pathname === "/m" || pathname.startsWith("/m/")) {
+    if (
+      incomingInternalToken === INTERNAL_RESTAURANT_REWRITE_TOKEN &&
+      incomingInternalSlug &&
+      incomingInternalSlug === restaurantSlugFromInternalPath(pathname)
+    ) {
+      return NextResponse.next({
+        request: {
+          headers: requestHeaders
+        }
+      });
+    }
+
     return new NextResponse(null, {
       status: 404
     });
@@ -61,7 +78,7 @@ export function middleware(request: NextRequest) {
   rewriteUrl.pathname = internalPath;
   rewriteUrl.search = search;
 
-  requestHeaders.set(INTERNAL_RESTAURANT_REWRITE_HEADER, INTERNAL_RESTAURANT_REWRITE_VALUE);
+  requestHeaders.set(INTERNAL_RESTAURANT_REWRITE_HEADER, INTERNAL_RESTAURANT_REWRITE_TOKEN);
   requestHeaders.set(INTERNAL_RESTAURANT_SLUG_HEADER, restaurantSlug);
 
   return NextResponse.rewrite(rewriteUrl, {
@@ -69,6 +86,10 @@ export function middleware(request: NextRequest) {
       headers: requestHeaders
     }
   });
+}
+
+function restaurantSlugFromInternalPath(pathname: string) {
+  return pathname.split("/")[2] ?? null;
 }
 
 function shouldBypass(pathname: string) {

@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { getPublicMenuOrNotFound, requireInternalRestaurantRewrite } from "@/lib/public-menu-page";
+import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  await requireInternalRestaurantRewrite(slug);
   const data = await getPublicMenuOrNotFound(slug, { track: false });
   const title = `${data.restaurant.name} | قائمة الطعام`;
   const description = `تصفح أصناف ${data.restaurant.name} والطلبات عبر واتساب.`;
@@ -27,7 +26,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function PublicMenuPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  await requireInternalRestaurantRewrite(slug);
   const data = await getPublicMenuOrNotFound(slug);
   return (
     <div className="public-page">
