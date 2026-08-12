@@ -524,11 +524,13 @@ function getRelatedProducts(products: PublicProduct[], product: PublicProduct) {
 export function PublicMenuClient({
   data,
   view,
-  productSlug
+  productSlug,
+  initialUseSubdomainRoutes = true
 }: {
   data: PublicMenuData;
   view: "home" | "menu" | "product" | "cart";
   productSlug?: string;
+  initialUseSubdomainRoutes?: boolean;
 }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -542,7 +544,7 @@ export function PublicMenuClient({
   const [splashClosing, setSplashClosing] = useState(false);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
-  const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(false);
+  const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(initialUseSubdomainRoutes);
   const storageKey = `cart:${data.restaurant.slug}:main`;
   const languageStorageKey = `language:${data.restaurant.slug}`;
   const splashStorageKey = `splash:${data.restaurant.slug}`;

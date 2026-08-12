@@ -1,24 +1,39 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { restaurantSlugFromHost } from "@/lib/public-routes";
+import {
+  INTERNAL_RESTAURANT_REWRITE_HEADER,
+  INTERNAL_RESTAURANT_REWRITE_VALUE,
+  restaurantSlugFromHost
+} from "@/lib/public-routes";
 
 const PUBLIC_FILE_PATTERN = /\/[^/]+\.[^/]+$/;
 
 export function middleware(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete(INTERNAL_RESTAURANT_REWRITE_HEADER);
+
   const host =
-    request.headers.get("x-forwarded-host") ??
     request.headers.get("host") ??
+    request.headers.get("x-forwarded-host") ??
     "";
 
   const restaurantSlug = restaurantSlugFromHost(host);
 
   if (!restaurantSlug) {
-    return NextResponse.next();
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders
+      }
+    });
   }
 
   const { pathname, search } = request.nextUrl;
 
   if (shouldBypass(pathname)) {
-    return NextResponse.next();
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders
+      }
+    });
   }
 
   const internalPath =
@@ -31,7 +46,13 @@ export function middleware(request: NextRequest) {
     "http://127.0.0.1:3000"
   );
 
-  return NextResponse.rewrite(rewriteUrl);
+  requestHeaders.set(INTERNAL_RESTAURANT_REWRITE_HEADER, INTERNAL_RESTAURANT_REWRITE_VALUE);
+
+  return NextResponse.rewrite(rewriteUrl, {
+    request: {
+      headers: requestHeaders
+    }
+  });
 }
 
 function shouldBypass(pathname: string) {

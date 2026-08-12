@@ -162,27 +162,49 @@ type ApiResponse<T> = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
-async function apiGet<T>(path: string): Promise<T | null> {
+export class PublicMenuApiError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "not-found" | "http" | "network",
+    readonly status?: number
+  ) {
+    super(message);
+    this.name = "PublicMenuApiError";
+  }
+}
+
+export function isPublicMenuNotFoundError(error: unknown) {
+  return error instanceof PublicMenuApiError && error.kind === "not-found";
+}
+
+async function apiGet<T>(path: string): Promise<T> {
   try {
     const response = await fetch(`${API_URL}${path}`, {
       cache: "no-store"
     });
 
     if (!response.ok) {
-      return null;
+      if (response.status === 404) {
+        throw new PublicMenuApiError("Public menu was not found.", "not-found", 404);
+      }
+
+      throw new PublicMenuApiError(`Public menu API failed with HTTP ${response.status}.`, "http", response.status);
     }
 
     const payload = (await response.json()) as ApiResponse<T> | T;
     return "data" in (payload as ApiResponse<T>) ? (payload as ApiResponse<T>).data : (payload as T);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof PublicMenuApiError) {
+      throw error;
+    }
+
+    throw new PublicMenuApiError("Public menu API request failed.", "network");
   }
 }
 
 export async function getPublicMenu(slug: string, options: { track?: boolean } = {}): Promise<PublicMenuData> {
   const track = options.track === false ? "?track=0" : "";
-  const apiMenu = await apiGet<PublicMenuData>(`/public/menus/${slug}${track}`);
-  return apiMenu ?? emptyPublicMenu(slug);
+  return apiGet<PublicMenuData>(`/public/menus/${slug}${track}`);
 }
 
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {

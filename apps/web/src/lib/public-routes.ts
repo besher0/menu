@@ -1,4 +1,6 @@
 const DEFAULT_ROOT_DOMAIN = "ordersawa.com";
+export const INTERNAL_RESTAURANT_REWRITE_HEADER = "x-ordersawa-internal-restaurant-rewrite";
+export const INTERNAL_RESTAURANT_REWRITE_VALUE = "1";
 const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "dashboard", "app"]);
 const SUBDOMAIN_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
@@ -50,7 +52,7 @@ export function isRestaurantSubdomainHost(hostHeader: string | null | undefined,
   return restaurantSlugFromHost(hostHeader) === restaurantSlug;
 }
 
-export function restaurantPath(restaurantSlug: string, pathname = "", useSubdomainRoutes = false) {
+export function restaurantPath(restaurantSlug: string, pathname = "", useSubdomainRoutes = true) {
   const path = normalizePublicPath(pathname);
   return useSubdomainRoutes ? path : `/m/${restaurantSlug}${path === "/" ? "" : path}`;
 }

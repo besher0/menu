@@ -10539,6 +10539,42 @@ body {
   box-shadow: 0 8px 26px rgb(16 24 40 / 4%);
 }
 
+.not-found-page {
+  align-items: center;
+  background: #f7f8fb;
+  color: #111827;
+  display: flex;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.not-found-page section {
+  margin: 0 auto;
+  max-width: 520px;
+  text-align: center;
+}
+
+.not-found-page p {
+  color: #e51f2a;
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  margin: 0 0 12px;
+}
+
+.not-found-page h1 {
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1.15;
+  margin: 0 0 14px;
+}
+
+.not-found-page span {
+  color: #667085;
+  display: block;
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
 .hours-row {
   align-items: end;
   display: grid;

@@ -158,7 +158,7 @@ export class QrService {
 
   private normalizeTarget(targetUrl: string, restaurantSlug: string) {
     if (targetUrl.startsWith("/")) {
-      return `${this.webOrigin()}${targetUrl}`;
+      return `${this.publicMenuUrl(restaurantSlug)}${targetUrl === "/" ? "" : targetUrl}`;
     }
 
     if (targetUrl === "main-menu") {
@@ -169,10 +169,8 @@ export class QrService {
   }
 
   private publicMenuUrl(restaurantSlug: string) {
-    const domain = this.rootDomain();
-    return domain && !this.isLocalDomain(domain)
-      ? `https://${restaurantSlug}.${domain}`
-      : `${this.webOrigin()}/m/${restaurantSlug}`;
+    const domain = this.rootDomain() ?? "ordersawa.com";
+    return `https://${restaurantSlug}.${domain}`;
   }
 
   private publicQrUrl(id: string) {
@@ -201,10 +199,6 @@ export class QrService {
       ?.split(":")[0]
       ?.replace(/\.$/, "")
       .toLowerCase() || null;
-  }
-
-  private isLocalDomain(domain: string) {
-    return domain === "localhost" || domain.endsWith(".localhost") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain);
   }
 
   private generateSvg(value: string) {

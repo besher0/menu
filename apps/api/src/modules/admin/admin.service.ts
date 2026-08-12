@@ -914,12 +914,7 @@ export class AdminService {
 function publicRestaurantUrl(restaurantSlug: string) {
   const domain = normalizeDomain(process.env.ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "ordersawa.com");
 
-  if (!domain || isLocalDomain(domain)) {
-    const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
-    return `${webOrigin}/m/${restaurantSlug}`;
-  }
-
-  return `https://${restaurantSlug}.${domain}`;
+  return `https://${restaurantSlug}.${domain ?? "ordersawa.com"}`;
 }
 
 function normalizeDomain(value?: string | null) {
@@ -930,8 +925,4 @@ function normalizeDomain(value?: string | null) {
     ?.split(":")[0]
     ?.replace(/\.$/, "")
     .toLowerCase() || null;
-}
-
-function isLocalDomain(domain: string) {
-  return domain === "localhost" || domain.endsWith(".localhost") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain);
 }

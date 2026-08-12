@@ -9,8 +9,7 @@ export function PwaRegister() {
       return;
     }
 
-    const isPublicRestaurantPath = window.location.pathname.startsWith("/m/")
-      || Boolean(restaurantSlugFromHost(window.location.host));
+    const isPublicRestaurantPath = Boolean(restaurantSlugFromHost(window.location.host));
 
     if (!isPublicRestaurantPath) {
       navigator.serviceWorker.getRegistrations()
