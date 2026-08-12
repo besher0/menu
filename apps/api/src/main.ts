@@ -40,6 +40,37 @@ function originList(value?: string | null) {
     .filter(Boolean);
 }
 
+function normalizeDomain(value?: string | null) {
+  return value
+    ?.trim()
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    ?.split(":")[0]
+    ?.replace(/\.$/, "")
+    .toLowerCase() || null;
+}
+
+function isAllowedRestaurantOrigin(origin: string | null, rootDomain?: string | null) {
+  const domain = normalizeDomain(rootDomain);
+  if (!origin || !domain || domain === "localhost" || domain.endsWith(".localhost")) {
+    return false;
+  }
+
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+    if (!hostname.endsWith(`.${domain}`)) {
+      return false;
+    }
+
+    const subdomain = hostname.slice(0, -(domain.length + 1)).split(".")[0] ?? "";
+    return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain)
+      && !["www", "api", "admin", "dashboard", "app"].includes(subdomain);
+  } catch {
+    return false;
+  }
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
@@ -50,6 +81,7 @@ async function bootstrap() {
     ...originList(config.get<string>("API_ORIGIN") ?? "http://localhost:5000"),
     ...originList(process.env.NEXT_PUBLIC_API_URL)
   ]);
+  const rootDomain = config.get<string>("ROOT_DOMAIN") ?? config.get<string>("NEXT_PUBLIC_ROOT_DOMAIN") ?? "ordersawa.com";
   const trustProxy = config.get<string>("TRUST_PROXY");
 
   if (trustProxy) {
@@ -60,7 +92,12 @@ async function bootstrap() {
     origin(origin, callback) {
       const normalizedOrigin = normalizeOrigin(origin);
 
-      if (!normalizedOrigin || allowedOrigins.includes("*") || allowedOrigins.includes(normalizedOrigin)) {
+      if (
+        !normalizedOrigin
+        || allowedOrigins.includes("*")
+        || allowedOrigins.includes(normalizedOrigin)
+        || isAllowedRestaurantOrigin(normalizedOrigin, rootDomain)
+      ) {
         callback(null, true);
         return;
       }

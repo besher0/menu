@@ -306,12 +306,12 @@ async function seedRestaurant() {
 
   await prisma.qrCode.upsert({
     where: { id: `${restaurant.id}-main-qr` },
-    update: { targetUrl: `/m/${restaurant.slug}`, label: "رابط المنيو الرئيسي" },
+    update: { targetUrl: publicRestaurantUrl(restaurant.slug), label: "رابط المنيو الرئيسي" },
     create: {
       id: `${restaurant.id}-main-qr`,
       restaurantId: restaurant.id,
       branchId: branch.id,
-      targetUrl: `/m/${restaurant.slug}`,
+      targetUrl: publicRestaurantUrl(restaurant.slug),
       label: "رابط المنيو الرئيسي"
     }
   });
@@ -323,6 +323,26 @@ async function main() {
   if (process.env.SEED_DEMO_RESTAURANT === "true" || process.argv.includes("--demo")) {
     await seedRestaurant();
   }
+}
+
+function publicRestaurantUrl(restaurantSlug: string) {
+  const domain = normalizeDomain(process.env.ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "ordersawa.com");
+
+  if (!domain || domain === "localhost" || domain.endsWith(".localhost") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)) {
+    return `${process.env.WEB_ORIGIN ?? "http://localhost:3000"}/m/${restaurantSlug}`;
+  }
+
+  return `https://${restaurantSlug}.${domain}`;
+}
+
+function normalizeDomain(value?: string | null) {
+  return value
+    ?.trim()
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    ?.split(":")[0]
+    ?.replace(/\.$/, "")
+    .toLowerCase() || null;
 }
 
 main()

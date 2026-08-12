@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Save } from "lucide-react";
+import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { adminAuthHeaders, setStoredRestaurant } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
@@ -14,7 +15,10 @@ type RestaurantFormState = {
   city: string;
   country: string;
   whatsappPhone: string;
+  logoUrl: string;
+  heroImageUrl: string;
   planKey: string;
+  templateKey: "default" | "vertigo";
   ownerName: string;
   ownerEmail: string;
   ownerPassword: string;
@@ -40,7 +44,10 @@ export function RestaurantForm() {
     city: "حلب",
     country: "سوريا",
     whatsappPhone: "",
+    logoUrl: "",
+    heroImageUrl: "",
     planKey: "BASIC",
+    templateKey: "default",
     ownerName: "",
     ownerEmail: "",
     ownerPassword: "password123",
@@ -121,7 +128,7 @@ export function RestaurantForm() {
       }
 
       setStatus("success");
-      setPublicUrl(payload?.data?.publicUrl ?? "");
+      setPublicUrl(payload?.data?.publicUrl ?? (payload?.data?.slug ? preferredRestaurantUrl(payload.data.slug) : ""));
       setMessage("تم إنشاء المطعم وتجهيز المنيو الأساسي بنجاح.");
     } catch (error) {
       setStatus("error");
@@ -176,6 +183,24 @@ export function RestaurantForm() {
           <label>
             <span>واتساب</span>
             <input value={form.whatsappPhone} onChange={(event) => update("whatsappPhone", event.target.value)} />
+          </label>
+
+          <label>
+            <span>رابط اللوغو</span>
+            <input value={form.logoUrl} onChange={(event) => update("logoUrl", event.target.value)} placeholder="https://..." />
+          </label>
+
+          <label>
+            <span>صورة واجهة المطعم</span>
+            <input value={form.heroImageUrl} onChange={(event) => update("heroImageUrl", event.target.value)} placeholder="https://..." />
+          </label>
+
+          <label>
+            <span>قالب الواجهة</span>
+            <select value={form.templateKey} onChange={(event) => update("templateKey", event.target.value as RestaurantFormState["templateKey"])}>
+              <option value="default">القالب الحالي</option>
+              <option value="vertigo">Vertigo</option>
+            </select>
           </label>
 
           <label>
@@ -237,9 +262,9 @@ export function RestaurantForm() {
             <span>ما سيتم إنشاؤه</span>
           </div>
           <h2>{form.name || "مطعم جديد"}</h2>
-          <p>فرع رئيسي في {form.city || "المدينة"}، باقة {planName(form.planKey)}، وثيم أحمر افتراضي.</p>
+          <p>فرع رئيسي في {form.city || "المدينة"}، باقة {planName(form.planKey)}، وقالب {form.templateKey === "vertigo" ? "Vertigo" : "القالب الحالي"}.</p>
           {sourceRestaurant ? <p>سيتم نسخ التصميم والصفحات من {sourceRestaurant.name}.</p> : null}
-          <b>{form.slug ? `/m/${form.slug}` : "/m/auto-slug"}</b>
+          <b>{preferredRestaurantUrl(form.slug || "auto-slug")}</b>
         </aside>
       </section>
     </form>

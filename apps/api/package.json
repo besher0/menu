@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:backfill-libraries": "tsx prisma/backfill-product-libraries.ts",
+    "prisma:reset-user-password": "tsx prisma/reset-user-password.ts",
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/seed.ts --demo"
   },

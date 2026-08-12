@@ -1,3 +1,5 @@
+import { CategoryNavVariant, ProductCardVariant } from "./theme";
+
 export const BUILDER_SECTION_TYPES = [
   "HERO",
   "MOOD_STRIP",
@@ -23,6 +25,8 @@ export type BuilderSectionSettings = {
   buttonText?: string;
   buttonTarget?: string;
   layout?: string;
+  cardVariant?: ProductCardVariant;
+  categoryNavVariant?: CategoryNavVariant;
   alignment?: "start" | "center" | "end";
   height?: "small" | "medium" | "large";
   showHomePage?: boolean;
@@ -33,6 +37,7 @@ export type BuilderSectionSettings = {
     subtitle?: string;
     imageUrl: string;
     targetUrl?: string;
+    targetProductId?: string;
     badge?: string;
   }>;
   moodItems?: Array<{
@@ -88,6 +93,7 @@ export function defaultSectionSettings(type: BuilderSectionType): BuilderSection
             subtitle: "أضف صورة البنر الإعلاني من منشئ الواجهة",
             imageUrl: "/assets/public/menu-home.png",
             targetUrl: "/menu",
+            targetProductId: "",
             badge: "جديد"
           }
         ],
@@ -97,7 +103,7 @@ export function defaultSectionSettings(type: BuilderSectionType): BuilderSection
         height: "large"
       };
     case "CATEGORY_GRID":
-      return { title: "الأقسام", layout: "horizontal-chips", showLandingCategories: true, showNestedCategoryStrip: true };
+      return { title: "الأقسام", layout: "horizontal-chips", categoryNavVariant: "image-chips", showLandingCategories: true, showNestedCategoryStrip: true };
     case "MOOD_STRIP":
       return {
         title: "شو مزاجك اليوم؟",
@@ -109,9 +115,9 @@ export function defaultSectionSettings(type: BuilderSectionType): BuilderSection
         ]
       };
     case "FEATURED_PRODUCTS":
-      return { title: "الأكثر طلباً", layout: "rail" };
+      return { title: "الأكثر طلباً", layout: "rail", cardVariant: "wide-image" };
     case "PRODUCT_LIST":
-      return { title: "القائمة", layout: "list" };
+      return { title: "القائمة", layout: "list", cardVariant: "horizontal-contained" };
     case "ABOUT":
       return { title: "من نحن", description: "اكتب قصة المطعم هنا." };
     case "OPENING_HOURS":

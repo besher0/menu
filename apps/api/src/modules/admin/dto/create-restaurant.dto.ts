@@ -1,4 +1,5 @@
-import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
+import { IsEmail, IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { PUBLIC_TEMPLATE_KEYS, PublicTemplateKey } from "@menu/shared";
 
 export class CreateRestaurantDto {
   @IsString()
@@ -39,6 +40,10 @@ export class CreateRestaurantDto {
   @IsOptional()
   @IsString()
   copyFromRestaurantId?: string;
+
+  @IsOptional()
+  @IsIn(PUBLIC_TEMPLATE_KEYS)
+  templateKey?: PublicTemplateKey;
 
   @IsEmail()
   ownerEmail: string;

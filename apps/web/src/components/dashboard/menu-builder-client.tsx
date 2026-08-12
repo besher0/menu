@@ -18,6 +18,8 @@ import {
   BUILDER_SECTION_TYPES,
   BuilderSection,
   BuilderSectionType,
+  CATEGORY_NAV_VARIANTS,
+  PRODUCT_CARD_VARIANTS,
   SECTION_LABELS,
   defaultSectionSettings
 } from "@menu/shared";
@@ -31,6 +33,24 @@ type RestaurantOption = {
   id: string;
   name: string;
   slug: string;
+};
+
+type ProductOption = {
+  id: string;
+  name: string;
+  slug?: string;
+};
+
+const PRODUCT_CARD_VARIANT_LABELS: Record<string, string> = {
+  "wide-image": "عريض بصورة كاملة",
+  "featured-overlay-large": "كارد كبير بنص فوق الصورة",
+  "horizontal-contained": "أفقي بصورة داخل إطار أبيض",
+  "spotlight-contained": "عرض كبير بصورة contained"
+};
+
+const CATEGORY_NAV_VARIANT_LABELS: Record<string, string> = {
+  "image-chips": "أقسام مع صور",
+  "text-tabs": "أقسام نصية مثل Vertigo"
 };
 
 const initialSections: BuilderSection[] = [
@@ -98,6 +118,7 @@ export function MenuBuilderClient() {
   const [message, setMessage] = useState("");
   const [restaurants, setRestaurants] = useState<RestaurantOption[]>([]);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
+  const [products, setProducts] = useState<ProductOption[]>([]);
 
   const selected = sections.find((section) => section.id === selectedId) ?? sections[0];
   const orderedSections = useMemo(() => [...sections].sort((a, b) => a.sortOrder - b.sortOrder), [sections]);
@@ -214,6 +235,40 @@ export function MenuBuilderClient() {
     };
   }, [selectedRestaurantId, restaurants, requestedSectionType]);
 
+  useEffect(() => {
+    if (!selectedRestaurantId) {
+      setProducts([]);
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadProducts() {
+      try {
+        const response = await fetch(`${API_URL}/dashboard/products?limit=100`, {
+          headers: selectedRestaurantHeaders(),
+          cache: "no-store"
+        });
+        const payload = await response.json().catch(() => null);
+        const rows = (payload?.data?.data ?? payload?.data ?? payload ?? []) as ProductOption[];
+
+        if (mounted) {
+          setProducts(Array.isArray(rows) ? rows.map((item) => ({ id: item.id, name: item.name, slug: item.slug })) : []);
+        }
+      } catch {
+        if (mounted) {
+          setProducts([]);
+        }
+      }
+    }
+
+    void loadProducts();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedRestaurantId, restaurants]);
+
   function selectSectionByType(type: BuilderSectionType) {
     const match = orderedSections.find((section) => section.type === type);
     if (match) {
@@ -295,6 +350,7 @@ export function MenuBuilderClient() {
             subtitle: "",
             imageUrl: selected.settings.backgroundImageUrl ?? "",
             targetUrl: "/menu",
+            targetProductId: "",
             badge: ""
           }
         ]
@@ -302,7 +358,7 @@ export function MenuBuilderClient() {
     });
   }
 
-  function updateAdBanner(index: number, key: "title" | "subtitle" | "imageUrl" | "targetUrl" | "badge", value: string) {
+  function updateAdBanner(index: number, key: "title" | "subtitle" | "imageUrl" | "targetUrl" | "targetProductId" | "badge", value: string) {
     if (!selected) return;
     const adBanners = [...(selected.settings.adBanners ?? [])];
     adBanners[index] = { ...adBanners[index], [key]: value };
@@ -683,6 +739,8 @@ export function MenuBuilderClient() {
           <h2>إضافة قسم</h2>
           <div className="builder-quick-links">
             <button type="button" onClick={() => selectSectionByType("CATEGORY_GRID")}>إعدادات صفحات الأقسام</button>
+            <button type="button" onClick={() => selectSectionByType("FEATURED_PRODUCTS")}>كاردات الأصناف المميزة</button>
+            <button type="button" onClick={() => selectSectionByType("PRODUCT_LIST")}>كاردات صفحة القائمة</button>
             <button type="button" onClick={() => selectSectionByType("MOOD_STRIP")}>خلفيات شو مزاجك اليوم</button>
           </div>
           <div>
@@ -790,6 +848,29 @@ export function MenuBuilderClient() {
                     onChange={(event) => updateSetting("buttonTarget", event.target.value)}
                   />
                 </label>
+                {(selected.type === "FEATURED_PRODUCTS" || selected.type === "PRODUCT_LIST") ? (
+                  <label>
+                    <span>شكل كارد المنتجات</span>
+                    <select value={selected.settings.cardVariant ?? ""} onChange={(event) => updateSetting("cardVariant", event.target.value)}>
+                      <option value="">افتراضي</option>
+                      {PRODUCT_CARD_VARIANTS.map((variant) => (
+                        <option key={variant} value={variant}>{PRODUCT_CARD_VARIANT_LABELS[variant] ?? variant}</option>
+                      ))}
+                    </select>
+                    <small className="settings-help">هذا الخيار يغيّر شكل كاردات هذا القسم فقط.</small>
+                  </label>
+                ) : null}
+                {selected.type === "CATEGORY_GRID" ? (
+                  <label>
+                    <span>شكل أقسام القائمة</span>
+                    <select value={selected.settings.categoryNavVariant ?? "image-chips"} onChange={(event) => updateSetting("categoryNavVariant", event.target.value)}>
+                      {CATEGORY_NAV_VARIANTS.map((variant) => (
+                        <option key={variant} value={variant}>{CATEGORY_NAV_VARIANT_LABELS[variant] ?? variant}</option>
+                      ))}
+                    </select>
+                    <small className="settings-help">اختر النصوص فقط لقائمة Vertigo، أو الأقسام مع الصور للقالب الحالي.</small>
+                  </label>
+                ) : null}
                 {selected.type === "CATEGORY_GRID" ? (
                   <div className="full builder-visibility-options">
                     <label className="builder-check">
@@ -838,6 +919,15 @@ export function MenuBuilderClient() {
                         <label>
                           <span>الشارة</span>
                           <input value={banner.badge ?? ""} onChange={(event) => updateAdBanner(index, "badge", event.target.value)} />
+                        </label>
+                        <label>
+                          <span>الوجبة المستهدفة</span>
+                          <select value={banner.targetProductId ?? ""} onChange={(event) => updateAdBanner(index, "targetProductId", event.target.value)}>
+                            <option value="">بدون اختيار</option>
+                            {products.map((product) => (
+                              <option key={product.id} value={product.id}>{product.name}</option>
+                            ))}
+                          </select>
                         </label>
                         <label>
                           <span>الرابط</span>

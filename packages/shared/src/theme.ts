@@ -22,6 +22,26 @@ export type IconRenderConfig = IconDeviceSettings & {
   desktop?: IconDeviceSettings;
 };
 
+export const PUBLIC_TEMPLATE_KEYS = ["default", "vertigo"] as const;
+export type PublicTemplateKey = (typeof PUBLIC_TEMPLATE_KEYS)[number];
+
+export const HEADER_VARIANTS = ["default", "vertigo"] as const;
+export type HeaderVariant = (typeof HEADER_VARIANTS)[number];
+
+export const FOOTER_VARIANTS = ["default", "floating-pill"] as const;
+export type FooterVariant = (typeof FOOTER_VARIANTS)[number];
+
+export const PRODUCT_CARD_VARIANTS = [
+  "wide-image",
+  "featured-overlay-large",
+  "horizontal-contained",
+  "spotlight-contained"
+] as const;
+export type ProductCardVariant = (typeof PRODUCT_CARD_VARIANTS)[number];
+
+export const CATEGORY_NAV_VARIANTS = ["image-chips", "text-tabs"] as const;
+export type CategoryNavVariant = (typeof CATEGORY_NAV_VARIANTS)[number];
+
 export type ThemeSettings = {
   colors: {
     primary: string;
@@ -62,6 +82,9 @@ export type ThemeSettings = {
     instances?: IconRenderConfig[];
   };
   publicUi?: {
+    template?: PublicTemplateKey;
+    headerVariant?: HeaderVariant;
+    footerVariant?: FooterVariant;
     productImagePlaceholderBackground?: string;
     moodChipLabelColor?: string;
     moodChipLabelFontSize?: string;
@@ -107,9 +130,52 @@ export const ABO_MALEK_THEME: ThemeSettings = {
     instances: []
   },
   publicUi: {
+    template: "default",
+    headerVariant: "default",
+    footerVariant: "default",
     productImagePlaceholderBackground: "#e5e7eb",
     moodChipLabelColor: "#ffffff",
     moodChipLabelFontSize: "16px"
+  }
+};
+
+export const VERTIGO_THEME: ThemeSettings = {
+  ...ABO_MALEK_THEME,
+  colors: {
+    ...ABO_MALEK_THEME.colors,
+    primary: "#111111",
+    secondary: "#111111",
+    background: "#ffffff",
+    surface: "#ffffff",
+    text: "#111111",
+    muted: "#9ca3af",
+    border: "#eef0f4"
+  },
+  radius: {
+    ...ABO_MALEK_THEME.radius,
+    card: "28px",
+    section: "28px"
+  },
+  layout: {
+    direction: "rtl",
+    productCard: "image-first",
+    categoryGrid: "chips",
+    categoryProductListLayout: "single"
+  },
+  icons: {
+    ...ABO_MALEK_THEME.icons,
+    color: "#111111",
+    hoverColor: "#111111",
+    backgroundColor: "#ffffff",
+    borderRadius: "999px",
+    shadow: "0 8px 22px rgb(16 24 40 / 8%)"
+  },
+  publicUi: {
+    ...ABO_MALEK_THEME.publicUi,
+    template: "vertigo",
+    headerVariant: "vertigo",
+    footerVariant: "floating-pill",
+    productImagePlaceholderBackground: "#ffffff"
   }
 };
 

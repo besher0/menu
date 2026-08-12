@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, ExternalLink, Plus, Power, PowerOff, Store, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/client-api";
+import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { StatCard } from "./stat-card";
 
@@ -237,7 +238,7 @@ export function RestaurantsClient() {
                         <Store size={16} />
                         داشبورد المطعم
                       </Link>
-                      <Link className="table-link" href={`/m/${restaurant.slug}`}>
+                      <Link className="table-link" href={preferredRestaurantUrl(restaurant.slug)}>
                         <ExternalLink size={16} />
                         فتح
                       </Link>

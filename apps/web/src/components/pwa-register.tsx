@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { restaurantSlugFromHost } from "@/lib/public-routes";
 
 export function PwaRegister() {
   useEffect(() => {
@@ -8,7 +9,10 @@ export function PwaRegister() {
       return;
     }
 
-    if (!window.location.pathname.startsWith("/m/")) {
+    const isPublicRestaurantPath = window.location.pathname.startsWith("/m/")
+      || Boolean(restaurantSlugFromHost(window.location.host));
+
+    if (!isPublicRestaurantPath) {
       navigator.serviceWorker.getRegistrations()
         .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
         .catch(() => undefined);

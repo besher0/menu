@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
-import { ABO_MALEK_THEME, FEATURE_KEYS } from "@menu/shared";
+import { ABO_MALEK_THEME, FEATURE_KEYS, PublicTemplateKey, VERTIGO_THEME } from "@menu/shared";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { slugify } from "../../common/slugify";
@@ -145,6 +145,7 @@ export class AdminService {
   async createRestaurant(dto: CreateRestaurantDto) {
     const baseSlug = slugify(dto.slug || dto.name);
     const slug = dto.slug ? baseSlug : await this.nextRestaurantSlug(baseSlug);
+    const requestedTemplateKey = this.resolveTemplateKey(dto.templateKey, dto.type);
 
     if (dto.slug) {
       const existingRestaurant = await this.prisma.restaurant.findUnique({
@@ -162,7 +163,7 @@ export class AdminService {
     const plan = await this.prisma.subscriptionPlan.findUnique({
       where: { key: dto.planKey ?? "BASIC" }
     });
-    const designSource = dto.copyFromRestaurantId
+    const designSource = dto.copyFromRestaurantId && requestedTemplateKey === "default"
       ? await this.loadRestaurantDesignSource(dto.copyFromRestaurantId)
       : null;
 
@@ -234,7 +235,8 @@ export class AdminService {
             restaurant.id,
             restaurant.branches[0]?.id ?? null,
             dto.name,
-            dto.heroImageUrl
+            dto.heroImageUrl,
+            requestedTemplateKey
           );
         }
 
@@ -243,7 +245,7 @@ export class AdminService {
             restaurantId: restaurant.id,
             branchId: restaurant.branches[0]?.id,
             label: "رابط المنيو الرئيسي",
-            targetUrl: `/m/${restaurant.slug}`
+            targetUrl: publicRestaurantUrl(restaurant.slug)
           }
         });
 
@@ -251,7 +253,7 @@ export class AdminService {
           id: restaurant.id,
           name: restaurant.name,
           slug: restaurant.slug,
-          publicUrl: `/m/${restaurant.slug}`,
+          publicUrl: publicRestaurantUrl(restaurant.slug),
           owner: {
             id: owner.id,
             email: owner.email,
@@ -609,16 +611,17 @@ export class AdminService {
     restaurantId: string,
     branchId: string | null,
     restaurantName: string,
-    heroImageUrl?: string
+    heroImageUrl?: string,
+    templateKey: PublicTemplateKey = "default"
   ) {
     await tx.restaurantThemeSettings.create({
       data: {
         restaurantId,
-        settings: ABO_MALEK_THEME
+        settings: this.defaultThemeSettings(templateKey)
       }
     });
 
-    await this.createDefaultMenu(tx, restaurantId, branchId, restaurantName, heroImageUrl);
+    await this.createDefaultMenu(tx, restaurantId, branchId, restaurantName, heroImageUrl, templateKey);
   }
 
   private async createDefaultMenu(
@@ -626,7 +629,8 @@ export class AdminService {
     restaurantId: string,
     branchId: string | null,
     restaurantName?: string,
-    heroImageUrl?: string
+    heroImageUrl?: string,
+    templateKey: PublicTemplateKey = "default"
   ) {
     const menu = await tx.menu.create({
       data: {
@@ -650,9 +654,86 @@ export class AdminService {
     });
 
     await tx.menuSection.createMany({
-      data: [
+      data: this.defaultMenuSections(page.id, restaurantName, heroImageUrl, templateKey)
+    });
+  }
+
+  private defaultThemeSettings(templateKey: PublicTemplateKey) {
+    return templateKey === "vertigo" ? VERTIGO_THEME : ABO_MALEK_THEME;
+  }
+
+  private resolveTemplateKey(templateKey?: PublicTemplateKey, restaurantType?: string | null): PublicTemplateKey {
+    const normalizedType = restaurantType?.trim().toLowerCase() ?? "";
+    if (templateKey === "vertigo" || normalizedType.includes("vertigo") || normalizedType.includes("فيرتيغو")) {
+      return "vertigo";
+    }
+
+    return "default";
+  }
+
+  private defaultMenuSections(pageId: string, restaurantName?: string, heroImageUrl?: string, templateKey: PublicTemplateKey = "default") {
+    if (templateKey === "vertigo") {
+      return [
         {
-          pageId: page.id,
+          pageId,
+          type: "HERO",
+          sortOrder: 0,
+          settings: {
+            title: restaurantName ? `welcome to ${restaurantName}` : "welcome",
+            subtitle: "CAFE & RETO",
+            backgroundImageUrl: heroImageUrl,
+            alignment: "start",
+            height: "large",
+            adBanners: [
+              {
+                title: "وجبة جديدة",
+                subtitle: "تفاصيل الوجبة",
+                imageUrl: heroImageUrl ?? "/assets/public/product-detail.png",
+                targetUrl: "/menu",
+                targetProductId: "",
+                badge: "جديد"
+              }
+            ]
+          }
+        },
+        {
+          pageId,
+          type: "CATEGORY_GRID",
+          sortOrder: 1,
+          settings: {
+            title: "الأقسام",
+            layout: "text-tabs",
+            categoryNavVariant: "text-tabs",
+            showLandingCategories: false,
+            showNestedCategoryStrip: true
+          }
+        },
+        {
+          pageId,
+          type: "FEATURED_PRODUCTS",
+          sortOrder: 2,
+          settings: {
+            title: "الأصناف المميزة",
+            layout: "stack",
+            cardVariant: "featured-overlay-large"
+          }
+        },
+        {
+          pageId,
+          type: "PRODUCT_LIST",
+          sortOrder: 3,
+          settings: {
+            title: "القائمة",
+            layout: "list",
+            cardVariant: "horizontal-contained"
+          }
+        }
+      ];
+    }
+
+    return [
+        {
+          pageId,
           type: "HERO",
           sortOrder: 0,
           settings: {
@@ -662,19 +743,18 @@ export class AdminService {
           }
         },
         {
-          pageId: page.id,
+          pageId,
           type: "CATEGORY_GRID",
           sortOrder: 1,
-          settings: { layout: "horizontal-chips" }
+          settings: { layout: "horizontal-chips", categoryNavVariant: "image-chips" }
         },
         {
-          pageId: page.id,
+          pageId,
           type: "FEATURED_PRODUCTS",
           sortOrder: 2,
-          settings: { title: "الأكثر طلبا" }
+          settings: { title: "الأكثر طلبا", cardVariant: "wide-image" }
         }
-      ]
-    });
+      ];
   }
 
   private defaultAllCategoryData() {
@@ -829,4 +909,29 @@ export class AdminService {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
   }
+}
+
+function publicRestaurantUrl(restaurantSlug: string) {
+  const domain = normalizeDomain(process.env.ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "ordersawa.com");
+
+  if (!domain || isLocalDomain(domain)) {
+    const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
+    return `${webOrigin}/m/${restaurantSlug}`;
+  }
+
+  return `https://${restaurantSlug}.${domain}`;
+}
+
+function normalizeDomain(value?: string | null) {
+  return value
+    ?.trim()
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    ?.split(":")[0]
+    ?.replace(/\.$/, "")
+    .toLowerCase() || null;
+}
+
+function isLocalDomain(domain: string) {
+  return domain === "localhost" || domain.endsWith(".localhost") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain);
 }

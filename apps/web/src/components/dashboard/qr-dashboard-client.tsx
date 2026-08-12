@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Copy, Download, Loader2, Plus, QrCode, RefreshCcw } from "lucide-react";
-import { authHeaders } from "@/lib/session";
+import { preferredRestaurantUrl } from "@/lib/public-routes";
+import { authHeaders, resolveStoredRestaurant } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
@@ -27,12 +28,17 @@ type ApiPayload<T> = {
 export function QrDashboardClient() {
   const [items, setItems] = useState<QrItem[]>([]);
   const [label, setLabel] = useState("Special offer");
-  const [targetUrl, setTargetUrl] = useState("/m/your-restaurant");
+  const [targetUrl, setTargetUrl] = useState(preferredRestaurantUrl("your-restaurant"));
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
   const scansTotal = useMemo(() => items.length * 12, [items.length]);
 
   useEffect(() => {
+    const restaurantSlug = resolveStoredRestaurant()?.slug;
+    if (restaurantSlug) {
+      setTargetUrl(preferredRestaurantUrl(restaurantSlug));
+    }
+
     void loadCodes();
   }, []);
 

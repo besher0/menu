@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, MonitorSmartphone, RotateCcw, Save } from "lucide-react";
-import { ABO_MALEK_THEME, ThemeSettings, themeToCssVariables } from "@menu/shared";
+import {
+  ABO_MALEK_THEME,
+  FOOTER_VARIANTS,
+  HEADER_VARIANTS,
+  PUBLIC_TEMPLATE_KEYS,
+  ThemeSettings,
+  themeToCssVariables
+} from "@menu/shared";
 import { authHeaders } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
@@ -25,6 +32,21 @@ const colorFields: Array<{ key: keyof ThemeSettings["colors"]; label: string }> 
   { key: "muted", label: "Muted" },
   { key: "border", label: "Border" }
 ];
+
+const PUBLIC_TEMPLATE_LABELS: Record<string, string> = {
+  default: "القالب الحالي",
+  vertigo: "Vertigo"
+};
+
+const HEADER_VARIANT_LABELS: Record<string, string> = {
+  default: "الهيدر الحالي",
+  vertigo: "هيدر Vertigo"
+};
+
+const FOOTER_VARIANT_LABELS: Record<string, string> = {
+  default: "الفوتر الحالي",
+  "floating-pill": "فوتر عائم"
+};
 
 export function ThemeBuilderClient() {
   const [theme, setTheme] = useState<ThemeSettings>(ABO_MALEK_THEME);
@@ -111,6 +133,22 @@ export function ThemeBuilderClient() {
       publicUi: {
         ...current.publicUi,
         [key]: value
+      }
+    }));
+  }
+
+  function applyPublicTemplate(template: NonNullable<ThemeSettings["publicUi"]>["template"]) {
+    setTheme((current) => ({
+      ...current,
+      layout: {
+        ...current.layout,
+        categoryProductListLayout: template === "vertigo" ? "single" : current.layout.categoryProductListLayout
+      },
+      publicUi: {
+        ...current.publicUi,
+        template,
+        headerVariant: template === "vertigo" ? "vertigo" : "default",
+        footerVariant: template === "vertigo" ? "floating-pill" : "default"
       }
     }));
   }
@@ -208,6 +246,53 @@ export function ThemeBuilderClient() {
 
           <section>
             <h2>واجهة المستخدم</h2>
+            <div className="theme-fields">
+              <label>
+                <span>قالب العرض العام</span>
+                <select
+                  value={theme.publicUi?.template ?? "default"}
+                  onChange={(event) =>
+                    applyPublicTemplate(event.target.value as NonNullable<ThemeSettings["publicUi"]>["template"])
+                  }
+                >
+                  {PUBLIC_TEMPLATE_KEYS.map((template) => (
+                    <option key={template} value={template}>
+                      {PUBLIC_TEMPLATE_LABELS[template] ?? template}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>شكل الهيدر</span>
+                <select
+                  value={theme.publicUi?.headerVariant ?? "default"}
+                  onChange={(event) =>
+                    updatePublicUi("headerVariant", event.target.value as NonNullable<ThemeSettings["publicUi"]>["headerVariant"])
+                  }
+                >
+                  {HEADER_VARIANTS.map((variant) => (
+                    <option key={variant} value={variant}>
+                      {HEADER_VARIANT_LABELS[variant] ?? variant}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>شكل الفوتر</span>
+                <select
+                  value={theme.publicUi?.footerVariant ?? "default"}
+                  onChange={(event) =>
+                    updatePublicUi("footerVariant", event.target.value as NonNullable<ThemeSettings["publicUi"]>["footerVariant"])
+                  }
+                >
+                  {FOOTER_VARIANTS.map((variant) => (
+                    <option key={variant} value={variant}>
+                      {FOOTER_VARIANT_LABELS[variant] ?? variant}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="theme-color-grid">
               <label>
                 <span>Product placeholder</span>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getPublicMenu } from "@/lib/api";
+import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
 function normalizeRouteKey(value?: string | null) {
@@ -37,10 +38,11 @@ export async function generateMetadata({
     openGraph: {
       title,
       description,
+      url: preferredRestaurantUrl(slug, `/product/${encodeURIComponent(product?.id ?? productSlug)}`),
       images: image ? [image] : undefined
     },
     alternates: {
-      canonical: `/m/${slug}/product/${product?.id ?? productSlug}`
+      canonical: preferredRestaurantUrl(slug, `/product/${encodeURIComponent(product?.id ?? productSlug)}`)
     }
   };
 }

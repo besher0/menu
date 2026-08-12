@@ -1438,7 +1438,7 @@ function StatCard({ label, value, delta }: { label: string; value: number; delta
 function DashboardList({ title, href, items, mode }: { title: string; href: string; items: ProductSummary[]; mode: "views" | "new" | "unavailable" }) {
   return (
     <article className="dashboard-list">
-      <header><Link href={href}>عرض الكل</Link><h2>{title}</h2></header>
+      <header><h2>{title}</h2><Link href={href}>عرض الكل</Link></header>
       {items.length ? items.slice(0, 8).map((item) => (
         <div className="dashboard-list-row" key={item.id}>
           <div><strong>{item.name}</strong><small>{item.categoryName || "-"}</small></div>

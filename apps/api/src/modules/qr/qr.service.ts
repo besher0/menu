@@ -169,7 +169,10 @@ export class QrService {
   }
 
   private publicMenuUrl(restaurantSlug: string) {
-    return `${this.webOrigin()}/m/${restaurantSlug}`;
+    const domain = this.rootDomain();
+    return domain && !this.isLocalDomain(domain)
+      ? `https://${restaurantSlug}.${domain}`
+      : `${this.webOrigin()}/m/${restaurantSlug}`;
   }
 
   private publicQrUrl(id: string) {
@@ -182,6 +185,26 @@ export class QrService {
 
   private webOrigin() {
     return this.config.get<string>("WEB_ORIGIN") ?? "http://localhost:3000";
+  }
+
+  private rootDomain() {
+    return this.normalizeDomain(
+      this.config.get<string>("ROOT_DOMAIN") ?? this.config.get<string>("NEXT_PUBLIC_ROOT_DOMAIN") ?? "ordersawa.com"
+    );
+  }
+
+  private normalizeDomain(value?: string | null) {
+    return value
+      ?.trim()
+      .replace(/^https?:\/\//i, "")
+      .split("/")[0]
+      ?.split(":")[0]
+      ?.replace(/\.$/, "")
+      .toLowerCase() || null;
+  }
+
+  private isLocalDomain(domain: string) {
+    return domain === "localhost" || domain.endsWith(".localhost") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain);
   }
 
   private generateSvg(value: string) {

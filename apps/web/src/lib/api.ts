@@ -117,6 +117,9 @@ export type PublicMenuData = {
         settings?: {
           backgroundImageUrl?: string;
           title?: string;
+          subtitle?: string;
+          cardVariant?: string;
+          categoryNavVariant?: string;
           showHomePage?: boolean;
           showLandingCategories?: boolean;
           showNestedCategoryStrip?: boolean;
@@ -125,6 +128,7 @@ export type PublicMenuData = {
             subtitle?: string;
             imageUrl: string;
             targetUrl?: string;
+            targetProductId?: string;
             badge?: string;
             isActive?: boolean;
           }>;

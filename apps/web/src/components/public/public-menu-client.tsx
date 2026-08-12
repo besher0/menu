@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Heart, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
+import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 
 type CartItem = {
   slug: string;
@@ -222,12 +223,12 @@ function productPrice(product: PublicProduct) {
   return product.price ?? product.basePrice;
 }
 
-function moodMenuHref(restaurantSlug: string, key: string) {
-  return `/m/${restaurantSlug}/menu?mood=${encodeURIComponent(key)}`;
+function moodMenuHref(restaurantSlug: string, key: string, useSubdomainRoutes = false) {
+  return `${restaurantPath(restaurantSlug, "/menu", useSubdomainRoutes)}?mood=${encodeURIComponent(key)}`;
 }
 
-function collectionMenuHref(restaurantSlug: string, collection: "popular" | "new") {
-  return `/m/${restaurantSlug}/menu?collection=${collection}`;
+function collectionMenuHref(restaurantSlug: string, collection: "popular" | "new", useSubdomainRoutes = false) {
+  return `${restaurantPath(restaurantSlug, "/menu", useSubdomainRoutes)}?collection=${collection}`;
 }
 
 function safeInternalHref(value?: string | null) {
@@ -238,10 +239,24 @@ function safeInternalHref(value?: string | null) {
   return value;
 }
 
-function productHref(restaurantSlug: string, product: PublicProduct, returnHref?: string | null) {
-  const href = `/m/${restaurantSlug}/product/${encodeURIComponent(product.id || product.slug)}`;
+function productHref(restaurantSlug: string, product: PublicProduct, returnHref?: string | null, useSubdomainRoutes = false) {
+  const href = restaurantPath(restaurantSlug, `/product/${encodeURIComponent(product.id || product.slug)}`, useSubdomainRoutes);
   const safeReturnHref = safeInternalHref(returnHref);
   return safeReturnHref ? `${href}?from=${encodeURIComponent(safeReturnHref)}` : href;
+}
+
+function normalizeRestaurantInternalHref(restaurantSlug: string, href: string, useSubdomainRoutes: boolean) {
+  const sameRestaurantPrefix = `/m/${restaurantSlug}`;
+
+  if (href === sameRestaurantPrefix) {
+    return restaurantPath(restaurantSlug, "/", useSubdomainRoutes);
+  }
+
+  if (href.startsWith(`${sameRestaurantPrefix}/`)) {
+    return restaurantPath(restaurantSlug, href.slice(sameRestaurantPrefix.length), useSubdomainRoutes);
+  }
+
+  return href;
 }
 
 function navigateBack(fallbackHref: string, navigateTo?: (href: string) => void) {
@@ -426,6 +441,36 @@ function isNew(product: PublicProduct) {
   return product.isNew ?? product.new ?? false;
 }
 
+function publicTemplate(data: PublicMenuData) {
+  const normalizedType = data.restaurant.type?.trim().toLowerCase() ?? "";
+  return data.theme?.publicUi?.template === "vertigo" || normalizedType.includes("vertigo") || normalizedType.includes("فيرتيغو")
+    ? "vertigo"
+    : "default";
+}
+
+function footerVariant(data: PublicMenuData) {
+  return data.theme?.publicUi?.footerVariant === "floating-pill" || publicTemplate(data) === "vertigo" ? "floating-pill" : "default";
+}
+
+function bannerHref(
+  restaurantSlug: string,
+  banner: { targetUrl?: string; targetProductId?: string },
+  products: PublicProduct[],
+  useSubdomainRoutes = false
+) {
+  const product = banner.targetProductId
+    ? products.find((item) => item.id === banner.targetProductId || item.slug === banner.targetProductId)
+    : null;
+
+  if (product) {
+    return productHref(restaurantSlug, product, null, useSubdomainRoutes);
+  }
+
+  return banner.targetUrl
+    ? normalizeRestaurantInternalHref(restaurantSlug, banner.targetUrl, useSubdomainRoutes)
+    : restaurantPath(restaurantSlug, "/menu", useSubdomainRoutes);
+}
+
 function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
   if (typeof window === "undefined") return true;
 
@@ -497,6 +542,7 @@ export function PublicMenuClient({
   const [splashClosing, setSplashClosing] = useState(false);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
+  const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(false);
   const storageKey = `cart:${data.restaurant.slug}:main`;
   const languageStorageKey = `language:${data.restaurant.slug}`;
   const splashStorageKey = `splash:${data.restaurant.slug}`;
@@ -509,6 +555,7 @@ export function PublicMenuClient({
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
   const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
+  const publicPath = (pathname = "") => restaurantPath(data.restaurant.slug, pathname, useSubdomainRoutes);
 
   function navigateTo(href: string) {
     window.dispatchEvent(new Event("app:navigation-start"));
@@ -523,12 +570,18 @@ export function PublicMenuClient({
   const showMenuNavItem = Boolean(data.products.length || data.categories.length);
   const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
   const isSingleMenuPage = activeView === "menu" && showMenuNavItem && !hasHomeSections;
+  const templateKey = publicTemplate(data);
+  const bottomNavVariant = footerVariant(data);
   const splashSettings = data.restaurant.splashScreen;
   const splashLogoUrl = splashSettings?.logoUrl ?? data.restaurant.logoUrl;
   const splashBackgroundImageUrl = splashSettings?.backgroundType === "IMAGE" ? splashSettings.backgroundImageUrl : null;
   const splashBackgroundColor = splashSettings?.backgroundColor ?? data.theme?.colors?.primary ?? "#e51f2a";
   const splashLogoX = splashSettings?.logoX ?? 50;
   const splashLogoY = splashSettings?.logoY ?? 50;
+
+  useEffect(() => {
+    setUseSubdomainRoutes(isRestaurantSubdomainHost(window.location.host, data.restaurant.slug));
+  }, [data.restaurant.slug]);
 
   useEffect(() => {
     setCartLoaded(false);
@@ -576,8 +629,8 @@ export function PublicMenuClient({
     const manifest = {
       name: `${data.restaurant.name} Menu`,
       short_name: data.restaurant.name || "Menu",
-      start_url: `/m/${data.restaurant.slug}`,
-      scope: `/m/${data.restaurant.slug}`,
+      start_url: publicPath(),
+      scope: publicPath(),
       display: "standalone",
       background_color: "#ffffff",
       theme_color: data.theme?.colors?.primary ?? "#e51f2a",
@@ -608,7 +661,7 @@ export function PublicMenuClient({
       link.href = previousHref;
       URL.revokeObjectURL(href);
     };
-  }, [data.restaurant.logoUrl, data.restaurant.name, data.restaurant.slug, data.theme?.colors?.primary, language]);
+  }, [data.restaurant.logoUrl, data.restaurant.name, data.restaurant.slug, data.theme?.colors?.primary, language, useSubdomainRoutes]);
 
   useEffect(() => {
     if (window.sessionStorage.getItem(splashStorageKey)) {
@@ -739,7 +792,7 @@ export function PublicMenuClient({
   }
 
   function goToRestaurantHome() {
-    navigateTo(`/m/${data.restaurant.slug}`);
+    navigateTo(publicPath());
   }
 
   function openDrawer() {
@@ -829,7 +882,7 @@ export function PublicMenuClient({
 
   return (
     <div
-      className={`public-screen view-${activeView} ${showPrices ? "" : "prices-hidden"} ${showBottomNav ? "" : "no-bottom-nav"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
+      className={`public-screen view-${activeView} template-${templateKey} footer-${bottomNavVariant} ${showPrices ? "" : "prices-hidden"} ${showBottomNav ? "" : "no-bottom-nav"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
       dir={language === "ar" ? "rtl" : "ltr"}
       onContextMenu={(event) => event.preventDefault()}
       style={cssVars(data.theme)}
@@ -864,7 +917,7 @@ export function PublicMenuClient({
       ) : null}
       {activeView !== "product" ? <header className="public-header">
         {activeView === "cart" ? (
-          <button onClick={() => navigateBack(`/m/${data.restaurant.slug}`, navigateTo)} aria-label="الرجوع">
+          <button onClick={() => navigateBack(publicPath(), navigateTo)} aria-label="الرجوع">
             <ChevronLeft size={22} />
           </button>
         ) : activeView === "menu" && menuNested ? (
@@ -887,6 +940,10 @@ export function PublicMenuClient({
         <p className={isSingleMenuPage ? "public-header-title single-menu-title" : "public-header-title"}>
           {activeView === "cart" ? (
             "تأكيد الطلب"
+          ) : templateKey === "vertigo" && activeView === "home" ? (
+            ""
+          ) : templateKey === "vertigo" && activeView === "menu" ? (
+            `أهلاً وسهلاً في ${data.restaurant.name}`
           ) : isSingleMenuPage ? (
             <span className="restaurant-name">{data.restaurant.name.trim() || t.menu}</span>
           ) : (
@@ -897,7 +954,7 @@ export function PublicMenuClient({
       </header> : null}
 
       {activeView === "home" ? (
-        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} />
+        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} useSubdomainRoutes={useSubdomainRoutes} />
       ) : activeView === "menu" ? (
         <MenuView
           data={data}
@@ -909,6 +966,7 @@ export function PublicMenuClient({
           menuBackSignal={menuBackSignal}
           onNestedChange={setMenuNested}
           navigateTo={navigateTo}
+          useSubdomainRoutes={useSubdomainRoutes}
         />
       ) : activeView === "product" && activeProduct ? (
         <ProductView
@@ -921,12 +979,13 @@ export function PublicMenuClient({
           t={t}
           showPrices={showPrices}
           navigateTo={navigateTo}
+          useSubdomainRoutes={useSubdomainRoutes}
         />
       ) : activeView === "product" ? (
         <main className="product-detail product-empty">
           <ShoppingBag size={34} />
           <b>{language === "ar" ? "المنتج غير متوفر حالياً" : "Product is currently unavailable"}</b>
-          <Link href={`/m/${data.restaurant.slug}/menu`}>{t.menu}</Link>
+          <Link href={publicPath("/menu")}>{t.menu}</Link>
         </main>
       ) : (
         <CartView
@@ -940,11 +999,12 @@ export function PublicMenuClient({
           orderMessage={orderMessage}
           t={t}
           showPrices={showPrices}
+          useSubdomainRoutes={useSubdomainRoutes}
         />
       )}
 
       {cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
-        <Link href={`/m/${data.restaurant.slug}/cart`} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
+        <Link href={publicPath("/cart")} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
           <ShoppingCart size={20} />
           <span>{t.viewCart}</span>
           <b>{cartCount}</b>
@@ -957,6 +1017,7 @@ export function PublicMenuClient({
         t={t}
         showHome={hasHomeSections}
         showMenu={showMenuNavItem}
+        useSubdomainRoutes={useSubdomainRoutes}
       />
 
       {drawerOpen ? <button className="public-drawer-backdrop" type="button" onClick={closeDrawer} aria-label={t.close} /> : null}
@@ -1015,12 +1076,14 @@ function HomeView({
   data,
   addToCart,
   t,
-  showPrices
+  showPrices,
+  useSubdomainRoutes
 }: {
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
   t: PublicTranslations;
   showPrices: boolean;
+  useSubdomainRoutes: boolean;
 }) {
   const featured = data.products.filter(isFeatured);
   const popular = data.products.filter(isPopular);
@@ -1030,6 +1093,7 @@ function HomeView({
     ?? allPages.find((page) => page.isHome)
     ?? allPages[0];
   const heroSection = homePage?.sections?.find((section) => section.type === "HERO" && section.isActive !== false);
+  const featuredSection = homePage?.sections?.find((section) => section.type === "FEATURED_PRODUCTS" && section.isActive !== false);
   const moodSection = homePage?.sections?.find((section) => section.type === "MOOD_STRIP" && section.isActive !== false);
   const moodItems: MoodItem[] = moodSection?.settings?.moodItems?.length
     ? moodSection.settings.moodItems
@@ -1040,7 +1104,7 @@ function HomeView({
         return {
           key,
           label,
-          href: moodMenuHref(data.restaurant.slug, key),
+          href: moodMenuHref(data.restaurant.slug, key, useSubdomainRoutes),
           iconUrl: item.iconUrl,
         iconPosition: "manual",
         iconX: item.iconX,
@@ -1058,7 +1122,10 @@ function HomeView({
   const moodSlots = moodItems;
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
-  const homeReturnHref = `/m/${data.restaurant.slug}`;
+  const homeReturnHref = restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes);
+  const isVertigo = publicTemplate(data) === "vertigo";
+  const featuredCardVariant = featuredSection?.settings?.cardVariant ?? (isVertigo ? "featured-overlay-large" : "wide-image");
+  const heroImageUrl = heroSection?.settings?.backgroundImageUrl || data.restaurant.heroImageUrl || data.restaurant.logoUrl || "";
   const [activeBanner, setActiveBanner] = useState(0);
   const bannerTouchStartX = useRef<number | null>(null);
 
@@ -1110,7 +1177,13 @@ function HomeView({
 
   return (
     <main className="public-content">
-      <section className="mood-strip">
+      {isVertigo ? (
+        <section className="vertigo-home-hero">
+          {heroImageUrl ? <img src={heroImageUrl} alt={data.restaurant.name} /> : null}
+        </section>
+      ) : null}
+
+      {!isVertigo ? <section className="mood-strip">
         <h1>
           <Flame size={18} />
           {t.moodToday}
@@ -1141,7 +1214,7 @@ function HomeView({
               );
             })}
           </div>
-      </section>
+      </section> : null}
 
       <section
         className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}
@@ -1152,14 +1225,15 @@ function HomeView({
           <>
             <div className="hero-promo-track">
               {bannerSlides.map((banner, index) => (
-                <div
+                <Link
                   key={`${banner.imageUrl}-${index}`}
                   className={index === activeBanner ? "hero-promo-slide active" : "hero-promo-slide"}
+                  href={bannerHref(data.restaurant.slug, banner, data.products, useSubdomainRoutes)}
                   aria-hidden={index === activeBanner ? undefined : true}
                 >
                   <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
                   {banner.badge ? <span>{banner.badge}</span> : null}
-                </div>
+                </Link>
               ))}
             </div>
             <div className="hero-promo-dots" aria-label="بنرات الإعلان">
@@ -1177,6 +1251,17 @@ function HomeView({
         ) : null}
       </section>
 
+      {isVertigo && featuredCardVariant === "featured-overlay-large" ? (
+        <VertigoFeaturedProducts
+          title={featuredSection?.settings?.title || "الأصناف المميزة"}
+          products={featured.length ? featured : popular}
+          restaurantSlug={data.restaurant.slug}
+          showPrices={showPrices}
+          returnHref={homeReturnHref}
+          t={t}
+          useSubdomainRoutes={useSubdomainRoutes}
+        />
+      ) : (
       <ProductRail
         title={t.mostPopular}
         products={popular}
@@ -1187,9 +1272,11 @@ function HomeView({
         onAddToCart={addToCart}
         showViewAll={false}
         returnHref={homeReturnHref}
+        useSubdomainRoutes={useSubdomainRoutes}
       />
+      )}
 
-      <section className="new-grid">
+      {!isVertigo ? <section className="new-grid">
         <div className="rail-head">
           <h2>
             <Star size={16} />
@@ -1200,7 +1287,7 @@ function HomeView({
           {featuredSlots.map((_, index) => {
             const product = featured[index];
             return product ? (
-            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref)} className="wide-product">
+            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref, useSubdomainRoutes)} className="wide-product">
               <ProductImageMedia product={product} />
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
@@ -1211,8 +1298,51 @@ function HomeView({
             );
           })}
         </div>
-      </section>
+      </section> : null}
     </main>
+  );
+}
+
+function VertigoFeaturedProducts({
+  title,
+  products,
+  restaurantSlug,
+  showPrices,
+  returnHref,
+  t,
+  useSubdomainRoutes
+}: {
+  title: string;
+  products: PublicProduct[];
+  restaurantSlug: string;
+  showPrices: boolean;
+  returnHref: string;
+  t: PublicTranslations;
+  useSubdomainRoutes: boolean;
+}) {
+  if (!products.length) {
+    return null;
+  }
+
+  return (
+    <section className="vertigo-featured-products">
+      <div className="rail-head">
+        <h2>{title}</h2>
+        <Link href={restaurantPath(restaurantSlug, "/menu", useSubdomainRoutes)}>{t.viewAll}</Link>
+      </div>
+      <div>
+        {products.slice(0, 6).map((product) => (
+          <Link key={`${product.id}-${product.slug}`} href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)} className="vertigo-feature-card">
+            <ProductImageMedia product={product} />
+            <div>
+              <b>{product.name}</b>
+              {product.description ? <p>{product.description}</p> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1225,7 +1355,8 @@ function MenuView({
   showPrices,
   menuBackSignal,
   onNestedChange,
-  navigateTo
+  navigateTo,
+  useSubdomainRoutes
 }: {
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
@@ -1236,6 +1367,7 @@ function MenuView({
   menuBackSignal: number;
   onNestedChange: (nested: boolean) => void;
   navigateTo: (href: string) => void;
+  useSubdomainRoutes: boolean;
 }) {
   const searchParams = useSearchParams();
   const menuQuery = searchParams.toString();
@@ -1249,6 +1381,12 @@ function MenuView({
   const categoryGridSection = allPages
     .flatMap((page) => page.sections ?? [])
     .find((section) => section.type === "CATEGORY_GRID");
+  const productListSection = allPages
+    .flatMap((page) => page.sections ?? [])
+    .find((section) => section.type === "PRODUCT_LIST");
+  const isVertigo = publicTemplate(data) === "vertigo";
+  const categoryNavVariant = categoryGridSection?.settings?.categoryNavVariant ?? (isVertigo ? "text-tabs" : "image-chips");
+  const productCardVariant = productListSection?.settings?.cardVariant ?? (isVertigo ? "horizontal-contained" : "");
   const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
   const showCategoryLanding = categoryControlsEnabled && categoryGridSection?.settings?.showLandingCategories !== false;
   const showNestedCategoryStrip = categoryControlsEnabled && categoryGridSection?.settings?.showNestedCategoryStrip !== false;
@@ -1307,6 +1445,7 @@ function MenuView({
   const categoryProductsSource = selectedMood || selectedCollection ? contextProducts : data.products;
   const visibleProducts = categoryProductsSource;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
+  const showRowQuantityControls = productListLayout === "single" && !(isVertigo && productCardVariant === "horizontal-contained");
   const menuReturnParams = new URLSearchParams(menuQuery);
 
   if (productListLayout === "single") {
@@ -1322,7 +1461,7 @@ function MenuView({
   }
 
   const menuReturnQuery = menuReturnParams.toString();
-  const menuReturnHref = `/m/${data.restaurant.slug}/menu${menuReturnQuery ? `?${menuReturnQuery}` : ""}`;
+  const menuReturnHref = `${restaurantPath(data.restaurant.slug, "/menu", useSubdomainRoutes)}${menuReturnQuery ? `?${menuReturnQuery}` : ""}`;
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
@@ -1363,7 +1502,7 @@ function MenuView({
     }
 
     if (selectedMood || selectedCollection) {
-      navigateTo(`/m/${data.restaurant.slug}`);
+      navigateTo(restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes));
       return;
     }
 
@@ -1495,7 +1634,7 @@ function MenuView({
       return;
     }
 
-    navigateTo(productHref(data.restaurant.slug, product, menuReturnHref));
+    navigateTo(productHref(data.restaurant.slug, product, menuReturnHref, useSubdomainRoutes));
   }
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
@@ -1601,7 +1740,7 @@ function MenuView({
   }
 
   function renderProduct(product: PublicProduct) {
-    const productClassName = productListLayout === "double" ? "menu-product-card" : "menu-product-row";
+    const productClassName = `${productListLayout === "double" ? "menu-product-card" : "menu-product-row"} ${productCardVariant ? `card-${productCardVariant}` : ""}`.trim();
     const quantity = getCartQuantity(product.slug);
     const productContent = (
       <>
@@ -1621,7 +1760,7 @@ function MenuView({
         <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
           {productContent}
         </button>
-        {productListLayout === "single" ? (
+        {showRowQuantityControls ? (
           <QuantityControl
             className="menu-product-quantity"
             quantity={quantity}
@@ -1650,11 +1789,12 @@ function MenuView({
                 showViewAll={false}
                 onAddToCart={addToCart}
                 returnHref={menuReturnHref}
+                useSubdomainRoutes={useSubdomainRoutes}
               />
             </section>
           ) : null}
 
-          {showNestedCategoryStrip ? <section className="menu-category-strip" id="menu-categories" ref={categoryStripRef}>
+          {showNestedCategoryStrip ? <section className={`menu-category-strip category-nav-${categoryNavVariant}`} id="menu-categories" ref={categoryStripRef}>
             {headerCategories.map((category) => {
               const isAllCategory = category.slug === "all";
               const isActive = category.slug === selectedCategorySlug;
@@ -1670,9 +1810,9 @@ function MenuView({
                   data-category-slug={category.slug}
                   onClick={() => selectCategory(category.slug)}
                 >
-                  <span className="menu-category-icon" style={categoryChipStyle(category)}>
+                  {categoryNavVariant !== "text-tabs" ? <span className="menu-category-icon" style={categoryChipStyle(category)}>
                     {category.imageUrl ? <img src={category.imageUrl} alt="" aria-hidden="true" /> : <LayoutGrid size={24} />}
-                  </span>
+                  </span> : null}
                   <span>{category.name}</span>
                   <small>{productsCount}</small>
                 </button>
@@ -1723,13 +1863,15 @@ function MenuView({
                 </div>
               </article>
               <div className="spotlight-actions">
-                <QuantityControl
-                  className="spotlight-quantity"
-                  quantity={getCartQuantity(spotlightProduct.slug)}
-                  onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
-                  onIncrease={() => addToCart(spotlightProduct)}
-                  label={spotlightProduct.name}
-                />
+                {!isVertigo ? (
+                  <QuantityControl
+                    className="spotlight-quantity"
+                    quantity={getCartQuantity(spotlightProduct.slug)}
+                    onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
+                    onIncrease={() => addToCart(spotlightProduct)}
+                    label={spotlightProduct.name}
+                  />
+                ) : null}
                 <div className="spotlight-pager">
                   <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
                     <ChevronRight size={22} />
@@ -1931,7 +2073,8 @@ function CartView({
   orderSubmitting,
   orderMessage,
   t,
-  showPrices
+  showPrices,
+  useSubdomainRoutes
 }: {
   data: PublicMenuData;
   cart: CartItem[];
@@ -1943,6 +2086,7 @@ function CartView({
   orderMessage: string | null;
   t: PublicTranslations;
   showPrices: boolean;
+  useSubdomainRoutes: boolean;
 }) {
   const [cartStep, setCartStep] = useState<"review" | "confirm">("review");
   const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup");
@@ -2074,7 +2218,7 @@ function CartView({
             <section className="cart-empty">
               <ShoppingBag size={34} />
               <b>{t.emptyCart}</b>
-              <Link href={`/m/${data.restaurant.slug}/menu`}>{t.menu}</Link>
+              <Link href={restaurantPath(data.restaurant.slug, "/menu", useSubdomainRoutes)}>{t.menu}</Link>
             </section>
           )}
 
@@ -2087,7 +2231,8 @@ function CartView({
             showPrices={showPrices}
             onAddToCart={addToCart}
             showViewAll={false}
-            returnHref={`/m/${data.restaurant.slug}/cart`}
+            returnHref={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)}
+            useSubdomainRoutes={useSubdomainRoutes}
           />
         </>
       ) : (
@@ -2202,7 +2347,8 @@ function ProductView({
   cartCount,
   t,
   showPrices,
-  navigateTo
+  navigateTo,
+  useSubdomainRoutes
 }: {
   data: PublicMenuData;
   product: PublicProduct;
@@ -2213,6 +2359,7 @@ function ProductView({
   t: PublicTranslations;
   showPrices: boolean;
   navigateTo: (href: string) => void;
+  useSubdomainRoutes: boolean;
 }) {
   const searchParams = useSearchParams();
   const related = getRelatedProducts(data.products, product);
@@ -2226,8 +2373,8 @@ function ProductView({
   const [mediaMode, setMediaMode] = useState<ProductMediaMode>("image");
   const activeImage = gallery[activeImageIndex] ?? gallery[0];
   const sourceReturnHref = safeInternalHref(searchParams.get("from"));
-  const productReturnHref = sourceReturnHref ?? `/m/${data.restaurant.slug}`;
-  const currentProductHref = productHref(data.restaurant.slug, product, productReturnHref);
+  const productReturnHref = sourceReturnHref ?? restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes);
+  const currentProductHref = productHref(data.restaurant.slug, product, productReturnHref, useSubdomainRoutes);
   const touchStartX = useRef<number | null>(null);
   const quantity = getCartQuantity(product.slug);
 
@@ -2450,6 +2597,7 @@ function ProductView({
           showViewAll={false}
           onAddToCart={addToCart}
           returnHref={currentProductHref}
+          useSubdomainRoutes={useSubdomainRoutes}
         />
       </section>
       <div className="product-bottom-cart">
@@ -2459,7 +2607,7 @@ function ProductView({
           onIncrease={() => addToCart(product)}
           label={product.name}
         />
-        <Link href={`/m/${data.restaurant.slug}/cart`} className="product-cart-link">
+        <Link href={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)} className="product-cart-link">
           <ShoppingBag size={20} />
           <span>{t.viewCart}</span>
           <b>{cartCount}</b>
@@ -2480,7 +2628,8 @@ function ProductRail({
   onAddToCart,
   showViewAll = true,
   viewAllHref,
-  returnHref
+  returnHref,
+  useSubdomainRoutes
 }: {
   title: string;
   products: PublicProduct[];
@@ -2493,6 +2642,7 @@ function ProductRail({
   showViewAll?: boolean;
   viewAllHref?: string;
   returnHref?: string;
+  useSubdomainRoutes: boolean;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const railPointerId = useRef<number | null>(null);
@@ -2582,7 +2732,7 @@ function ProductRail({
           <Flame size={18} />
           {title}
         </h2>
-        {showViewAll ? <Link href={viewAllHref ?? `/m/${restaurantSlug}/menu`}>{t.viewAll}</Link> : null}
+        {showViewAll ? <Link href={viewAllHref ?? restaurantPath(restaurantSlug, "/menu", useSubdomainRoutes)}>{t.viewAll}</Link> : null}
       </div>
       <div
         className="rail-scroll"
@@ -2599,7 +2749,7 @@ function ProductRail({
           <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
             <Link
-              href={productHref(restaurantSlug, product, returnHref)}
+              href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)}
               scroll
               onClick={(event) => {
                 if (railDragMoved.current) {
@@ -2633,13 +2783,15 @@ function BottomNav({
   active,
   t,
   showHome,
-  showMenu
+  showMenu,
+  useSubdomainRoutes
 }: {
   slug: string;
   active: "home" | "menu" | "product" | "cart";
   t: PublicTranslations;
   showHome: boolean;
   showMenu: boolean;
+  useSubdomainRoutes: boolean;
 }) {
   const itemCount = [showHome, showMenu].filter(Boolean).length;
 
@@ -2649,11 +2801,11 @@ function BottomNav({
 
   return (
     <nav className="public-bottom-nav" style={{ "--bottom-nav-count": itemCount } as React.CSSProperties}>
-      {showHome ? <Link href={`/m/${slug}`} className={active === "home" ? "active" : ""}>
+      {showHome ? <Link href={restaurantPath(slug, "/", useSubdomainRoutes)} className={active === "home" ? "active" : ""}>
         <Home size={20} />
         {t.home}
       </Link> : null}
-      {showMenu ? <Link href={`/m/${slug}/menu`} className={active === "menu" || active === "product" ? "active" : ""}>
+      {showMenu ? <Link href={restaurantPath(slug, "/menu", useSubdomainRoutes)} className={active === "menu" || active === "product" ? "active" : ""}>
         <Utensils size={20} />
         {t.menu}
       </Link> : null}

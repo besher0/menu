@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getPublicMenu } from "@/lib/api";
+import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -11,8 +12,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title,
     description,
+    openGraph: {
+      title,
+      description,
+      url: preferredRestaurantUrl(slug, "/cart")
+    },
     alternates: {
-      canonical: `/m/${slug}/cart`
+      canonical: preferredRestaurantUrl(slug, "/cart")
     }
   };
 }

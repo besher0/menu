@@ -27,6 +27,21 @@ type LoginResponse = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const LOGIN_TIMEOUT_MS = 12000;
+
+async function readLoginResponse(response: Response): Promise<LoginResponse> {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text) as LoginResponse;
+  } catch {
+    return { message: text };
+  }
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -41,13 +56,17 @@ export function LoginForm() {
     setMessage("");
 
     try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
+        signal: controller.signal
       });
+      window.clearTimeout(timeout);
 
-      const payload = (await response.json()) as LoginResponse;
+      const payload = await readLoginResponse(response);
       if (!response.ok) {
         throw new Error(payload.message ?? payload.error ?? "تعذر تسجيل الدخول. تأكد من تشغيل الـ API وقاعدة البيانات.");
       }
@@ -67,7 +86,9 @@ export function LoginForm() {
       router.push(session.user.role === "SUPER_ADMIN" ? "/admin" : "/dashboard");
     } catch (error) {
       setStatus("error");
-      const detail = error instanceof Error ? error.message : "حدث خطأ غير متوقع.";
+      const detail = error instanceof DOMException && error.name === "AbortError"
+        ? "انتهت مهلة تسجيل الدخول. غالباً قاعدة البيانات لا ترد حالياً."
+        : error instanceof Error ? error.message : "حدث خطأ غير متوقع.";
       setMessage(`${detail} تأكد من تشغيل API على ${API_URL} ومن اتصال قاعدة البيانات.`);
     }
   }
