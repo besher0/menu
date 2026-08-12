@@ -4,10 +4,10 @@ import { restaurantSlugFromHost } from "@/lib/public-routes";
 const PUBLIC_FILE_PATTERN = /\/[^/]+\.[^/]+$/;
 
 export function middleware(request: NextRequest) {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const hostHeader = request.headers.get("host");
-
-  const host = forwardedHost ?? hostHeader ?? "";
+  const host =
+    request.headers.get("x-forwarded-host") ??
+    request.headers.get("host") ??
+    "";
 
   const restaurantSlug = restaurantSlugFromHost(host);
 
@@ -15,18 +15,21 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
 
   if (shouldBypass(pathname)) {
     return NextResponse.next();
   }
 
-  const rewriteUrl = request.nextUrl.clone();
-
-  rewriteUrl.pathname =
+  const internalPath =
     pathname === "/"
       ? `/m/${restaurantSlug}`
       : `/m/${restaurantSlug}${pathname}`;
+
+  const rewriteUrl = new URL(
+    `${internalPath}${search}`,
+    "http://127.0.0.1:3000"
+  );
 
   return NextResponse.rewrite(rewriteUrl);
 }
