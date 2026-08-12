@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
+  hostnameFromHostHeader,
   INTERNAL_RESTAURANT_REWRITE_HEADER,
   INTERNAL_RESTAURANT_REWRITE_VALUE,
   INTERNAL_RESTAURANT_SLUG_HEADER,
@@ -24,6 +25,7 @@ export function middleware(request: NextRequest) {
     request.headers.get("x-forwarded-host") ??
     request.headers.get("host") ??
     "";
+  const publicHostname = hostnameFromHostHeader(host);
   const protocol =
     request.headers.get("x-forwarded-proto") ??
     request.nextUrl.protocol.replace(":", "") ??
@@ -54,7 +56,8 @@ export function middleware(request: NextRequest) {
 
   const rewriteUrl = request.nextUrl.clone();
   rewriteUrl.protocol = protocol;
-  rewriteUrl.host = host;
+  rewriteUrl.hostname = publicHostname;
+  rewriteUrl.port = "";
   rewriteUrl.pathname = internalPath;
   rewriteUrl.search = search;
 
