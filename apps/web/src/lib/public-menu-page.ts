@@ -4,16 +4,16 @@ import { getPublicMenu, isPublicMenuNotFoundError, type PublicMenuData } from "@
 import {
   INTERNAL_RESTAURANT_REWRITE_HEADER,
   INTERNAL_RESTAURANT_REWRITE_VALUE,
-  isRestaurantSubdomainHost
+  INTERNAL_RESTAURANT_SLUG_HEADER
 } from "@/lib/public-routes";
 
 export async function requireInternalRestaurantRewrite(slug: string) {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const isInternalRewrite =
     requestHeaders.get(INTERNAL_RESTAURANT_REWRITE_HEADER) === INTERNAL_RESTAURANT_REWRITE_VALUE;
+  const internalSlug = requestHeaders.get(INTERNAL_RESTAURANT_SLUG_HEADER);
 
-  if (!isInternalRewrite || !isRestaurantSubdomainHost(host, slug)) {
+  if (!isInternalRewrite || internalSlug !== slug) {
     notFound();
   }
 }

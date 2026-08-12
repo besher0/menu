@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   INTERNAL_RESTAURANT_REWRITE_HEADER,
   INTERNAL_RESTAURANT_REWRITE_VALUE,
+  INTERNAL_RESTAURANT_SLUG_HEADER,
   restaurantSlugFromHost
 } from "@/lib/public-routes";
 
@@ -10,6 +11,14 @@ const PUBLIC_FILE_PATTERN = /\/[^/]+\.[^/]+$/;
 export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete(INTERNAL_RESTAURANT_REWRITE_HEADER);
+  requestHeaders.delete(INTERNAL_RESTAURANT_SLUG_HEADER);
+  const { pathname, search } = request.nextUrl;
+
+  if (pathname === "/m" || pathname.startsWith("/m/")) {
+    return new NextResponse(null, {
+      status: 404
+    });
+  }
 
   const host =
     request.headers.get("host") ??
@@ -25,8 +34,6 @@ export function middleware(request: NextRequest) {
       }
     });
   }
-
-  const { pathname, search } = request.nextUrl;
 
   if (shouldBypass(pathname)) {
     return NextResponse.next({
@@ -47,6 +54,7 @@ export function middleware(request: NextRequest) {
   );
 
   requestHeaders.set(INTERNAL_RESTAURANT_REWRITE_HEADER, INTERNAL_RESTAURANT_REWRITE_VALUE);
+  requestHeaders.set(INTERNAL_RESTAURANT_SLUG_HEADER, restaurantSlug);
 
   return NextResponse.rewrite(rewriteUrl, {
     request: {
