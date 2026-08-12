@@ -48,10 +48,9 @@ export function middleware(request: NextRequest) {
       ? `/m/${restaurantSlug}`
       : `/m/${restaurantSlug}${pathname}`;
 
-  const rewriteUrl = new URL(
-    `${internalPath}${search}`,
-    "http://127.0.0.1:3000"
-  );
+  const rewriteUrl = request.nextUrl.clone();
+  rewriteUrl.pathname = internalPath;
+  rewriteUrl.search = search;
 
   requestHeaders.set(INTERNAL_RESTAURANT_REWRITE_HEADER, INTERNAL_RESTAURANT_REWRITE_VALUE);
   requestHeaders.set(INTERNAL_RESTAURANT_SLUG_HEADER, restaurantSlug);
