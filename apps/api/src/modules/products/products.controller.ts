@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Inject, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { AppRequest } from "../../common/app-request";
@@ -46,18 +46,27 @@ export class ProductsController {
 
   @Get("import/template")
   importTemplate(@Req() request: AppRequest) {
+    this.assertCanUseExcel(request);
     return this.productsImportService.template(request.restaurant!.id);
+  }
+
+  @Get("export")
+  exportProducts(@Req() request: AppRequest) {
+    this.assertCanUseExcel(request);
+    return this.productsImportService.exportProducts(request.restaurant!.id);
   }
 
   @Post("import/preview")
   @UseInterceptors(FileInterceptor("file", excelUploadOptions()))
   importPreview(@Req() request: AppRequest, @UploadedFile() file: Express.Multer.File) {
+    this.assertCanUseExcel(request);
     return this.productsImportService.preview(request.restaurant!.id, file);
   }
 
   @Post("import")
   @UseInterceptors(FileInterceptor("file", excelUploadOptions()))
   importProducts(@Req() request: AppRequest, @UploadedFile() file: Express.Multer.File) {
+    this.assertCanUseExcel(request);
     return this.productsImportService.import(request.restaurant!.id, request.user?.sub, file);
   }
 
@@ -104,5 +113,11 @@ export class ProductsController {
   @Delete(":id")
   delete(@Req() request: AppRequest, @Param("id") id: string) {
     return this.productsService.delete(request.restaurant!.id, id);
+  }
+
+  private assertCanUseExcel(request: AppRequest) {
+    if (request.user?.role !== "SUPER_ADMIN") {
+      throw new ForbiddenException("Only admins can use product Excel import/export");
+    }
   }
 }

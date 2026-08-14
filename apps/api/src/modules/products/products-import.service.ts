@@ -1,6 +1,8 @@
 import { BadRequestException, Inject, Injectable, StreamableFile } from "@nestjs/common";
 import ExcelJS from "exceljs";
 import { Prisma } from "@prisma/client";
+import { readFile } from "fs/promises";
+import { basename, extname, resolve } from "path";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { MediaStorageService, StoredUpload } from "../media/media-storage.service";
 import { ProductLibraryService } from "../media/product-library.service";
@@ -31,6 +33,11 @@ type ValidatedImportRow = ProductImportParsedRow & {
   resolvedIngredients: ReturnType<ProductLibraryService["ingredientSnapshot"]>[];
   resolvedMealDetails: ReturnType<ProductLibraryService["mealDetailSnapshot"]>[];
   isValid: boolean;
+};
+
+type ExportableWorkbookImage = {
+  buffer: Buffer;
+  extension: "jpeg" | "png";
 };
 
 @Injectable()
@@ -127,6 +134,92 @@ export class ProductsImportService {
       value: new StreamableFile(Buffer.from(buffer), {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         disposition: `attachment; filename="products-import-template.xlsx"`
+      })
+    };
+  }
+
+  async exportProducts(restaurantId: string) {
+    const context = await this.loadContext(restaurantId);
+    const exportedProducts = await this.prisma.product.findMany({
+      where: { restaurantId, deletedAt: null },
+      select: {
+        name: true,
+        description: true,
+        basePrice: true,
+        isPopular: true,
+        isNew: true,
+        moodKey: true,
+        ingredients: true,
+        nutrition: true,
+        images: {
+          where: { isActive: true },
+          select: { url: true },
+          orderBy: { sortOrder: "asc" }
+        },
+        category: { select: { name: true } }
+      },
+      orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }]
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Menu Dashboard";
+    workbook.created = new Date();
+
+    const products = workbook.addWorksheet("Products", { views: [{ rightToLeft: true }] });
+    products.addRow([...PRODUCT_IMPORT_COLUMNS]);
+    products.columns = [
+      { width: 18 },
+      { width: 28 },
+      { width: 24 },
+      { width: 14 },
+      { width: 40 },
+      { width: 16 },
+      { width: 14 },
+      { width: Math.max(22, context.moodOptions.length * 7) },
+      { width: 36 },
+      { width: 36 }
+    ];
+    products.getRow(1).font = { bold: true };
+
+    for (const product of exportedProducts) {
+      const row = products.addRow([
+        "",
+        product.name,
+        product.category?.name ?? "",
+        Number(product.basePrice),
+        product.description ?? "",
+        product.isPopular ? "true" : "false",
+        product.isNew ? "true" : "false",
+        this.parseStoredMoodKeys(product.moodKey).join(", "),
+        this.exportLibraryNames(product.ingredients, ["adminName", "displayName", "name"]).join(", "),
+        this.exportMealDetailNames(product.nutrition).join(", ")
+      ]);
+      const images = await this.loadExportImages(product.images.map((image) => image.url));
+      if (images.length) {
+        row.height = 42;
+        images.forEach((image, imageIndex) => {
+          const imageId = workbook.addImage({ buffer: image.buffer as any, extension: image.extension });
+          products.addImage(imageId, {
+            tl: { col: imageIndex * 0.12, row: row.number - 1 },
+            ext: { width: 42, height: 42 }
+          });
+        });
+      }
+    }
+
+    const meta = workbook.addWorksheet("__meta");
+    meta.state = "hidden";
+    meta.addRow(["templateVersion", "1"]);
+    context.moodOptions.forEach((item, index) => {
+      meta.addRow(["mood", index + 1, item.key, item.label]);
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return {
+      __raw: true,
+      value: new StreamableFile(Buffer.from(buffer), {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        disposition: `attachment; filename="products-export.xlsx"`
       })
     };
   }
@@ -434,6 +527,120 @@ export class ProductsImportService {
 
   private moodItemText(value: Prisma.JsonValue | undefined) {
     return typeof value === "string" ? value.trim() : "";
+  }
+
+  private parseStoredMoodKeys(value: string | null) {
+    if (!value?.trim()) return [];
+
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return this.uniqueStrings(parsed.filter((item): item is string => typeof item === "string"));
+      }
+      if (typeof parsed === "string") {
+        return this.uniqueStrings([parsed]);
+      }
+    } catch {
+      return this.uniqueStrings([value]);
+    }
+
+    return [];
+  }
+
+  private exportLibraryNames(value: Prisma.JsonValue | null, keys: string[]) {
+    if (!Array.isArray(value)) return [];
+
+    return this.uniqueStrings(value.map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (!item || typeof item !== "object" || Array.isArray(item)) return "";
+
+      const record = item as Record<string, Prisma.JsonValue>;
+      for (const key of keys) {
+        const next = record[key];
+        if (typeof next === "string" && next.trim()) {
+          return next.trim();
+        }
+      }
+
+      return "";
+    }));
+  }
+
+  private exportMealDetailNames(nutrition: Prisma.JsonValue | null) {
+    if (!nutrition || typeof nutrition !== "object" || Array.isArray(nutrition)) return [];
+
+    const record = nutrition as Record<string, Prisma.JsonValue>;
+    return this.exportLibraryNames(record.details ?? null, ["adminName", "displayName", "label", "value"]);
+  }
+
+  private async loadExportImages(urls: string[]) {
+    const images: ExportableWorkbookImage[] = [];
+    for (const url of urls.slice(0, PRODUCT_IMPORT_LIMITS.maxImagesPerProduct)) {
+      const extension = this.workbookImageExtension(url);
+      if (!extension) continue;
+
+      const buffer = await this.readImageBuffer(url).catch(() => null);
+      if (buffer?.length) {
+        images.push({ buffer, extension });
+      }
+    }
+
+    return images;
+  }
+
+  private workbookImageExtension(url: string): ExportableWorkbookImage["extension"] | null {
+    const extension = extname(this.urlPathname(url)).toLocaleLowerCase();
+    if (extension === ".png") return "png";
+    if (extension === ".jpg" || extension === ".jpeg") return "jpeg";
+    return null;
+  }
+
+  private async readImageBuffer(url: string) {
+    for (const localPath of this.localUploadPaths(url)) {
+      const buffer = await readFile(localPath).catch(() => null);
+      if (buffer) return buffer;
+    }
+
+    if (/^https?:\/\//i.test(url)) {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      return Buffer.from(await response.arrayBuffer());
+    }
+
+    return null;
+  }
+
+  private localUploadPaths(url: string) {
+    const pathname = this.urlPathname(url);
+    if (!pathname.startsWith("/uploads/")) return [];
+
+    const filename = basename(pathname);
+    return [
+      resolve("uploads", filename),
+      resolve("apps/api/uploads", filename)
+    ];
+  }
+
+  private urlPathname(url: string) {
+    if (url.startsWith("/")) return url;
+
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  }
+
+  private uniqueStrings(values: string[]) {
+    const seen = new Set<string>();
+    return values
+      .map((value) => value.trim())
+      .filter((value) => {
+        const key = value.toLocaleLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   }
 
   private normalize(value: string) {

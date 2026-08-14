@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { defaultSectionSettings } from "@menu/shared";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
@@ -653,7 +653,7 @@ export class DashboardService {
     );
   }
 
-  async settings(restaurantId: string) {
+  async settings(restaurantId: string, includeAdminControls = false) {
     const restaurant = await this.prisma.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       include: {
@@ -673,6 +673,7 @@ export class DashboardService {
       restaurant: {
         id: restaurant.id,
         name: restaurant.name,
+        ...(includeAdminControls ? { slug: restaurant.slug } : {}),
         type: restaurant.type,
         description: restaurant.description,
         city: restaurant.city,
@@ -700,7 +701,7 @@ export class DashboardService {
     };
   }
 
-  async updateSettings(restaurantId: string, dto: UpdateDashboardSettingsDto, allowSplashScreen = false) {
+  async updateSettings(restaurantId: string, dto: UpdateDashboardSettingsDto, allowAdminSettings = false) {
     const current = await this.prisma.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       include: {
@@ -710,10 +711,15 @@ export class DashboardService {
     });
     const branch = current.branches[0] ?? null;
 
+    const nextRestaurantSlug = allowAdminSettings && dto.slug !== undefined
+      ? await this.uniqueRestaurantSlug(restaurantId, dto.slug)
+      : undefined;
+
     await this.prisma.restaurant.update({
       where: { id: restaurantId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(nextRestaurantSlug !== undefined ? { slug: nextRestaurantSlug } : {}),
         ...(dto.type !== undefined ? { type: dto.type } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.city !== undefined ? { city: dto.city } : {}),
@@ -758,7 +764,7 @@ export class DashboardService {
       ...(dto.productOpenMode !== undefined
         ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }
         : { productOpenMode: this.normalizeProductOpenMode(existingDashboardSettings.productOpenMode) }),
-      ...(allowSplashScreen && dto.splashScreen !== undefined
+      ...(allowAdminSettings && dto.splashScreen !== undefined
         ? {
             splashScreen: this.normalizeSplashScreenSettings(dto.splashScreen, existingDashboardSettings.splashScreen)
           }
@@ -784,7 +790,25 @@ export class DashboardService {
       }
     });
 
-    return this.settings(restaurantId);
+    return this.settings(restaurantId, allowAdminSettings);
+  }
+
+  private async uniqueRestaurantSlug(restaurantId: string, input: string) {
+    const slug = slugify(input);
+    if (!slug) {
+      throw new BadRequestException("Restaurant slug is required");
+    }
+
+    const existing = await this.prisma.restaurant.findUnique({
+      where: { slug },
+      select: { id: true }
+    });
+
+    if (existing && existing.id !== restaurantId) {
+      throw new ConflictException("Restaurant slug is already used. Choose another public link.");
+    }
+
+    return slug;
   }
 
   private async uniqueBranchSlug(restaurantId: string, input: string) {

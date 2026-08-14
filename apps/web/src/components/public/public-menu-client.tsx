@@ -542,6 +542,7 @@ export function PublicMenuClient({
   const [drawerTab, setDrawerTab] = useState<"info" | "hours" | null>(null);
   const [splashVisible, setSplashVisible] = useState(false);
   const [splashClosing, setSplashClosing] = useState(false);
+  const splashClickBlockUntil = useRef(0);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
   const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(initialUseSubdomainRoutes);
@@ -807,6 +808,13 @@ export function PublicMenuClient({
     setDrawerTab(null);
   }
 
+  function blockPostSplashClick(event: React.SyntheticEvent) {
+    if (Date.now() < splashClickBlockUntil.current) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
   function dismissSplash(event?: React.SyntheticEvent) {
     event?.preventDefault();
     event?.stopPropagation();
@@ -815,6 +823,7 @@ export function PublicMenuClient({
       return;
     }
 
+    splashClickBlockUntil.current = Date.now() + 500;
     setSplashClosing(true);
     window.setTimeout(() => {
       setSplashVisible(false);
@@ -887,6 +896,7 @@ export function PublicMenuClient({
       className={`public-screen view-${activeView} template-${templateKey} footer-${bottomNavVariant} ${showPrices ? "" : "prices-hidden"} ${showBottomNav ? "" : "no-bottom-nav"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
       dir={language === "ar" ? "rtl" : "ltr"}
       onContextMenu={(event) => event.preventDefault()}
+      onClickCapture={blockPostSplashClick}
       style={cssVars(data.theme)}
     >
       {splashVisible ? (
@@ -901,10 +911,12 @@ export function PublicMenuClient({
               dismissSplash(event);
             }
           }}
-          onPointerDown={dismissSplash}
-          onPointerUp={(event) => {
+          onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
+          }}
+          onPointerUp={(event) => {
+            dismissSplash(event);
           }}
           style={{
             "--splash-bg-color": splashBackgroundColor,
@@ -1444,7 +1456,7 @@ function MenuView({
       : [];
   const contextTitle = selectedMood || (selectedCollection === "popular" ? t.mostPopular : selectedCollection === "new" ? t.newItems : "");
   const contextProducts = selectedMood ? moodProducts : collectionProducts;
-  const categoryProductsSource = selectedMood || selectedCollection ? contextProducts : data.products;
+  const categoryProductsSource = selectedMood ? data.products : selectedCollection ? contextProducts : data.products;
   const visibleProducts = categoryProductsSource;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const showRowQuantityControls = productListLayout === "single" && !(isVertigo && productCardVariant === "horizontal-contained");

@@ -1541,7 +1541,8 @@ img {
   display: grid;
   gap: 26px;
   direction: ltr;
-  grid-template-columns: 280px 64px minmax(260px, 720px);
+  grid-template-columns: 64px minmax(260px, 720px);
+  justify-content: end;
   margin-bottom: 34px;
   min-height: 104px;
   padding: 18px 28px;
@@ -7957,8 +7958,8 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .admin-topbar {
   direction: ltr;
-  grid-template-columns: 280px 64px minmax(280px, 720px);
-  justify-content: space-between;
+  grid-template-columns: 64px minmax(280px, 720px);
+  justify-content: end;
 }
 
 .admin-topbar .profile-chip,
@@ -8025,7 +8026,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .admin-topbar {
-  grid-template-columns: 230px 52px minmax(280px, 680px);
+  grid-template-columns: 52px minmax(280px, 680px);
   min-height: 84px;
   border-radius: 14px;
   padding: 14px 22px;
@@ -9304,14 +9305,14 @@ body {
   box-shadow: 0 14px 38px rgb(16 24 40 / 5%);
   display: grid;
   gap: 22px;
-  grid-template-columns: 238px 52px minmax(260px, 1fr);
+  grid-template-columns: 52px minmax(260px, 1fr);
   margin-bottom: 24px;
   min-height: 74px;
   padding: 12px 24px;
 }
 
 .restaurant-topbar.has-restaurant-switcher {
-  grid-template-columns: 238px minmax(220px, 300px) 52px minmax(260px, 1fr);
+  grid-template-columns: minmax(220px, 300px) 52px minmax(260px, 1fr);
 }
 
 .restaurant-topbar .search-box {

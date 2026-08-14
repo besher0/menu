@@ -40,6 +40,7 @@ export function RestaurantsClient() {
   const [deletingRestaurantId, setDeletingRestaurantId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Restaurant | null>(null);
   const [message, setMessage] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -74,6 +75,15 @@ export function RestaurantsClient() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleGlobalSearch(event: Event) {
+      setSearch(String((event as CustomEvent<string>).detail ?? ""));
+    }
+
+    window.addEventListener("admin:global-search", handleGlobalSearch);
+    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
+  }, []);
+
   const stats = useMemo(() => {
     const active = restaurants.filter((restaurant) => restaurant.isActive).length;
     const inactive = restaurants.length - active;
@@ -81,6 +91,25 @@ export function RestaurantsClient() {
 
     return { active, inactive, products };
   }, [restaurants]);
+
+  const filteredRestaurants = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return restaurants;
+
+    return restaurants.filter((restaurant) =>
+      [
+        restaurant.name,
+        restaurant.slug,
+        restaurant.city,
+        restaurant.type,
+        restaurant.plan,
+        restaurant.planKey,
+        restaurant.isActive ? "active فعال" : "inactive موقوف"
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    );
+  }, [restaurants, search]);
 
   function dashboardHref(restaurant: Restaurant) {
     const params = new URLSearchParams({
@@ -155,6 +184,24 @@ export function RestaurantsClient() {
     }
   }
 
+  function exportRestaurants() {
+    downloadCsv("restaurants.csv", [
+      ["Name", "Slug", "City", "Type", "Plan", "Status", "Branches", "Products", "Orders", "Public URL"],
+      ...filteredRestaurants.map((restaurant) => [
+        restaurant.name,
+        restaurant.slug,
+        restaurant.city ?? "",
+        restaurant.type ?? "",
+        restaurant.plan ?? "",
+        restaurant.isActive ? "active" : "inactive",
+        restaurant.counts?.branches ?? 0,
+        restaurant.counts?.products ?? 0,
+        restaurant.counts?.orders ?? 0,
+        preferredRestaurantUrl(restaurant.slug)
+      ])
+    ]);
+  }
+
   return (
     <>
       <div className="admin-grid four">
@@ -169,9 +216,9 @@ export function RestaurantsClient() {
           <Plus size={22} />
           إضافة مطعم
         </Link>
-        <button className="secondary-action" type="button">
+        <button className="secondary-action" type="button" onClick={exportRestaurants}>
           <Download size={22} />
-          تصدير
+          Export
         </button>
       </div>
 
@@ -183,11 +230,11 @@ export function RestaurantsClient() {
         {status === "error" ? <EmptyState title="تعذر تحميل المطاعم" text={message} /> : null}
         {status === "ready" && message ? <p className="form-message">{message}</p> : null}
 
-        {status === "ready" && restaurants.length === 0 ? (
+        {status === "ready" && filteredRestaurants.length === 0 ? (
           <EmptyState title="لا توجد مطاعم" text="ابدأ بإضافة مطعم جديد، وبعدها ستظهر قائمة المطاعم هنا." />
         ) : null}
 
-        {status === "ready" && restaurants.length > 0 ? (
+        {status === "ready" && filteredRestaurants.length > 0 ? (
           <table className="admin-table">
             <thead>
               <tr>
@@ -201,7 +248,7 @@ export function RestaurantsClient() {
               </tr>
             </thead>
             <tbody>
-              {restaurants.map((restaurant) => (
+              {filteredRestaurants.map((restaurant) => (
                 <tr key={restaurant.id}>
                   <td>
                     <span className="table-avatar" />
@@ -238,10 +285,17 @@ export function RestaurantsClient() {
                         <Store size={16} />
                         داشبورد المطعم
                       </Link>
-                      <Link className="table-link" href={preferredRestaurantUrl(restaurant.slug)}>
-                        <ExternalLink size={16} />
-                        فتح
-                      </Link>
+                      {restaurant.isActive ? (
+                        <Link className="table-link" href={preferredRestaurantUrl(restaurant.slug)}>
+                          <ExternalLink size={16} />
+                          Open
+                        </Link>
+                      ) : (
+                        <span className="table-link disabled-link">
+                          <ExternalLink size={16} />
+                          Inactive
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td>
@@ -326,4 +380,19 @@ function ConfirmDialog({
       </div>
     </div>
   );
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
+  const escapeCell = (value: string | number) => {
+    const text = String(value ?? "");
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = "\uFEFF" + rows.map((row) => row.map(escapeCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

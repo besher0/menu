@@ -134,7 +134,7 @@ export class DashboardController {
 
   @Get("settings")
   settings(@Req() request: AppRequest) {
-    return this.dashboardService.settings(request.restaurant!.id);
+    return this.dashboardService.settings(request.restaurant!.id, request.user?.role === "SUPER_ADMIN");
   }
 
   @Patch("settings")

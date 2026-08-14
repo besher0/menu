@@ -16,6 +16,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { API_URL, apiFetch } from "@/lib/client-api";
+import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
@@ -100,6 +101,7 @@ type SplashScreenSettings = {
 type DashboardSettings = {
   restaurant: {
     name: string;
+    slug?: string;
     type?: string | null;
     description?: string | null;
     city?: string | null;
@@ -309,6 +311,7 @@ function ProductsTable() {
   const [priceDraft, setPriceDraft] = useState("");
   const [dragProduct, setDragProduct] = useState<{ id: string; categoryKey: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const cancelledPriceEditRef = useRef<string | null>(null);
 
   const load = useCallback(async (limit = visibleLimit, nextSearch = search) => {
@@ -334,6 +337,28 @@ function ProductsTable() {
     setVisibleLimit(pageIncrement);
     void load(pageIncrement, search);
   }, [availability]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setVisibleLimit(pageIncrement);
+      void load(pageIncrement, search);
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");
+  }, []);
+
+  useEffect(() => {
+    function handleGlobalSearch(event: Event) {
+      setSearch(String((event as CustomEvent<string>).detail ?? ""));
+    }
+
+    window.addEventListener("admin:global-search", handleGlobalSearch);
+    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
+  }, []);
 
   async function toggle(product: Product) {
     setStatus("saving");
@@ -424,15 +449,30 @@ function ProductsTable() {
     }
   }
 
-  function applyFilters() {
-    setVisibleLimit(pageIncrement);
-    void load(pageIncrement, search);
-  }
-
   function loadMore() {
     const nextLimit = visibleLimit + pageIncrement;
     setVisibleLimit(nextLimit);
     void load(nextLimit);
+  }
+
+  async function exportProducts() {
+    const response = await fetch(`${API_URL}/dashboard/products/export`, {
+      headers: authHeaders(),
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      setStatus("error");
+      setMessage("تعذر تصدير ملف Excel.");
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "products-export.xlsx";
+    anchor.click();
+    window.URL.revokeObjectURL(url);
   }
 
   const productGroups = groupProducts(products);
@@ -441,15 +481,13 @@ function ProductsTable() {
     <div className="restaurant-dashboard-page">
       <DashboardToolbar
         addHref="/dashboard/products/new"
-        search={search}
-        onSearch={setSearch}
-        onApply={applyFilters}
-        actions={(
+        onExport={isSuperAdmin ? () => void exportProducts() : undefined}
+        actions={isSuperAdmin ? (
           <button className="secondary-action" type="button" onClick={() => setImportOpen(true)}>
             <FileSpreadsheet size={20} />
             استيراد من Excel
           </button>
-        )}
+        ) : null}
       >
         <select value={availability} onChange={(event) => setAvailability(event.target.value as typeof availability)}>
           <option value="all">كل الحالات</option>
@@ -540,7 +578,7 @@ function ProductsTable() {
           </table>
         ) : null}
       </DataPanel>
-      {importOpen ? (
+      {isSuperAdmin && importOpen ? (
         <ProductImportModal
           onClose={() => setImportOpen(false)}
           onImported={(count) => {
@@ -813,6 +851,15 @@ function CategoriesTable() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    function handleGlobalSearch(event: Event) {
+      setSearch(String((event as CustomEvent<string>).detail ?? ""));
+    }
+
+    window.addEventListener("admin:global-search", handleGlobalSearch);
+    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
+  }, []);
+
   async function addCategory() {
     setStatus("saving");
     try {
@@ -882,20 +929,29 @@ function CategoriesTable() {
     }
   }
 
-  function applySearch() {
-    setVisibleLimit(pageIncrement);
-    void load(pageIncrement, search);
-  }
-
   function loadMore() {
     const nextLimit = visibleLimit + pageIncrement;
     setVisibleLimit(nextLimit);
     void load(nextLimit);
   }
 
+  function exportCategories() {
+    downloadCsv("categories.csv", [
+      ["Name", "Slug", "Description", "Products", "Active", "Sort order"],
+      ...categories.map((category) => [
+        category.name,
+        category.slug,
+        category.description ?? "",
+        category.slug === "all" ? "all" : category._count?.products ?? 0,
+        category.isActive ? "yes" : "no",
+        category.sortOrder
+      ])
+    ]);
+  }
+
   return (
     <div className="restaurant-dashboard-page">
-      <DashboardToolbar addHref="/dashboard/categories/new" search={search} onSearch={setSearch} onApply={applySearch} />
+      <DashboardToolbar addHref="/dashboard/categories/new" onExport={exportCategories} />
       <DataPanel meta={meta} shown={categories.length} onLoadMore={loadMore} loadingMore={status === "saving"}>
         {status === "loading" ? <LoadingState label="يتم تحميل الأقسام" /> : null}
         {status === "error" ? <EmptyState title="حدث خطأ" text={message} /> : null}
@@ -1222,12 +1278,15 @@ function SettingsForm() {
     if (!settings) return;
     setStatus("saving");
     try {
-      const { splashScreen: _splashScreen, ...restaurantSettings } = settings.restaurant;
+      const { splashScreen: _splashScreen, productOpenMode: _productOpenMode, ...restaurantSettings } = settings.restaurant;
+      const settingsPayload = isSuperAdmin
+        ? { ...restaurantSettings, splashScreen: settings.restaurant.splashScreen }
+        : restaurantSettings;
       const next = await apiFetch<DashboardSettings>("/dashboard/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(isSuperAdmin ? settings.restaurant : restaurantSettings),
+          ...settingsPayload,
           openingHours: settings.branch?.openingHours ?? []
         })
       });
@@ -1266,6 +1325,13 @@ function SettingsForm() {
           <h2>معلومات المطعم</h2>
           <div className="form-grid two">
             <Field label="اسم المطعم" value={form.name} onChange={(value) => updateField("name", value)} />
+            {isSuperAdmin ? (
+              <label className="field">
+                <span>رابط المطعم</span>
+                <input value={form.slug ?? ""} onChange={(event) => updateField("slug", event.target.value)} />
+                <small>{preferredRestaurantUrl(form.slug || "restaurant-slug")}</small>
+              </label>
+            ) : null}
             <Field label="نوع المطعم" value={form.type ?? ""} onChange={(value) => updateField("type", value)} />
             <Field label="العنوان" value={form.address ?? ""} onChange={(value) => updateField("address", value)} />
             <Field label="المدينة" value={form.city ?? ""} onChange={(value) => updateField("city", value)} />
@@ -1339,13 +1405,6 @@ function SettingsForm() {
         <button className="bare price-switch" type="button" onClick={() => updateField("showPrices", !form.showPrices)}>
           <StatusPill active={form.showPrices} label="اظهار الاسعار" />
         </button>
-        <label className="field">
-          <span>طريقة فتح المنتج</span>
-          <select value={form.productOpenMode ?? "MODAL"} onChange={(event) => updateField("productOpenMode", event.target.value as "MODAL" | "PAGE")}>
-            <option value="MODAL">بوب أب</option>
-            <option value="PAGE">صفحة تفاصيل المنتج</option>
-          </select>
-        </label>
         <Field label="العملة" value={form.currency} onChange={(value) => updateField("currency", value)} />
       </section>
       <section className="settings-card working-hours">
@@ -1371,6 +1430,7 @@ function DashboardToolbar({
   search,
   onSearch,
   onApply,
+  onExport,
   actions,
   children
 }: {
@@ -1379,6 +1439,7 @@ function DashboardToolbar({
   search?: string;
   onSearch?: (value: string) => void;
   onApply?: () => void;
+  onExport?: () => void;
   actions?: React.ReactNode;
   children?: React.ReactNode;
 }) {
@@ -1387,7 +1448,7 @@ function DashboardToolbar({
       <div>
         {addHref ? <Link className="primary-action" href={addHref}><Plus size={20} />إضافة</Link> : <button className="primary-action" type="button" onClick={onAdd}><Plus size={20} />إضافة</button>}
         {actions}
-        <button className="secondary-action" type="button"><Upload size={20} />تصدير</button>
+        {onExport ? <button className="secondary-action" type="button" onClick={onExport}><Upload size={20} />تصدير</button> : null}
       </div>
       <div className="toolbar-filter-controls">
         {onSearch ? <input value={search ?? ""} onChange={(event) => onSearch(event.target.value)} placeholder="بحث" /> : null}
@@ -1606,4 +1667,19 @@ function LoadingState({ label }: { label: string }) {
 
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="restaurant-empty"><b>{title}</b><p>{text}</p></div>;
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
+  const escapeCell = (value: string | number) => {
+    const text = String(value ?? "");
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = "\uFEFF" + rows.map((row) => row.map(escapeCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

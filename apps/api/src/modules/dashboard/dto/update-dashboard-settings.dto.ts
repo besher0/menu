@@ -57,6 +57,10 @@ export class UpdateDashboardSettingsDto {
 
   @IsOptional()
   @IsString()
+  slug?: string;
+
+  @IsOptional()
+  @IsString()
   type?: string;
 
   @IsOptional()

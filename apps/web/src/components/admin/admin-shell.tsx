@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BadgeDollarSign,
   BarChart3,
   Bell,
-  ChevronDown,
   Globe2,
   Home,
   Image,
@@ -67,7 +67,12 @@ export function AdminShell({
   active: string;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [authChecked, setAuthChecked] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
   const isDashboard = active.startsWith("/dashboard");
   const ownerNavItems = restaurantOwnerNavItems.filter((item) => item.href !== "/dashboard/categories");
   const navItems = active.startsWith("/admin")
@@ -77,8 +82,31 @@ export function AdminShell({
       : ownerNavItems;
 
   useEffect(() => {
-    setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");
-  }, []);
+    const session = getBrowserSession();
+    if (!session) {
+      const query = searchParams.toString();
+      const next = `${pathname}${query ? `?${query}` : ""}`;
+      router.replace(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
+
+    setIsSuperAdmin(session.user.role === "SUPER_ADMIN");
+    setAuthChecked(true);
+  }, [pathname, router, searchParams]);
+
+  useEffect(() => {
+    setGlobalSearch("");
+    window.dispatchEvent(new CustomEvent("admin:global-search", { detail: "" }));
+  }, [active]);
+
+  function updateGlobalSearch(value: string) {
+    setGlobalSearch(value);
+    window.dispatchEvent(new CustomEvent("admin:global-search", { detail: value }));
+  }
+
+  if (!authChecked) {
+    return null;
+  }
 
   return (
     <div className="admin-shell restaurant-admin-shell">
@@ -103,21 +131,17 @@ export function AdminShell({
       <main className="admin-main restaurant-admin-main">
         <RestaurantContextSync />
         <header className={isDashboard ? "admin-topbar restaurant-topbar has-restaurant-switcher" : "admin-topbar restaurant-topbar"}>
-          <div className="profile-chip">
-            <span className="avatar" />
-            <div>
-              <strong>محمد أحمد</strong>
-              <small>أدمن</small>
-            </div>
-            <ChevronDown size={17} />
-          </div>
           {isDashboard ? <DashboardRestaurantSwitcher /> : null}
           <button className="icon-button" aria-label="الإشعارات">
             <Bell size={23} />
           </button>
           <label className="search-box">
             <Search size={23} />
-            <input placeholder="قم بالبحث هنا" />
+            <input
+              value={globalSearch}
+              onChange={(event) => updateGlobalSearch(event.target.value)}
+              placeholder="Search"
+            />
           </label>
         </header>
         {children}

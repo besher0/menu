@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FEATURE_KEYS } from "@menu/shared";
 import { Check, Download, Edit3, Loader2, Plus, Save, X } from "lucide-react";
 import { SkeletonTable } from "@/components/ui/skeleton";
@@ -68,6 +68,7 @@ export function SubscriptionsClient() {
   const [status, setStatus] = useState<"loading" | "ready" | "saving" | "error">("loading");
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<DraftPlan | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
     try {
@@ -83,6 +84,29 @@ export function SubscriptionsClient() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    function handleGlobalSearch(event: Event) {
+      setSearch(String((event as CustomEvent<string>).detail ?? ""));
+    }
+
+    window.addEventListener("admin:global-search", handleGlobalSearch);
+    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
+  }, []);
+
+  const filteredPlans = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return plans;
+
+    return plans.filter((plan) =>
+      [
+        plan.name,
+        plan.key,
+        plan.isActive ? "active فعال" : "inactive موقوف",
+        ...plan.features.filter((feature) => feature.enabled).map((feature) => featureLabels[feature.key] ?? feature.key)
+      ].some((value) => String(value).toLowerCase().includes(term))
+    );
+  }, [plans, search]);
 
   function planToDraft(plan: Plan): DraftPlan {
     return {
@@ -177,6 +201,24 @@ export function SubscriptionsClient() {
     }
   }
 
+  function exportPlans() {
+    downloadCsv("subscriptions.csv", [
+      ["Name", "Key", "Monthly", "Yearly", "Active", "Restaurants", "Enabled features"],
+      ...filteredPlans.map((plan) => [
+        plan.name,
+        plan.key,
+        plan.priceMonthly,
+        plan.priceYearly,
+        plan.isActive ? "yes" : "no",
+        plan.restaurants,
+        plan.features
+          .filter((feature) => feature.enabled)
+          .map((feature) => featureLabels[feature.key] ?? feature.key)
+          .join("; ")
+      ])
+    ]);
+  }
+
   return (
     <>
       <div className="toolbar-row">
@@ -184,9 +226,9 @@ export function SubscriptionsClient() {
           <Plus size={20} />
           إضافة
         </button>
-        <button className="secondary-action" type="button">
+        <button className="secondary-action" type="button" onClick={exportPlans}>
           <Download size={20} />
-          تصدير
+          Export
         </button>
         <div className="filter-group">
           <button type="button">الأسعار والميزات مربوطة بالـ API</button>
@@ -278,7 +320,7 @@ export function SubscriptionsClient() {
                 </tr>
               </thead>
               <tbody>
-                {plans.map((plan) => (
+                {filteredPlans.map((plan) => (
                   <tr key={plan.id}>
                     <td><input type="checkbox" aria-label={`اختر ${plan.name}`} /></td>
                     <td><span className="plan-pill">{plan.name}</span></td>
@@ -319,4 +361,19 @@ function EmptyState({ title, text }: { title: string; text: string }) {
       <p>{text}</p>
     </div>
   );
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
+  const escapeCell = (value: string | number) => {
+    const text = String(value ?? "");
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = "\uFEFF" + rows.map((row) => row.map(escapeCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

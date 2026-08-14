@@ -3,6 +3,9 @@ import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function normalizeRouteKey(value?: string | null) {
   if (!value) return "";
   try {

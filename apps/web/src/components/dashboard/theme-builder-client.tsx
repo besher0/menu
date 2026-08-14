@@ -23,6 +23,18 @@ type ThemeResponse = {
   customCss?: string | null;
 };
 
+type ProductOpenMode = "MODAL" | "PAGE";
+type SettingsResponse = {
+  data?: {
+    restaurant?: {
+      productOpenMode?: ProductOpenMode;
+    };
+  } | null;
+  restaurant?: {
+    productOpenMode?: ProductOpenMode;
+  };
+};
+
 const colorFields: Array<{ key: keyof ThemeSettings["colors"]; label: string }> = [
   { key: "primary", label: "Primary" },
   { key: "secondary", label: "Secondary" },
@@ -51,6 +63,7 @@ const FOOTER_VARIANT_LABELS: Record<string, string> = {
 export function ThemeBuilderClient() {
   const [theme, setTheme] = useState<ThemeSettings>(ABO_MALEK_THEME);
   const [customCss, setCustomCss] = useState("");
+  const [productOpenMode, setProductOpenMode] = useState<ProductOpenMode>("MODAL");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "success" | "error">("loading");
   const [message, setMessage] = useState("");
 
@@ -71,6 +84,12 @@ export function ThemeBuilderClient() {
 
         const payload = (await response.json()) as ThemeResponse;
         const data = payload.data ?? payload;
+        const settingsResponse = await fetch(`${API_URL}/dashboard/settings`, {
+          headers: authHeaders(),
+          cache: "no-store"
+        });
+        const settingsPayload = settingsResponse.ok ? ((await settingsResponse.json()) as SettingsResponse) : null;
+        const settingsData = settingsPayload?.data ?? settingsPayload;
 
         if (!alive) {
           return;
@@ -80,6 +99,7 @@ export function ThemeBuilderClient() {
           setTheme(mergeTheme(data.settings));
         }
         setCustomCss(data?.customCss ?? "");
+        setProductOpenMode(settingsData?.restaurant?.productOpenMode === "PAGE" ? "PAGE" : "MODAL");
         setStatus("idle");
       } catch (error) {
         if (!alive) {
@@ -169,6 +189,19 @@ export function ThemeBuilderClient() {
 
       if (!response.ok) {
         throw new Error("لم يتم حفظ الثيم. تأكد من تسجيل الدخول وأن الباقة تدعم CUSTOM_THEMES.");
+      }
+
+      const settingsResponse = await fetch(`${API_URL}/dashboard/settings`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders()
+        },
+        body: JSON.stringify({ productOpenMode })
+      });
+
+      if (!settingsResponse.ok) {
+        throw new Error("Theme saved, but product open mode could not be saved.");
       }
 
       setStatus("success");
@@ -333,6 +366,13 @@ export function ThemeBuilderClient() {
                   onChange={(event) => updatePublicUi("moodChipLabelFontSize", event.target.value)}
                   placeholder="16px"
                 />
+              </label>
+              <label>
+                <span>طريقة فتح المنتج</span>
+                <select value={productOpenMode} onChange={(event) => setProductOpenMode(event.target.value as ProductOpenMode)}>
+                  <option value="MODAL">بوب أب</option>
+                  <option value="PAGE">صفحة تفاصيل المنتج</option>
+                </select>
               </label>
             </div>
           </section>
