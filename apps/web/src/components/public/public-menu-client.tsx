@@ -1911,25 +1911,29 @@ function MenuView({
               >
                 <button type="button" className="category-spotlight-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                   <ProductImageMedia product={spotlightProduct} />
-                  <div className="category-spotlight-copy">
-                    <b>{spotlightProduct.name}</b>
-                    {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
-                  </div>
                 </button>
-                <div className="category-spotlight-controls">
-                  {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
+                <div className="category-spotlight-copy">
+                  <button type="button" className="category-spotlight-title-row" onClick={() => handleSpotlightOpen(spotlightProduct)}>
+                    <b>{spotlightProduct.name}</b>
+                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
+                  </button>
+                  <div className="category-spotlight-detail-row">
+                    <button type="button" className="category-spotlight-description-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
+                      {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
+                    </button>
+                    {!isVertigo ? (
+                      <QuantityControl
+                        className="spotlight-quantity"
+                        quantity={getCartQuantity(spotlightProduct.slug)}
+                        onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
+                        onIncrease={() => addToCart(spotlightProduct)}
+                        label={spotlightProduct.name}
+                      />
+                    ) : null}
+                  </div>
                 </div>
               </article>
               <div className="spotlight-actions">
-                {!isVertigo ? (
-                  <QuantityControl
-                    className="spotlight-quantity"
-                    quantity={getCartQuantity(spotlightProduct.slug)}
-                    onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
-                    onIncrease={() => addToCart(spotlightProduct)}
-                    label={spotlightProduct.name}
-                  />
-                ) : null}
                 <div className="spotlight-pager">
                   <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
                     <ChevronRight size={22} />

@@ -5357,37 +5357,62 @@ body:has(.public-page)::-webkit-scrollbar {
   align-content: flex-start;
   direction: rtl;
   display: grid;
-  grid-gap: 2px;
-  gap: 2px;
+  gap: 6px;
   justify-items: start;
   -webkit-margin-start: 0;
   margin-inline-start: 0;
-  max-width: max-content;
+  max-width: none;
   min-height: 82px;
-  padding: 12px 18px 14px 220px;
+  padding: 12px 18px 14px;
   text-align: start;
+  width: 100%;
 }
 
-.category-spotlight-controls {
+.category-spotlight-title-row {
   align-items: center;
-  direction: ltr;
+  background: transparent;
+  border: 0;
+  color: inherit;
   display: flex;
-  bottom: 30px;
-  justify-content: center;
-  left: 22px;
+  font: inherit;
+  gap: 14px;
+  justify-content: space-between;
   padding: 0;
-  position: absolute;
-  right: auto;
-  z-index: 2;
+  text-align: inherit;
+  width: 100%;
 }
 
-.category-spotlight-controls .product-price {
+.category-spotlight-title-row .product-price {
+  flex: 0 0 auto;
   justify-content: flex-end;
 }
 
-.category-spotlight-controls .spotlight-price {
+.category-spotlight-title-row .spotlight-price {
   line-height: 1.05;
   margin-top: 0;
+}
+
+.category-spotlight-detail-row {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.category-spotlight-description-open {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  flex: 1 1 auto;
+  font: inherit;
+  min-width: 0;
+  padding: 0;
+  text-align: inherit;
+}
+
+.category-spotlight-detail-row .spotlight-quantity {
+  flex: 0 0 auto;
 }
 
 .category-spotlight-card b {
@@ -5449,14 +5474,6 @@ body:has(.public-page)::-webkit-scrollbar {
   min-height: 34px;
   position: relative;
   width: 100%;
-}
-
-.spotlight-actions .spotlight-quantity {
-  flex-direction: row;
-  left: 22px;
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 .spotlight-pager {
@@ -7499,7 +7516,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 999px;
   bottom: 26px;
   box-shadow: 0 16px 40px rgb(16 24 40 / 14%);
-  height: 92px;
+  height: 84px;
   max-width: 390px;
   overflow: hidden;
   width: calc(100% - 48px);
