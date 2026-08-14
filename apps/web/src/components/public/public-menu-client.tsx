@@ -468,7 +468,7 @@ function bannerHref(
 
   return banner.targetUrl
     ? normalizeRestaurantInternalHref(restaurantSlug, banner.targetUrl, useSubdomainRoutes)
-    : restaurantPath(restaurantSlug, "/menu", useSubdomainRoutes);
+    : null;
 }
 
 function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
@@ -1238,17 +1238,35 @@ function HomeView({
         {bannerSlides.length ? (
           <>
             <div className="hero-promo-track">
-              {bannerSlides.map((banner, index) => (
-                <Link
-                  key={`${banner.imageUrl}-${index}`}
-                  className={index === activeBanner ? "hero-promo-slide active" : "hero-promo-slide"}
-                  href={bannerHref(data.restaurant.slug, banner, data.products, useSubdomainRoutes)}
-                  aria-hidden={index === activeBanner ? undefined : true}
-                >
-                  <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
-                  {banner.badge ? <span>{banner.badge}</span> : null}
-                </Link>
-              ))}
+              {bannerSlides.map((banner, index) => {
+                const href = bannerHref(data.restaurant.slug, banner, data.products, useSubdomainRoutes);
+                const className = index === activeBanner ? "hero-promo-slide active" : "hero-promo-slide";
+                const content = (
+                  <>
+                    <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
+                    {banner.badge ? <span>{banner.badge}</span> : null}
+                  </>
+                );
+
+                return href ? (
+                  <Link
+                    key={`${banner.imageUrl}-${index}`}
+                    className={className}
+                    href={href}
+                    aria-hidden={index === activeBanner ? undefined : true}
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <div
+                    key={`${banner.imageUrl}-${index}`}
+                    className={className}
+                    aria-hidden={index === activeBanner ? undefined : true}
+                  >
+                    {content}
+                  </div>
+                );
+              })}
             </div>
             <div className="hero-promo-dots" aria-label="بنرات الإعلان">
               {bannerSlides.map((banner, index) => (
