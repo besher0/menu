@@ -1223,7 +1223,7 @@ function HomeView({
         </section>
       ) : null}
 
-      {!isVertigo ? <section className="mood-strip">
+      <section className="mood-strip">
         <h1>
           <Flame size={18} />
           {t.moodToday}
@@ -1254,7 +1254,7 @@ function HomeView({
               );
             })}
           </div>
-      </section> : null}
+      </section>
 
       <section
         className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}
