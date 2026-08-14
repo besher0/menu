@@ -351,7 +351,7 @@ export function MenuBuilderClient() {
         title: "Banner",
         subtitle: "",
         imageUrl: selected.settings.backgroundImageUrl ?? "",
-        targetUrl: "/menu",
+        targetUrl: "",
         targetProductId: "",
         badge: ""
       }

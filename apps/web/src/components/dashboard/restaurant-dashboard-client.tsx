@@ -1061,7 +1061,7 @@ function BannersTable() {
     const next = await apiFetch<Banner[]>("/dashboard/banners", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "عرض جديد", imageUrl: fallbackBanner, targetUrl: "/menu", isActive: true, sortOrder: banners.length })
+      body: JSON.stringify({ title: "عرض جديد", imageUrl: fallbackBanner, targetUrl: "", isActive: true, sortOrder: banners.length })
     });
     setBanners(next);
   }

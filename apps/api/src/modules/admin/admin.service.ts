@@ -689,7 +689,7 @@ export class AdminService {
                 title: "وجبة جديدة",
                 subtitle: "تفاصيل الوجبة",
                 imageUrl: heroImageUrl ?? "/assets/public/product-detail.png",
-                targetUrl: "/menu",
+                targetUrl: "",
                 targetProductId: "",
                 badge: "جديد"
               }

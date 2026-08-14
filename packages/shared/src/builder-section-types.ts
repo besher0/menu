@@ -92,7 +92,7 @@ export function defaultSectionSettings(type: BuilderSectionType): BuilderSection
             title: "عرض اليوم",
             subtitle: "أضف صورة البنر الإعلاني من منشئ الواجهة",
             imageUrl: "/assets/public/menu-home.png",
-            targetUrl: "/menu",
+            targetUrl: "",
             targetProductId: "",
             badge: "جديد"
           }

@@ -466,9 +466,35 @@ function bannerHref(
     return productHref(restaurantSlug, product, null, useSubdomainRoutes);
   }
 
-  return banner.targetUrl
-    ? normalizeRestaurantInternalHref(restaurantSlug, banner.targetUrl, useSubdomainRoutes)
+  const targetUrl = banner.targetUrl?.trim();
+
+  if (!targetUrl || isDefaultMenuBannerTarget(restaurantSlug, targetUrl)) {
+    return null;
+  }
+
+  return targetUrl
+    ? normalizeRestaurantInternalHref(restaurantSlug, targetUrl, useSubdomainRoutes)
     : null;
+}
+
+function isDefaultMenuBannerTarget(restaurantSlug: string, targetUrl: string) {
+  const normalizedTarget = normalizeMenuTargetPath(targetUrl);
+  return normalizedTarget === "/menu" || normalizedTarget === `/m/${restaurantSlug}/menu`;
+}
+
+function normalizeMenuTargetPath(targetUrl: string) {
+  const trimmed = targetUrl.trim();
+
+  try {
+    const url = new URL(trimmed);
+    return stripTrailingSlash(url.pathname);
+  } catch {
+    return stripTrailingSlash(trimmed.split("?")[0]?.split("#")[0] ?? "");
+  }
+}
+
+function stripTrailingSlash(value: string) {
+  return value.length > 1 ? value.replace(/\/+$/, "") : value;
 }
 
 function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
