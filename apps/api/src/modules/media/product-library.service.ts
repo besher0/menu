@@ -30,50 +30,31 @@ export class ProductLibraryService {
     return value.trim().toLocaleLowerCase();
   }
 
-  async backfillLegacyLibrary(restaurantId: string) {
-    await this.backfillLegacyIngredients(restaurantId);
-    await this.backfillLegacyMealDetails(restaurantId);
+  async backfillLegacyLibrary() {
+    await this.backfillLegacyIngredients();
+    await this.backfillLegacyMealDetails();
   }
 
-  async listIngredients(restaurantId: string) {
+  async listIngredients(options: { includeInactive?: boolean } = {}) {
     try {
-      await this.backfillLegacyIngredients(restaurantId);
-      const [data, legacy] = await Promise.all([
-        this.prisma.ingredientLibraryItem.findMany({
-        where: { restaurantId },
+      const data = await this.prisma.ingredientLibraryItem.findMany({
+        where: options.includeInactive ? undefined : { isActive: true },
         orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
-        }),
-        this.collectLegacyIngredients(restaurantId)
-      ]);
-      const libraryKeys = new Set(data.map((item) => item.adminNameNormalized));
-      const legacyRows = Array.from(legacy.entries())
-        .filter(([key]) => !libraryKeys.has(key))
-        .map(([key, item]) => ({
-          id: `legacy-ingredient-${key}`,
-          restaurantId,
-          adminName: item.adminName,
-          adminNameNormalized: key,
-          displayName: item.displayName,
-          imageUrl: this.cleanOptional(item.imageUrl),
-          isActive: true,
-          isLegacy: true
-        }));
-
-      return { data: [...data, ...legacyRows] };
+      });
+      return { data };
     } catch (error) {
       this.handleDatabaseError(error);
       throw error;
     }
   }
 
-  async createIngredient(restaurantId: string, dto: UpsertIngredientLibraryItemDto) {
+  async createIngredient(dto: UpsertIngredientLibraryItemDto) {
     const adminName = this.requiredName(dto.adminName, "Admin name is required");
     const displayName = this.requiredName(dto.displayName ?? dto.adminName, "Display name is required");
 
     try {
       return await this.prisma.ingredientLibraryItem.create({
         data: {
-          restaurantId,
           adminName,
           adminNameNormalized: this.normalizeAdminName(adminName),
           displayName,
@@ -88,9 +69,9 @@ export class ProductLibraryService {
     }
   }
 
-  async updateIngredient(restaurantId: string, id: string, dto: UpsertIngredientLibraryItemDto) {
+  async updateIngredient(id: string, dto: UpsertIngredientLibraryItemDto) {
     try {
-      await this.findIngredient(restaurantId, id);
+      await this.findIngredient(id);
       const adminName = dto.adminName !== undefined ? this.requiredName(dto.adminName, "Admin name is required") : undefined;
       const displayName = dto.displayName !== undefined ? this.requiredName(dto.displayName, "Display name is required") : undefined;
 
@@ -110,9 +91,9 @@ export class ProductLibraryService {
     }
   }
 
-  async deleteIngredient(restaurantId: string, id: string) {
+  async deleteIngredient(id: string) {
     try {
-      await this.findIngredient(restaurantId, id);
+      await this.findIngredient(id);
       await this.prisma.ingredientLibraryItem.update({
         where: { id },
         data: { isActive: false }
@@ -124,47 +105,26 @@ export class ProductLibraryService {
     }
   }
 
-  async listMealDetails(restaurantId: string) {
+  async listMealDetails(options: { includeInactive?: boolean } = {}) {
     try {
-      await this.backfillLegacyMealDetails(restaurantId);
-      const [data, legacy] = await Promise.all([
-        this.prisma.mealDetailLibraryItem.findMany({
-        where: { restaurantId },
+      const data = await this.prisma.mealDetailLibraryItem.findMany({
+        where: options.includeInactive ? undefined : { isActive: true },
         orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
-        }),
-        this.collectLegacyMealDetails(restaurantId)
-      ]);
-      const libraryKeys = new Set(data.map((item) => item.adminNameNormalized));
-      const legacyRows = Array.from(legacy.entries())
-        .filter(([key]) => !libraryKeys.has(key))
-        .map(([key, item]) => ({
-          id: `legacy-meal-detail-${key}`,
-          restaurantId,
-          adminName: item.adminName,
-          adminNameNormalized: key,
-          displayName: item.displayName,
-          value: this.cleanOptional(item.value),
-          icon: this.cleanOptional(item.icon) ?? "utensils",
-          iconUrl: this.cleanOptional(item.iconUrl),
-          isActive: true,
-          isLegacy: true
-        }));
-
-      return { data: [...data, ...legacyRows] };
+      });
+      return { data };
     } catch (error) {
       this.handleDatabaseError(error);
       throw error;
     }
   }
 
-  async createMealDetail(restaurantId: string, dto: UpsertMealDetailLibraryItemDto) {
+  async createMealDetail(dto: UpsertMealDetailLibraryItemDto) {
     const adminName = this.requiredName(dto.adminName, "Admin name is required");
     const displayName = this.requiredName(dto.displayName ?? dto.adminName, "Display name is required");
 
     try {
       return await this.prisma.mealDetailLibraryItem.create({
         data: {
-          restaurantId,
           adminName,
           adminNameNormalized: this.normalizeAdminName(adminName),
           displayName,
@@ -181,9 +141,9 @@ export class ProductLibraryService {
     }
   }
 
-  async updateMealDetail(restaurantId: string, id: string, dto: UpsertMealDetailLibraryItemDto) {
+  async updateMealDetail(id: string, dto: UpsertMealDetailLibraryItemDto) {
     try {
-      await this.findMealDetail(restaurantId, id);
+      await this.findMealDetail(id);
       const adminName = dto.adminName !== undefined ? this.requiredName(dto.adminName, "Admin name is required") : undefined;
       const displayName = dto.displayName !== undefined ? this.requiredName(dto.displayName, "Display name is required") : undefined;
 
@@ -205,9 +165,9 @@ export class ProductLibraryService {
     }
   }
 
-  async deleteMealDetail(restaurantId: string, id: string) {
+  async deleteMealDetail(id: string) {
     try {
-      await this.findMealDetail(restaurantId, id);
+      await this.findMealDetail(id);
       await this.prisma.mealDetailLibraryItem.update({
         where: { id },
         data: { isActive: false }
@@ -219,13 +179,12 @@ export class ProductLibraryService {
     }
   }
 
-  async resolveIngredientSnapshots(restaurantId: string, adminNames: string[]) {
+  async resolveIngredientSnapshots(adminNames: string[]) {
     const uniqueNames = this.uniqueNames(adminNames);
     if (!uniqueNames.length) return { snapshots: [] as IngredientSnapshot[], unknown: [] as string[] };
 
     const items = await this.prisma.ingredientLibraryItem.findMany({
       where: {
-        restaurantId,
         isActive: true,
         adminNameNormalized: { in: uniqueNames.map((name) => this.normalizeAdminName(name)) }
       }
@@ -246,13 +205,12 @@ export class ProductLibraryService {
     return { snapshots, unknown };
   }
 
-  async resolveMealDetailSnapshots(restaurantId: string, adminNames: string[]) {
+  async resolveMealDetailSnapshots(adminNames: string[]) {
     const uniqueNames = this.uniqueNames(adminNames);
     if (!uniqueNames.length) return { snapshots: [] as MealDetailSnapshot[], unknown: [] as string[] };
 
     const items = await this.prisma.mealDetailLibraryItem.findMany({
       where: {
-        restaurantId,
         isActive: true,
         adminNameNormalized: { in: uniqueNames.map((name) => this.normalizeAdminName(name)) }
       }
@@ -307,25 +265,25 @@ export class ProductLibraryService {
     };
   }
 
-  private async findIngredient(restaurantId: string, id: string) {
-    const item = await this.prisma.ingredientLibraryItem.findFirst({ where: { id, restaurantId } });
+  private async findIngredient(id: string) {
+    const item = await this.prisma.ingredientLibraryItem.findUnique({ where: { id } });
     if (!item) throw new NotFoundException("Ingredient library item not found");
     return item;
   }
 
-  private async findMealDetail(restaurantId: string, id: string) {
-    const item = await this.prisma.mealDetailLibraryItem.findFirst({ where: { id, restaurantId } });
+  private async findMealDetail(id: string) {
+    const item = await this.prisma.mealDetailLibraryItem.findUnique({ where: { id } });
     if (!item) throw new NotFoundException("Meal detail library item not found");
     return item;
   }
 
-  private async backfillLegacyIngredients(restaurantId: string) {
-    await this.createMissingIngredients(restaurantId, await this.collectLegacyIngredients(restaurantId));
+  private async backfillLegacyIngredients() {
+    await this.createMissingIngredients(await this.collectLegacyIngredients());
   }
 
-  private async collectLegacyIngredients(restaurantId: string) {
+  private async collectLegacyIngredients() {
     const products = await this.prisma.product.findMany({
-      where: { restaurantId, deletedAt: null },
+      where: { deletedAt: null },
       select: { ingredients: true },
       orderBy: { updatedAt: "desc" }
     });
@@ -346,6 +304,7 @@ export class ProductLibraryService {
         const existing = drafts.get(key);
         if (existing) {
           if (!existing.imageUrl && normalized.imageUrl) existing.imageUrl = normalized.imageUrl;
+          if (!existing.displayName && normalized.displayName) existing.displayName = normalized.displayName;
           continue;
         }
 
@@ -360,13 +319,13 @@ export class ProductLibraryService {
     return drafts;
   }
 
-  private async backfillLegacyMealDetails(restaurantId: string) {
-    await this.createMissingMealDetails(restaurantId, await this.collectLegacyMealDetails(restaurantId));
+  private async backfillLegacyMealDetails() {
+    await this.createMissingMealDetails(await this.collectLegacyMealDetails());
   }
 
-  private async collectLegacyMealDetails(restaurantId: string) {
+  private async collectLegacyMealDetails() {
     const products = await this.prisma.product.findMany({
-      where: { restaurantId, deletedAt: null },
+      where: { deletedAt: null },
       select: { nutrition: true },
       orderBy: { updatedAt: "desc" }
     });
@@ -376,7 +335,15 @@ export class ProductLibraryService {
       for (const detail of this.normalizeLegacyMealDetails(product.nutrition)) {
         const adminName = detail.adminName || detail.displayName || detail.label;
         const key = this.normalizeAdminName(adminName);
-        if (!key || drafts.has(key)) continue;
+        if (!key) continue;
+
+        const existing = drafts.get(key);
+        if (existing) {
+          if (!existing.value && detail.value) existing.value = detail.value;
+          if ((!existing.icon || existing.icon === "utensils") && detail.icon) existing.icon = detail.icon;
+          if (!existing.iconUrl && detail.iconUrl) existing.iconUrl = detail.iconUrl;
+          continue;
+        }
 
         drafts.set(key, {
           adminName,
@@ -391,15 +358,12 @@ export class ProductLibraryService {
     return drafts;
   }
 
-  private async createMissingIngredients(
-    restaurantId: string,
-    drafts: Map<string, { adminName: string; displayName: string; imageUrl: string }>
-  ) {
+  private async createMissingIngredients(drafts: Map<string, { adminName: string; displayName: string; imageUrl: string }>) {
     const keys = Array.from(drafts.keys());
     if (!keys.length) return;
 
     const existing = await this.prisma.ingredientLibraryItem.findMany({
-      where: { restaurantId, adminNameNormalized: { in: keys } },
+      where: { adminNameNormalized: { in: keys } },
       select: { adminNameNormalized: true }
     });
     const existingKeys = new Set(existing.map((item) => item.adminNameNormalized));
@@ -411,7 +375,6 @@ export class ProductLibraryService {
         try {
           await this.prisma.ingredientLibraryItem.create({
             data: {
-              restaurantId,
               adminName: draft.adminName,
               adminNameNormalized: key,
               displayName: draft.displayName,
@@ -426,14 +389,13 @@ export class ProductLibraryService {
   }
 
   private async createMissingMealDetails(
-    restaurantId: string,
     drafts: Map<string, { adminName: string; displayName: string; value: string; icon: string; iconUrl: string }>
   ) {
     const keys = Array.from(drafts.keys());
     if (!keys.length) return;
 
     const existing = await this.prisma.mealDetailLibraryItem.findMany({
-      where: { restaurantId, adminNameNormalized: { in: keys } },
+      where: { adminNameNormalized: { in: keys } },
       select: { adminNameNormalized: true }
     });
     const existingKeys = new Set(existing.map((item) => item.adminNameNormalized));
@@ -445,7 +407,6 @@ export class ProductLibraryService {
         try {
           await this.prisma.mealDetailLibraryItem.create({
             data: {
-              restaurantId,
               adminName: draft.adminName,
               adminNameNormalized: key,
               displayName: draft.displayName,

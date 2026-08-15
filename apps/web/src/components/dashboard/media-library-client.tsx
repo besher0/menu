@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { Loader2, Plus, RefreshCcw } from "lucide-react";
-import { authHeaders } from "@/lib/session";
+import { authHeaders, getBrowserSession } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
@@ -55,8 +55,17 @@ export function MediaLibraryClient() {
   const [mealDetailDraft, setMealDetailDraft] = useState<MealDetailDraft>(defaultMealDetailDraft);
   const [ingredientImageFile, setIngredientImageFile] = useState<File | null>(null);
   const [mealDetailIconFile, setMealDetailIconFile] = useState<File | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(() => getBrowserSession()?.user.role === "SUPER_ADMIN");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");
+  }, []);
+
+  function libraryPath(kind: "ingredients" | "meal-details") {
+    return isSuperAdmin ? `/admin/library/${kind}` : `/dashboard/media/${kind}`;
+  }
 
   useEffect(() => {
     if (activeTab === "ingredients") {
@@ -65,13 +74,13 @@ export function MediaLibraryClient() {
     if (activeTab === "meal-details") {
       void loadMealDetails();
     }
-  }, [activeTab]);
+  }, [activeTab, isSuperAdmin]);
 
   async function loadIngredients() {
     setStatus("loading");
     setMessage("");
     try {
-      const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
+      const response = await fetch(`${API_URL}${libraryPath("ingredients")}`, {
         headers: authHeaders(),
         cache: "no-store"
       });
@@ -87,6 +96,7 @@ export function MediaLibraryClient() {
 
   async function saveIngredient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isSuperAdmin) return;
     setStatus("saving");
     setMessage("");
 
@@ -94,7 +104,7 @@ export function MediaLibraryClient() {
       const imageUrl = ingredientImageFile
         ? await uploadLibraryFile(ingredientImageFile, "IMAGE", ingredientDraft.displayName || ingredientDraft.adminName || ingredientImageFile.name)
         : ingredientDraft.imageUrl || undefined;
-      const response = await fetch(`${API_URL}/dashboard/media/ingredients`, {
+      const response = await fetch(`${API_URL}${libraryPath("ingredients")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
@@ -117,7 +127,8 @@ export function MediaLibraryClient() {
   }
 
   async function updateIngredient(item: IngredientLibraryItem, patch: Partial<IngredientLibraryItem>) {
-    const response = await fetch(`${API_URL}/dashboard/media/ingredients/${item.id}`, {
+    if (!isSuperAdmin) return;
+    const response = await fetch(`${API_URL}${libraryPath("ingredients")}/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ ...item, ...patch })
@@ -133,6 +144,7 @@ export function MediaLibraryClient() {
   }
 
   async function uploadIngredientImage(item: IngredientLibraryItem, file: File | null) {
+    if (!isSuperAdmin) return;
     if (!file) return;
     setStatus("saving");
     setMessage("");
@@ -149,7 +161,8 @@ export function MediaLibraryClient() {
   }
 
   async function deleteIngredient(item: IngredientLibraryItem) {
-    const response = await fetch(`${API_URL}/dashboard/media/ingredients/${item.id}`, {
+    if (!isSuperAdmin) return;
+    const response = await fetch(`${API_URL}${libraryPath("ingredients")}/${item.id}`, {
       method: "DELETE",
       headers: authHeaders()
     });
@@ -166,7 +179,7 @@ export function MediaLibraryClient() {
     setStatus("loading");
     setMessage("");
     try {
-      const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
+      const response = await fetch(`${API_URL}${libraryPath("meal-details")}`, {
         headers: authHeaders(),
         cache: "no-store"
       });
@@ -182,6 +195,7 @@ export function MediaLibraryClient() {
 
   async function saveMealDetail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isSuperAdmin) return;
     setStatus("saving");
     setMessage("");
 
@@ -189,7 +203,7 @@ export function MediaLibraryClient() {
       const iconUrl = mealDetailIconFile
         ? await uploadLibraryFile(mealDetailIconFile, "IMAGE", mealDetailDraft.displayName || mealDetailDraft.adminName || mealDetailIconFile.name)
         : mealDetailDraft.iconUrl || undefined;
-      const response = await fetch(`${API_URL}/dashboard/media/meal-details`, {
+      const response = await fetch(`${API_URL}${libraryPath("meal-details")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
@@ -214,7 +228,8 @@ export function MediaLibraryClient() {
   }
 
   async function updateMealDetail(item: MealDetailLibraryItem, patch: Partial<MealDetailLibraryItem>) {
-    const response = await fetch(`${API_URL}/dashboard/media/meal-details/${item.id}`, {
+    if (!isSuperAdmin) return;
+    const response = await fetch(`${API_URL}${libraryPath("meal-details")}/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ ...item, ...patch })
@@ -230,6 +245,7 @@ export function MediaLibraryClient() {
   }
 
   async function uploadMealDetailIcon(item: MealDetailLibraryItem, file: File | null) {
+    if (!isSuperAdmin) return;
     if (!file) return;
     setStatus("saving");
     setMessage("");
@@ -246,7 +262,8 @@ export function MediaLibraryClient() {
   }
 
   async function deleteMealDetail(item: MealDetailLibraryItem) {
-    const response = await fetch(`${API_URL}/dashboard/media/meal-details/${item.id}`, {
+    if (!isSuperAdmin) return;
+    const response = await fetch(`${API_URL}${libraryPath("meal-details")}/${item.id}`, {
       method: "DELETE",
       headers: authHeaders()
     });
@@ -288,6 +305,7 @@ export function MediaLibraryClient() {
 
       {activeTab === "ingredients" ? (
         <IngredientLibraryPanel
+          canManage={isSuperAdmin}
           draft={ingredientDraft}
           items={ingredients}
           saving={status === "saving"}
@@ -301,6 +319,7 @@ export function MediaLibraryClient() {
         />
       ) : (
         <MealDetailLibraryPanel
+          canManage={isSuperAdmin}
           draft={mealDetailDraft}
           items={mealDetails}
           saving={status === "saving"}
@@ -318,6 +337,7 @@ export function MediaLibraryClient() {
 }
 
 function IngredientLibraryPanel({
+  canManage,
   draft,
   items,
   saving,
@@ -329,6 +349,7 @@ function IngredientLibraryPanel({
   onDelete,
   selectedFileName
 }: {
+  canManage: boolean;
   draft: IngredientDraft;
   items: IngredientLibraryItem[];
   saving: boolean;
@@ -340,6 +361,39 @@ function IngredientLibraryPanel({
   onDelete: (item: IngredientLibraryItem) => void;
   selectedFileName?: string;
 }) {
+  if (!canManage) {
+    return (
+      <section className="library-panel">
+        <div className="library-table-wrap">
+          <table className="restaurant-table">
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th>Admin name</th>
+                <th>Display name</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.length ? items.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.imageUrl ? <img className="library-thumb" src={item.imageUrl} alt="" /> : "-"}</td>
+                  <td>{item.adminName}</td>
+                  <td>{item.displayName}</td>
+                  <td><StatusPill active={item.isActive} /></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4}><div className="library-empty">No library items yet.</div></td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="library-panel">
       <form className="media-form library-form" onSubmit={onSubmit}>
@@ -402,6 +456,7 @@ function IngredientLibraryPanel({
 }
 
 function MealDetailLibraryPanel({
+  canManage,
   draft,
   items,
   saving,
@@ -413,6 +468,7 @@ function MealDetailLibraryPanel({
   onDelete,
   selectedFileName
 }: {
+  canManage: boolean;
   draft: MealDetailDraft;
   items: MealDetailLibraryItem[];
   saving: boolean;
@@ -424,6 +480,41 @@ function MealDetailLibraryPanel({
   onDelete: (item: MealDetailLibraryItem) => void;
   selectedFileName?: string;
 }) {
+  if (!canManage) {
+    return (
+      <section className="library-panel">
+        <div className="library-table-wrap">
+          <table className="restaurant-table">
+            <thead>
+              <tr>
+                <th>Admin name</th>
+                <th>Display name</th>
+                <th>Value</th>
+                <th>Icon</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.length ? items.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.adminName}</td>
+                  <td>{item.displayName}</td>
+                  <td>{item.value || "-"}</td>
+                  <td>{item.iconUrl ? <img className="library-thumb" src={item.iconUrl} alt="" /> : item.icon}</td>
+                  <td><StatusPill active={item.isActive} /></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={5}><div className="library-empty">No library items yet.</div></td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="library-panel">
       <form className="media-form library-form" onSubmit={onSubmit}>

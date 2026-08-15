@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Copy, Download, Loader2, Plus, QrCode, RefreshCcw } from "lucide-react";
+import { Copy, Download, Loader2, Pencil, Plus, QrCode, RefreshCcw, Save, X } from "lucide-react";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { authHeaders, resolveStoredRestaurant } from "@/lib/session";
 
@@ -29,6 +29,10 @@ export function QrDashboardClient() {
   const [items, setItems] = useState<QrItem[]>([]);
   const [label, setLabel] = useState("Special offer");
   const [targetUrl, setTargetUrl] = useState(preferredRestaurantUrl("your-restaurant"));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editTargetUrl, setEditTargetUrl] = useState("");
+  const [editSavingId, setEditSavingId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
   const scansTotal = useMemo(() => items.length * 12, [items.length]);
@@ -94,6 +98,56 @@ export function QrDashboardClient() {
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء QR.");
+    }
+  }
+
+  function startEdit(item: QrItem) {
+    setEditingId(item.id);
+    setEditLabel(item.label);
+    setEditTargetUrl(item.targetUrl);
+    setMessage("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditLabel("");
+    setEditTargetUrl("");
+    setEditSavingId(null);
+  }
+
+  async function updateCode(event: FormEvent<HTMLFormElement>, id: string) {
+    event.preventDefault();
+    setEditSavingId(id);
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/dashboard/qr/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders()
+        },
+        body: JSON.stringify({ label: editLabel, targetUrl: editTargetUrl })
+      });
+
+      if (!response.ok) {
+        throw new Error("تعذر حفظ تعديل QR.");
+      }
+
+      const payload = (await response.json()) as ApiPayload<QrItem> | QrItem;
+      const item = unwrapPayload(payload);
+
+      if (item) {
+        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? item : currentItem)));
+      }
+
+      setStatus("success");
+      setMessage("تم تحديث الرابط الهدف وبقي رمز QR نفسه.");
+      cancelEdit();
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر تعديل QR.");
+      setEditSavingId(null);
     }
   }
 
@@ -167,27 +221,63 @@ export function QrDashboardClient() {
         </form>
 
         <div className="qr-grid">
-          {items.map((item) => (
-            <article className="qr-card" key={item.id}>
-              <div className="qr-art" dangerouslySetInnerHTML={{ __html: item.svg }} />
-              <div className="qr-card-body">
-                <h2>{item.label}</h2>
-                <p>{item.branch ? item.branch.name : "Main menu"}</p>
-                <small>{item.targetUrl}</small>
-                <div>
-                  <button type="button" onClick={() => copy(item.qrUrl)} title="Copy QR link">
-                    <Copy size={18} />
-                  </button>
-                  <button type="button" onClick={() => copy(item.targetUrl)} title="Copy target link">
-                    <QrCode size={18} />
-                  </button>
-                  <button type="button" onClick={() => downloadSvg(item)} title="Download SVG">
-                    <Download size={18} />
-                  </button>
+          {items.map((item) => {
+            const isEditing = editingId === item.id;
+            const isSavingEdit = editSavingId === item.id;
+
+            return (
+              <article className="qr-card" key={item.id}>
+                <div className="qr-art" dangerouslySetInnerHTML={{ __html: item.svg }} />
+                <div className="qr-card-body">
+                  {isEditing ? (
+                    <form className="qr-edit-form" onSubmit={(event) => updateCode(event, item.id)}>
+                      <p className="qr-edit-note">
+                        يمكنك تغيير الرابط الهدف في أي وقت. رمز QR المطبوع سيبقى نفسه ولن تحتاج إلى طباعته من جديد.
+                      </p>
+                      <label>
+                        <span>الاسم</span>
+                        <input value={editLabel} onChange={(event) => setEditLabel(event.target.value)} />
+                      </label>
+                      <label>
+                        <span>الرابط الهدف</span>
+                        <input value={editTargetUrl} onChange={(event) => setEditTargetUrl(event.target.value)} />
+                      </label>
+                      <div className="qr-edit-actions">
+                        <button type="submit" className="primary-action" disabled={isSavingEdit}>
+                          {isSavingEdit ? <Loader2 className="spin" size={18} /> : <Save size={18} />}
+                          حفظ
+                        </button>
+                        <button type="button" className="secondary-action" onClick={cancelEdit} disabled={isSavingEdit}>
+                          <X size={18} />
+                          إلغاء
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <h2>{item.label}</h2>
+                      <p>{item.branch ? item.branch.name : "Main menu"}</p>
+                      <small>{item.targetUrl}</small>
+                      <div>
+                        <button type="button" onClick={() => copy(item.qrUrl)} title="Copy QR link">
+                          <Copy size={18} />
+                        </button>
+                        <button type="button" onClick={() => copy(item.targetUrl)} title="Copy target link">
+                          <QrCode size={18} />
+                        </button>
+                        <button type="button" onClick={() => startEdit(item)} title="Edit QR target">
+                          <Pencil size={18} />
+                        </button>
+                        <button type="button" onClick={() => downloadSvg(item)} title="Download SVG">
+                          <Download size={18} />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </section>
     </div>

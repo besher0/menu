@@ -4,12 +4,18 @@ import { GlobalRoleGuard } from "../../common/guards/global-role.guard";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { CreateRestaurantDto } from "./dto/create-restaurant.dto";
 import { AdminService } from "./admin.service";
+import { ProductLibraryService } from "../media/product-library.service";
+import { UpsertIngredientLibraryItemDto } from "../media/dto/upsert-ingredient-library-item.dto";
+import { UpsertMealDetailLibraryItemDto } from "../media/dto/upsert-meal-detail-library-item.dto";
 
 @Controller("admin")
 @UseGuards(JwtAuthGuard, GlobalRoleGuard)
 @GlobalRoles("SUPER_ADMIN")
 export class AdminController {
-  constructor(@Inject(AdminService) private readonly adminService: AdminService) {}
+  constructor(
+    @Inject(AdminService) private readonly adminService: AdminService,
+    @Inject(ProductLibraryService) private readonly productLibrary: ProductLibraryService
+  ) {}
 
   @Get("overview")
   overview() {
@@ -67,5 +73,45 @@ export class AdminController {
     features?: Array<{ key: string; enabled?: boolean; limit?: number | string | null }>;
   }) {
     return this.adminService.updateSubscriptionPlan(id, dto);
+  }
+
+  @Get("library/ingredients")
+  libraryIngredients() {
+    return this.productLibrary.listIngredients({ includeInactive: true });
+  }
+
+  @Post("library/ingredients")
+  createLibraryIngredient(@Body() dto: UpsertIngredientLibraryItemDto) {
+    return this.productLibrary.createIngredient(dto);
+  }
+
+  @Patch("library/ingredients/:id")
+  updateLibraryIngredient(@Param("id") id: string, @Body() dto: UpsertIngredientLibraryItemDto) {
+    return this.productLibrary.updateIngredient(id, dto);
+  }
+
+  @Delete("library/ingredients/:id")
+  deleteLibraryIngredient(@Param("id") id: string) {
+    return this.productLibrary.deleteIngredient(id);
+  }
+
+  @Get("library/meal-details")
+  libraryMealDetails() {
+    return this.productLibrary.listMealDetails({ includeInactive: true });
+  }
+
+  @Post("library/meal-details")
+  createLibraryMealDetail(@Body() dto: UpsertMealDetailLibraryItemDto) {
+    return this.productLibrary.createMealDetail(dto);
+  }
+
+  @Patch("library/meal-details/:id")
+  updateLibraryMealDetail(@Param("id") id: string, @Body() dto: UpsertMealDetailLibraryItemDto) {
+    return this.productLibrary.updateMealDetail(id, dto);
+  }
+
+  @Delete("library/meal-details/:id")
+  deleteLibraryMealDetail(@Param("id") id: string) {
+    return this.productLibrary.deleteMealDetail(id);
   }
 }

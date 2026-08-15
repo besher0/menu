@@ -1146,12 +1146,12 @@ function HomeView({
           label,
           href: moodMenuHref(data.restaurant.slug, key, useSubdomainRoutes),
           iconUrl: item.iconUrl,
-        iconPosition: "manual",
-        iconX: item.iconX,
-        iconY: item.iconY,
-        iconWidth: item.iconWidth,
-        iconHeight: item.iconHeight,
-        color: item.color,
+          iconPosition: "manual",
+          iconX: item.iconX,
+          iconY: item.iconY,
+          iconWidth: item.iconWidth,
+          iconHeight: item.iconHeight,
+          color: item.color,
           backgroundType: item.backgroundType,
           backgroundValue: item.backgroundValue,
           backgroundCss: item.backgroundCss,
@@ -1159,13 +1159,16 @@ function HomeView({
         };
       })
     : [];
-  const moodSlots = moodItems;
+  const shouldShowMoodStrip = Boolean(moodSection && moodItems.length > 0);
   const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
   const bannerSlides = adBanners;
   const homeReturnHref = restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes);
   const isVertigo = publicTemplate(data) === "vertigo";
   const featuredCardVariant = featuredSection?.settings?.cardVariant ?? (isVertigo ? "featured-overlay-large" : "wide-image");
   const heroImageUrl = heroSection?.settings?.backgroundImageUrl || data.restaurant.heroImageUrl || data.restaurant.logoUrl || "";
+  const heroTitle = heroSection?.settings?.title?.trim() ?? "";
+  const heroSubtitle = heroSection?.settings?.subtitle?.trim() ?? "";
+  const shouldShowVertigoHeroCopy = Boolean(heroTitle || heroSubtitle);
   const [activeBanner, setActiveBanner] = useState(0);
   const bannerTouchStartX = useRef<number | null>(null);
 
@@ -1220,41 +1223,44 @@ function HomeView({
       {isVertigo ? (
         <section className="vertigo-home-hero">
           {heroImageUrl ? <img src={heroImageUrl} alt={data.restaurant.name} /> : null}
+          {shouldShowVertigoHeroCopy ? (
+            <div className="vertigo-hero-copy">
+              {heroTitle ? <h1 dir="auto">{heroTitle}</h1> : null}
+              {heroSubtitle ? <p dir="auto">{heroSubtitle}</p> : null}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
-      <section className="mood-strip">
-        <h1>
-          <Flame size={18} />
-          {t.moodToday}
-        </h1>
+      {shouldShowMoodStrip ? (
+        <section className="mood-strip">
+          <h1>
+            <Flame size={18} />
+            {t.moodToday}
+          </h1>
           <div>
-            {moodSlots.map((_, index) => {
-              const item = moodItems[index];
-              return item ? (
-                <Link
-                  key={`${item.label}-${index}`}
-                  href={item.href}
-                  scroll
-                  onClick={() => window.scrollTo(0, 0)}
-                  className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
-                  style={{
-                    ...visualBackgroundStyle(item),
-                    "--icon-x": `${item.iconX ?? 78}%`,
-                    "--icon-y": `${item.iconY ?? 50}%`,
-                    "--icon-width": `${item.iconWidth ?? 34}px`,
-                    "--icon-height": `${item.iconHeight ?? 34}px`
-                  } as React.CSSProperties}
-                >
-                  {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
-                  <span>{item.label}</span>
-                </Link>
-              ) : (
-                <span key={`mood-placeholder-${index}`} className="mood-chip mood-chip-placeholder" aria-hidden="true" />
-              );
-            })}
+            {moodItems.map((item, index) => (
+              <Link
+                key={`${item.label}-${index}`}
+                href={item.href}
+                scroll
+                onClick={() => window.scrollTo(0, 0)}
+                className={`mood-chip ${item.visualScrollEnabled ? "visual-scroll" : ""}`}
+                style={{
+                  ...visualBackgroundStyle(item),
+                  "--icon-x": `${item.iconX ?? 78}%`,
+                  "--icon-y": `${item.iconY ?? 50}%`,
+                  "--icon-width": `${item.iconWidth ?? 34}px`,
+                  "--icon-height": `${item.iconHeight ?? 34}px`
+                } as React.CSSProperties}
+              >
+                {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
+                <span>{item.label}</span>
+              </Link>
+            ))}
           </div>
-      </section>
+        </section>
+      ) : null}
 
       <section
         className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}

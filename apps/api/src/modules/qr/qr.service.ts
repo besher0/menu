@@ -4,6 +4,7 @@ import { toString } from "qrcode";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateQrCodeDto } from "./dto/create-qr-code.dto";
+import { UpdateQrCodeDto } from "./dto/update-qr-code.dto";
 
 @Injectable()
 export class QrService {
@@ -29,6 +30,11 @@ export class QrService {
   async create(restaurantId: string, restaurantSlug: string, dto: CreateQrCodeDto) {
     await this.featureFlags.assertFeature(restaurantId, "QR_CODES");
 
+    const label = dto.label.trim();
+    if (!label) {
+      throw new BadRequestException("QR label is required");
+    }
+
     if (dto.branchId) {
       const branch = await this.prisma.branch.findFirst({
         where: { id: dto.branchId, restaurantId, deletedAt: null }
@@ -43,13 +49,78 @@ export class QrService {
       data: {
         restaurantId,
         branchId: dto.branchId,
-        label: dto.label,
-        targetUrl: this.normalizeTarget(dto.targetUrl, restaurantSlug)
+        label,
+        targetUrl: this.normalizeTarget(this.validateTarget(dto.targetUrl), restaurantSlug)
       },
       include: { branch: true }
     });
 
     return this.serialize(code);
+  }
+
+  async update(restaurantId: string, restaurantSlug: string, id: string, dto: UpdateQrCodeDto) {
+    await this.featureFlags.assertFeature(restaurantId, "QR_CODES");
+
+    const code = await this.prisma.qrCode.findFirst({
+      where: { id, restaurantId },
+      include: { branch: true }
+    });
+
+    if (!code) {
+      throw new NotFoundException("QR code not found");
+    }
+
+    const data: {
+      label?: string;
+      targetUrl?: string;
+      branchId?: string | null;
+    } = {};
+
+    if (dto.label !== undefined) {
+      const label = dto.label.trim();
+      if (!label) {
+        throw new BadRequestException("QR label is required");
+      }
+
+      data.label = label;
+    }
+
+    if (dto.targetUrl !== undefined) {
+      data.targetUrl = this.normalizeTarget(this.validateTarget(dto.targetUrl), restaurantSlug);
+    }
+
+    if (dto.branchId !== undefined) {
+      if (dto.branchId === null) {
+        data.branchId = null;
+      } else {
+        const branchId = dto.branchId.trim();
+        if (!branchId) {
+          throw new BadRequestException("Branch id is required");
+        }
+
+        const branch = await this.prisma.branch.findFirst({
+          where: { id: branchId, restaurantId, deletedAt: null }
+        });
+
+        if (!branch) {
+          throw new BadRequestException("Branch does not belong to this restaurant");
+        }
+
+        data.branchId = branchId;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return this.serialize(code);
+    }
+
+    const updated = await this.prisma.qrCode.update({
+      where: { id: code.id },
+      data,
+      include: { branch: true }
+    });
+
+    return this.serialize(updated);
   }
 
   async svgForDashboard(restaurantId: string, id: string) {
@@ -166,6 +237,37 @@ export class QrService {
     }
 
     return targetUrl;
+  }
+
+  private validateTarget(targetUrl: string) {
+    const value = targetUrl.trim();
+
+    if (!value) {
+      throw new BadRequestException("Target URL is required");
+    }
+
+    if (value === "main-menu") {
+      return value;
+    }
+
+    if (value.startsWith("/")) {
+      if (value.startsWith("//") || /\s/.test(value)) {
+        throw new BadRequestException("Target URL is invalid");
+      }
+
+      return value;
+    }
+
+    try {
+      const url = new URL(value);
+      if (!["http:", "https:"].includes(url.protocol) || !url.hostname) {
+        throw new Error("Invalid URL");
+      }
+
+      return value;
+    } catch {
+      throw new BadRequestException("Target URL is invalid");
+    }
   }
 
   private publicMenuUrl(restaurantSlug: string) {

@@ -44,8 +44,6 @@ model Restaurant {
   categories             Category[]
   domains                CustomDomain[]
   imageRules             ImageRule[]
-  ingredientLibraryItems IngredientLibraryItem[]
-  mealDetailLibraryItems MealDetailLibraryItem[]
   mediaAssets            MediaAsset[]
   menus                  Menu[]
   orders                 Order[]
@@ -298,39 +296,31 @@ model ProductVrMedia {
 }
 
 model IngredientLibraryItem {
-  id                  String     @id @default(cuid())
-  restaurantId        String
+  id                  String   @id @default(cuid())
   adminName           String
-  adminNameNormalized String
+  adminNameNormalized String   @unique
   displayName         String
   imageUrl            String?
-  isActive            Boolean    @default(true)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  restaurant          Restaurant @relation(fields: [restaurantId], references: [id])
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  @@unique([restaurantId, adminNameNormalized])
-  @@index([restaurantId])
-  @@index([restaurantId, isActive])
+  @@index([isActive])
 }
 
 model MealDetailLibraryItem {
-  id                  String     @id @default(cuid())
-  restaurantId        String
+  id                  String   @id @default(cuid())
   adminName           String
-  adminNameNormalized String
+  adminNameNormalized String   @unique
   displayName         String
   value               String?
-  icon                String     @default("utensils")
+  icon                String   @default("utensils")
   iconUrl             String?
-  isActive            Boolean    @default(true)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  restaurant          Restaurant @relation(fields: [restaurantId], references: [id])
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  @@unique([restaurantId, adminNameNormalized])
-  @@index([restaurantId])
-  @@index([restaurantId, isActive])
+  @@index([isActive])
 }
 
 model MediaAsset {

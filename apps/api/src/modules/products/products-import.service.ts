@@ -306,7 +306,7 @@ export class ProductsImportService {
   }
 
   private async loadContext(restaurantId: string): Promise<ImportContext> {
-    await this.productLibrary.backfillLegacyLibrary(restaurantId);
+    await this.productLibrary.backfillLegacyLibrary();
 
     const [restaurant, categories, ingredients, mealDetails, productCount, productLimit, maxSort, moodOptions] = await Promise.all([
       this.prisma.restaurant.findUniqueOrThrow({
@@ -319,11 +319,11 @@ export class ProductsImportService {
         orderBy: { sortOrder: "asc" }
       }),
       this.prisma.ingredientLibraryItem.findMany({
-        where: { restaurantId, isActive: true },
+        where: { isActive: true },
         orderBy: { adminName: "asc" }
       }),
       this.prisma.mealDetailLibraryItem.findMany({
-        where: { restaurantId, isActive: true },
+        where: { isActive: true },
         orderBy: { adminName: "asc" }
       }),
       this.prisma.product.count({ where: { restaurantId, deletedAt: null } }),

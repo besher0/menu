@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { AppRequest } from "../../common/app-request";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
 import { CreateQrCodeDto } from "./dto/create-qr-code.dto";
+import { UpdateQrCodeDto } from "./dto/update-qr-code.dto";
 import { QrService } from "./qr.service";
 
 @Controller("dashboard/qr")
@@ -18,6 +19,11 @@ export class QrController {
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateQrCodeDto) {
     return this.qrService.create(request.restaurant!.id, request.restaurant!.slug, dto);
+  }
+
+  @Patch(":id")
+  update(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpdateQrCodeDto) {
+    return this.qrService.update(request.restaurant!.id, request.restaurant!.slug, id, dto);
   }
 
   @Get(":id/svg")

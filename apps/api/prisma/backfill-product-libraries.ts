@@ -83,63 +83,104 @@ function mealDetailDisplayName(item: unknown, fallback: string) {
 async function main() {
   const products = await prisma.product.findMany({
     where: { deletedAt: null },
-    select: { restaurantId: true, ingredients: true, nutrition: true }
+    select: { ingredients: true, nutrition: true }
   });
-  let ingredients = 0;
-  let details = 0;
+  const ingredientDrafts = new Map<string, { adminName: string; displayName: string; imageUrl: string | null }>();
+  const mealDetailDrafts = new Map<string, { adminName: string; displayName: string; value: string | null; icon: string; iconUrl: string | null }>();
 
   for (const product of products) {
     for (const item of jsonArray(product.ingredients)) {
-        const adminName = ingredientName(item);
-        if (!adminName) continue;
-        await prisma.ingredientLibraryItem.upsert({
-          where: {
-            restaurantId_adminNameNormalized: {
-              restaurantId: product.restaurantId,
-              adminNameNormalized: normalize(adminName)
-            }
-          },
-          update: {},
-          create: {
-            restaurantId: product.restaurantId,
-            adminName,
-            adminNameNormalized: normalize(adminName),
-            displayName: ingredientDisplayName(item, adminName),
-            imageUrl: ingredientImageUrl(item),
-            isActive: true
-          }
-        });
-        ingredients += 1;
+      const adminName = ingredientName(item);
+      if (!adminName) continue;
+      const key = normalize(adminName);
+      const draft = {
+        adminName,
+        displayName: ingredientDisplayName(item, adminName),
+        imageUrl: ingredientImageUrl(item)
+      };
+      const existing = ingredientDrafts.get(key);
+      if (existing) {
+        if (!existing.imageUrl && draft.imageUrl) existing.imageUrl = draft.imageUrl;
+        if (!existing.displayName && draft.displayName) existing.displayName = draft.displayName;
+      } else {
+        ingredientDrafts.set(key, draft);
+      }
     }
 
     for (const item of mealDetails(product.nutrition)) {
       const adminName = mealDetailAdminName(item);
       if (!adminName) continue;
       const record = item as Record<string, unknown>;
-      await prisma.mealDetailLibraryItem.upsert({
-        where: {
-          restaurantId_adminNameNormalized: {
-            restaurantId: product.restaurantId,
-            adminNameNormalized: normalize(adminName)
-          }
-        },
-        update: {},
-        create: {
-          restaurantId: product.restaurantId,
-          adminName,
-          adminNameNormalized: normalize(adminName),
-          displayName: mealDetailDisplayName(item, adminName),
-          value: text(record.value) || text(record.amount) || null,
-          icon: text(record.icon) || "utensils",
-          iconUrl: text(record.iconUrl) || text(record.imageUrl) || null,
-          isActive: true
-        }
-      });
-      details += 1;
+      const key = normalize(adminName);
+      const draft = {
+        adminName,
+        displayName: mealDetailDisplayName(item, adminName),
+        value: text(record.value) || text(record.amount) || null,
+        icon: text(record.icon) || "utensils",
+        iconUrl: text(record.iconUrl) || text(record.imageUrl) || null
+      };
+      const existing = mealDetailDrafts.get(key);
+      if (existing) {
+        if (!existing.value && draft.value) existing.value = draft.value;
+        if ((!existing.icon || existing.icon === "utensils") && draft.icon) existing.icon = draft.icon;
+        if (!existing.iconUrl && draft.iconUrl) existing.iconUrl = draft.iconUrl;
+      } else {
+        mealDetailDrafts.set(key, draft);
+      }
     }
   }
 
-  console.log(`Backfill complete. Processed ingredient references: ${ingredients}, meal detail references: ${details}.`);
+  for (const [key, draft] of ingredientDrafts) {
+    const existing = await prisma.ingredientLibraryItem.findUnique({ where: { adminNameNormalized: key } });
+    if (existing) {
+      await prisma.ingredientLibraryItem.update({
+        where: { id: existing.id },
+        data: {
+          displayName: existing.displayName || draft.displayName,
+          imageUrl: existing.imageUrl || draft.imageUrl
+        }
+      });
+    } else {
+      await prisma.ingredientLibraryItem.create({
+        data: {
+          adminName: draft.adminName,
+          adminNameNormalized: key,
+          displayName: draft.displayName,
+          imageUrl: draft.imageUrl,
+          isActive: true
+        }
+      });
+    }
+  }
+
+  for (const [key, draft] of mealDetailDrafts) {
+    const existing = await prisma.mealDetailLibraryItem.findUnique({ where: { adminNameNormalized: key } });
+    if (existing) {
+      await prisma.mealDetailLibraryItem.update({
+        where: { id: existing.id },
+        data: {
+          displayName: existing.displayName || draft.displayName,
+          value: existing.value || draft.value,
+          icon: existing.icon && existing.icon !== "utensils" ? existing.icon : draft.icon,
+          iconUrl: existing.iconUrl || draft.iconUrl
+        }
+      });
+    } else {
+      await prisma.mealDetailLibraryItem.create({
+        data: {
+          adminName: draft.adminName,
+          adminNameNormalized: key,
+          displayName: draft.displayName,
+          value: draft.value,
+          icon: draft.icon,
+          iconUrl: draft.iconUrl,
+          isActive: true
+        }
+      });
+    }
+  }
+
+  console.log(`Backfill complete. Global ingredients: ${ingredientDrafts.size}, global meal details: ${mealDetailDrafts.size}.`);
 }
 
 main()

@@ -492,8 +492,6 @@ export class AdminService {
 
       await tx.mediaVariant.deleteMany({ where: { mediaId: { in: mediaIds } } });
       await tx.mediaAsset.deleteMany({ where: { restaurantId } });
-      await tx.ingredientLibraryItem.deleteMany({ where: { restaurantId } });
-      await tx.mealDetailLibraryItem.deleteMany({ where: { restaurantId } });
       await tx.restaurantMember.deleteMany({ where: { restaurantId } });
       await tx.branch.deleteMany({ where: { restaurantId } });
       await tx.restaurant.delete({ where: { id: restaurantId } });

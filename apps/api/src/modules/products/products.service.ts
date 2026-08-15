@@ -165,7 +165,7 @@ export class ProductsService {
   async ingredients(restaurantId: string) {
     const [library, products] = await Promise.all([
       this.prisma.ingredientLibraryItem.findMany({
-        where: { restaurantId },
+        where: { isActive: true },
         orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
       }),
       this.prisma.product.findMany({
@@ -230,7 +230,7 @@ export class ProductsService {
   async mealDetails(restaurantId: string) {
     const [library, products] = await Promise.all([
       this.prisma.mealDetailLibraryItem.findMany({
-        where: { restaurantId },
+        where: { isActive: true },
         orderBy: [{ isActive: "desc" }, { adminName: "asc" }]
       }),
       this.prisma.product.findMany({

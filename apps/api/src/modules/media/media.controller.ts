@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Inject,
   Param,
@@ -35,8 +36,6 @@ import {
   uploadMaxBytes,
   validateUploadFile
 } from "./media-storage.service";
-import { UpsertIngredientLibraryItemDto } from "./dto/upsert-ingredient-library-item.dto";
-import { UpsertMealDetailLibraryItemDto } from "./dto/upsert-meal-detail-library-item.dto";
 
 @Controller("dashboard/media")
 @UseGuards(JwtAuthGuard, RestaurantContextGuard)
@@ -63,51 +62,43 @@ export class MediaController {
   }
 
   @Get("ingredients")
-  ingredients(@Req() request: AppRequest) {
-    return this.productLibrary.listIngredients(request.restaurant!.id);
+  ingredients() {
+    return this.productLibrary.listIngredients();
   }
 
   @Post("ingredients")
-  createIngredient(@Req() request: AppRequest, @Body() dto: UpsertIngredientLibraryItemDto) {
-    return this.productLibrary.createIngredient(request.restaurant!.id, dto);
+  createIngredient() {
+    throw new ForbiddenException("Only SUPER_ADMIN can manage the global library");
   }
 
   @Patch("ingredients/:id")
-  updateIngredient(
-    @Req() request: AppRequest,
-    @Param("id") id: string,
-    @Body() dto: UpsertIngredientLibraryItemDto
-  ) {
-    return this.productLibrary.updateIngredient(request.restaurant!.id, id, dto);
+  updateIngredient() {
+    throw new ForbiddenException("Only SUPER_ADMIN can manage the global library");
   }
 
   @Delete("ingredients/:id")
-  deleteIngredient(@Req() request: AppRequest, @Param("id") id: string) {
-    return this.productLibrary.deleteIngredient(request.restaurant!.id, id);
+  deleteIngredient() {
+    throw new ForbiddenException("Only SUPER_ADMIN can manage the global library");
   }
 
   @Get("meal-details")
-  mealDetails(@Req() request: AppRequest) {
-    return this.productLibrary.listMealDetails(request.restaurant!.id);
+  mealDetails() {
+    return this.productLibrary.listMealDetails();
   }
 
   @Post("meal-details")
-  createMealDetail(@Req() request: AppRequest, @Body() dto: UpsertMealDetailLibraryItemDto) {
-    return this.productLibrary.createMealDetail(request.restaurant!.id, dto);
+  createMealDetail() {
+    throw new ForbiddenException("Only SUPER_ADMIN can manage the global library");
   }
 
   @Patch("meal-details/:id")
-  updateMealDetail(
-    @Req() request: AppRequest,
-    @Param("id") id: string,
-    @Body() dto: UpsertMealDetailLibraryItemDto
-  ) {
-    return this.productLibrary.updateMealDetail(request.restaurant!.id, id, dto);
+  updateMealDetail() {
+    throw new ForbiddenException("Only SUPER_ADMIN can manage the global library");
   }
 
   @Delete("meal-details/:id")
-  deleteMealDetail(@Req() request: AppRequest, @Param("id") id: string) {
-    return this.productLibrary.deleteMealDetail(request.restaurant!.id, id);
+  deleteMealDetail() {
+    throw new ForbiddenException("Only SUPER_ADMIN can manage the global library");
   }
 
   @Post()

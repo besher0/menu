@@ -24,7 +24,7 @@ import {
   SECTION_LABELS,
   defaultSectionSettings
 } from "@menu/shared";
-import { authHeaders, getBrowserSession } from "@/lib/session";
+import { authHeaders, getBrowserSession, resolveStoredRestaurant } from "@/lib/session";
 import { SkeletonForm } from "@/components/ui/skeleton";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
@@ -41,6 +41,22 @@ type ProductOption = {
   name: string;
   slug?: string;
 };
+
+function resolvePreferredRestaurantId(
+  restaurants: RestaurantOption[],
+  requestedRestaurantId: string | null,
+  storedRestaurantId?: string
+) {
+  if (requestedRestaurantId && restaurants.some((restaurant) => restaurant.id === requestedRestaurantId)) {
+    return requestedRestaurantId;
+  }
+
+  if (storedRestaurantId && restaurants.some((restaurant) => restaurant.id === storedRestaurantId)) {
+    return storedRestaurantId;
+  }
+
+  return restaurants[0]?.id ?? "";
+}
 
 const PRODUCT_CARD_VARIANT_LABELS: Record<string, string> = {
   "wide-image": "عريض بصورة كاملة",
@@ -116,12 +132,15 @@ export function MenuBuilderClient() {
 
   useEffect(() => {
     const session = getBrowserSession();
+    const storedRestaurant = resolveStoredRestaurant(session);
     const membershipRestaurants = session?.memberships.map((membership) => membership.restaurant) ?? [];
 
     async function loadRestaurants() {
       if (session?.user.role !== "SUPER_ADMIN") {
         setRestaurants(membershipRestaurants);
-        setSelectedRestaurantId(requestedRestaurantId ?? membershipRestaurants[0]?.id ?? "");
+        setSelectedRestaurantId(
+          resolvePreferredRestaurantId(membershipRestaurants, requestedRestaurantId, storedRestaurant?.id)
+        );
         return;
       }
 
@@ -134,10 +153,14 @@ export function MenuBuilderClient() {
         const adminRestaurants = (payload?.data ?? payload ?? []) as RestaurantOption[];
         const nextRestaurants = adminRestaurants.length ? adminRestaurants : membershipRestaurants;
         setRestaurants(nextRestaurants);
-        setSelectedRestaurantId(requestedRestaurantId ?? nextRestaurants[0]?.id ?? "");
+        setSelectedRestaurantId(
+          resolvePreferredRestaurantId(nextRestaurants, requestedRestaurantId, storedRestaurant?.id)
+        );
       } catch {
         setRestaurants(membershipRestaurants);
-        setSelectedRestaurantId(requestedRestaurantId ?? membershipRestaurants[0]?.id ?? "");
+        setSelectedRestaurantId(
+          resolvePreferredRestaurantId(membershipRestaurants, requestedRestaurantId, storedRestaurant?.id)
+        );
       }
     }
 
@@ -738,14 +761,6 @@ export function MenuBuilderClient() {
           </p>
         </div>
         <div className="builder-actions">
-          <select value={selectedRestaurantId} onChange={(event) => setSelectedRestaurantId(event.target.value)}>
-            <option value="">اختر المطعم</option>
-            {restaurants.map((restaurant) => (
-              <option key={restaurant.id} value={restaurant.id}>
-                {restaurant.name}
-              </option>
-            ))}
-          </select>
           <button onClick={saveDraft} disabled={status === "saving" || status === "loading"}>
             {status === "saving" ? <Loader2 className="spin" size={18} /> : <Save size={18} />}
             حفظ

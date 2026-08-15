@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
+import { MediaModule } from "../media/media.module";
 import { AdminController } from "./admin.controller";
 import { AdminService } from "./admin.service";
 
 @Module({
+  imports: [MediaModule],
   controllers: [AdminController],
   providers: [AdminService]
 })
