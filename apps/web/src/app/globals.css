@@ -4297,7 +4297,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .public-content {
   display: grid;
-  gap: 0px;
+  gap: 5px;
 }
 
 .public-content > section {
@@ -4610,7 +4610,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .vertigo-featured-products {
   display: grid;
-  gap: 16px;
+  gap: 5px;
 }
 
 .vertigo-featured-products > div:last-child {
@@ -5602,7 +5602,7 @@ body:has(.public-page)::-webkit-scrollbar {
   top: 92px;
   transform: translateY(-10px);
   width: max-content;
-  z-index: 29;
+  z-index: 1000;
 }
 
 .menu-view-switch button {
@@ -6588,8 +6588,8 @@ body:has(.public-page)::-webkit-scrollbar {
   height: 96%;
   object-fit: cover;
   width: 88%;
-  border: 1px, solid, #00000021;
-      border-radius: 7px;
+  border-radius: 7px;
+  padding-top: 3px;
 }
 
 .ingredients-row b {
@@ -6949,7 +6949,7 @@ body:has(.public-page)::-webkit-scrollbar {
   background: #ffffff;
   border: 1px solid var(--color-border);
   border-radius: 11px;
-  box-shadow: 0 5px 14px rgb(16 24 40 / 7%);
+  box-shadow: 0 1px 4px rgb(16 24 40 / 7%);
   flex: 0 0 80px;
   gap: 0;
   grid-template-rows: 75px minmax(31px, 1fr);
