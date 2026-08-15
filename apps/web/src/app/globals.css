@@ -4297,7 +4297,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .public-content {
   display: grid;
-  gap: 12px;
+  gap: 0px;
 }
 
 .public-content > section {
@@ -6585,10 +6585,11 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .ingredients-row img {
   display: block;
-  height: 100%;
+  height: 96%;
   object-fit: cover;
   width: 88%;
   border: 1px, solid, #00000021;
+      border-radius: 7px;
 }
 
 .ingredients-row b {
@@ -6856,7 +6857,7 @@ body:has(.public-page)::-webkit-scrollbar {
   display: flex;
   gap: 4px;
   justify-content: center;
-  margin: 10px 0 14px;
+  margin: 8px 0 0;
 }
 
 .vertigo-product-dots button {
@@ -6877,9 +6878,9 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 0;
   display: grid;
   gap: 15px;
-  margin-top: 10px;
+  margin-top: 6px;
   overflow: visible;
-  padding: 6px 18px 0;
+  padding: 0 18px 0;
 }
 
 .vertigo-product-detail .product-title-row {
@@ -6916,6 +6917,7 @@ body:has(.public-page)::-webkit-scrollbar {
   color: color-mix(in srgb, var(--color-text) 72%, #ffffff);
   font-size: 14px;
   line-height: 1.65;
+  margin-top: -9px;
   padding: 0;
   text-align: start;
 }
@@ -7942,6 +7944,10 @@ body:has(.public-page)::-webkit-scrollbar {
   max-width: 390px;
   overflow: hidden;
   width: calc(100% - 48px);
+}
+
+.template-vertigo.footer-floating-pill .public-bottom-nav {
+  height: 74px;
 }
 
 .footer-floating-pill .public-bottom-nav a {

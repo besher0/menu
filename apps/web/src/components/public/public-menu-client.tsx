@@ -2552,34 +2552,38 @@ function ProductView({
         </div>
       ) : null}
       <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}>
-        <div className="product-media-tabs" role="group" aria-label={t.photos}>
-          <button
-            type="button"
-            className={mediaMode === "image" ? "active" : ""}
-            onClick={() => setMediaMode("image")}
-          >
-            <ImageIcon size={16} />
-            {t.photo}
-          </button>
-          {model3dUrl ? (
-            <button
-              type="button"
-              className={mediaMode === "3d" ? "active" : ""}
-              onClick={() => {
-                setMediaMode("3d");
-                void trackMediaOpen();
-              }}
-            >
-              <Rotate3D size={16} />
-              3D
-            </button>
-          ) : null}
-          {model3dUrl && canRenderModel ? (
-            <button type="button" className="product-ar-tab" onClick={openAr}>
-              AR
-            </button>
-          ) : null}
-        </div>
+        {!isVertigo || Boolean(model3dUrl) ? (
+          <div className="product-media-tabs" role="group" aria-label={t.photos}>
+            {!isVertigo ? (
+              <button
+                type="button"
+                className={mediaMode === "image" ? "active" : ""}
+                onClick={() => setMediaMode("image")}
+              >
+                <ImageIcon size={16} />
+                {t.photo}
+              </button>
+            ) : null}
+            {model3dUrl ? (
+              <button
+                type="button"
+                className={mediaMode === "3d" ? "active" : ""}
+                onClick={() => {
+                  setMediaMode("3d");
+                  void trackMediaOpen();
+                }}
+              >
+                <Rotate3D size={16} />
+                3D
+              </button>
+            ) : null}
+            {model3dUrl && canRenderModel ? (
+              <button type="button" className="product-ar-tab" onClick={openAr}>
+                AR
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {mediaMode === "3d" && model3dUrl ? (
           canRenderModel ? (
             <div className="product-model-stage">
@@ -2620,7 +2624,7 @@ function ProductView({
             <path d="M9 3.5 15.5 10 9 16.5" />
           </svg>
         </button>
-        {mediaMode === "image" && gallery.length > 1 ? (
+        {mediaMode === "image" && gallery.length > 1 && !isVertigo ? (
           <>
             <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label="Previous image">
               <ChevronLeft size={18} />
