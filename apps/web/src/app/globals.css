@@ -4590,6 +4590,10 @@ body:has(.public-page)::-webkit-scrollbar {
   margin: 10px 0 26px;
 }
 
+.template-vertigo .hero-promo.hero-promo-no-dots {
+  margin-bottom: 12px;
+}
+
 .template-vertigo .hero-promo-track,
 .template-vertigo .hero-promo-slide {
   border-radius: 24px;
@@ -6583,7 +6587,8 @@ body:has(.public-page)::-webkit-scrollbar {
   display: block;
   height: 100%;
   object-fit: cover;
-  width: 100%;
+  width: 88%;
+  border: 1px, solid, #00000021;
 }
 
 .ingredients-row b {
@@ -6734,11 +6739,11 @@ body:has(.public-page)::-webkit-scrollbar {
 .vertigo-product-detail {
   background: #ffffff;
   display: grid;
-  margin: 0;
+  margin: 4px;
   max-width: 100%;
   overflow-x: hidden;
-  padding: 0 0 108px;
-  width: 100%;
+  padding: 0 0 28px;
+  width: 98%;
 }
 
 .vertigo-product-header {
@@ -6872,9 +6877,9 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 0;
   display: grid;
   gap: 15px;
-  margin-top: 0;
+  margin-top: 10px;
   overflow: visible;
-  padding: 0 18px 0;
+  padding: 6px 18px 0;
 }
 
 .vertigo-product-detail .product-title-row {
@@ -6950,7 +6955,7 @@ body:has(.public-page)::-webkit-scrollbar {
   min-height: 112px;
   overflow: hidden;
   padding: 0;
-  width: 80px;
+  width: 99px;
 }
 
 .vertigo-product-detail .ingredient-image-card {
@@ -6983,8 +6988,8 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .vertigo-related-products {
   display: grid;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 12px;
+  margin-top: 10px;
 }
 
 .vertigo-related-products h2 {
@@ -6993,29 +6998,31 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .vertigo-related-list {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .vertigo-related-card {
   align-items: center;
   background: #ffffff;
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, #ffffff);
-  border-radius: 18px;
+  border: 1px solid #f0f1f4;
+  border-radius: 22px;
   box-shadow: 0 7px 20px rgb(16 24 40 / 7%);
   color: inherit;
   display: flex;
-  gap: 12px;
-  min-height: 98px;
+  gap: 8px;
+  min-height: 114px;
   overflow: hidden;
-  padding: 6px;
+  padding: 9px 12px 9px 10px;
   text-decoration: none;
+  width: 100%;
 }
 
 .vertigo-related-image {
-  background: var(--color-surface);
-  border-radius: 14px;
-  flex: 0 0 128px;
-  height: 86px;
+  background: #ffffff;
+  border-radius: 18px;
+  clip-path: inset(0 round 18px);
+  flex: 0 0 132px;
+  height: 96px;
   overflow: hidden;
 }
 
@@ -7030,27 +7037,29 @@ body:has(.public-page)::-webkit-scrollbar {
   align-content: center;
   display: grid;
   flex: 1 1 auto;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
+  padding-inline-start: 0;
+  padding-inline-end: 40px;
   text-align: start;
 }
 
 .vertigo-related-name {
   color: var(--color-text);
   display: block;
-  font-size: 21px;
+  font-size: 22px;
   font-weight: 900;
-  line-height: 1.15;
+  line-height: 1.12;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .vertigo-related-description {
-  color: color-mix(in srgb, var(--color-text) 62%, #ffffff);
+  color: #2e3138;
   display: -webkit-box;
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 14px;
+  line-height: 1.45;
   margin: 0;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -7059,16 +7068,20 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .vertigo-related-price {
-  color: var(--color-text);
+  color: #111111;
+  font-size: 15px;
+  font-weight: 900;
+  gap: 4px;
   justify-content: flex-start;
 }
 
 .vertigo-related-price span {
-  font-size: 17px;
+  font-size: 16px;
 }
 
 .vertigo-related-price small {
-  font-size: 11px;
+  font-size: 13px;
+  order: -1;
 }
 
 .add-large {
@@ -8528,7 +8541,7 @@ body:has(.public-page)::-webkit-scrollbar {
   background:
     radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--color-secondary, #f59e0b) 85%, #fff), transparent 32%),
     linear-gradient(135deg, color-mix(in srgb, var(--color-primary, #e51f2a) 82%, #fff), var(--color-secondary, #f59e0b));
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-secondary, #f59e0b) 24%, transparent);
+  box-shadow: 0 3px 5px color-mix(in srgb, var(--color-secondary, #f59e0b) 24%, transparent);
   display: inline-block;
 }
 

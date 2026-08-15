@@ -1164,6 +1164,11 @@ function HomeView({
   const bannerSlides = adBanners;
   const homeReturnHref = restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes);
   const isVertigo = publicTemplate(data) === "vertigo";
+  const heroPromoClassName = [
+    "hero-promo",
+    bannerSlides.length ? "hero-promo-carousel" : "hero-promo-empty",
+    isVertigo && bannerSlides.length === 1 ? "hero-promo-no-dots" : ""
+  ].filter(Boolean).join(" ");
   const featuredCardVariant = featuredSection?.settings?.cardVariant ?? (isVertigo ? "featured-overlay-large" : "wide-image");
   const heroImageUrl = heroSection?.settings?.backgroundImageUrl || data.restaurant.heroImageUrl || data.restaurant.logoUrl || "";
   const heroTitle = heroSection?.settings?.title?.trim() ?? "";
@@ -1263,7 +1268,7 @@ function HomeView({
       ) : null}
 
       <section
-        className={bannerSlides.length ? "hero-promo hero-promo-carousel" : "hero-promo hero-promo-empty"}
+        className={heroPromoClassName}
         onTouchStart={handleBannerTouchStart}
         onTouchEnd={handleBannerTouchEnd}
       >
@@ -1300,17 +1305,19 @@ function HomeView({
                 );
               })}
             </div>
-            <div className="hero-promo-dots" aria-label="بنرات الإعلان">
-              {bannerSlides.map((banner, index) => (
-                <button
-                  key={`${banner.imageUrl}-dot-${index}`}
-                  type="button"
-                  className={index === activeBanner ? "active" : ""}
-                  onClick={() => setActiveBanner(index)}
-                  aria-label={`البنر ${index + 1}`}
-                />
-              ))}
-            </div>
+            {!isVertigo || bannerSlides.length > 1 ? (
+              <div className="hero-promo-dots" aria-label="بنرات الإعلان">
+                {bannerSlides.map((banner, index) => (
+                  <button
+                    key={`${banner.imageUrl}-dot-${index}`}
+                    type="button"
+                    className={index === activeBanner ? "active" : ""}
+                    onClick={() => setActiveBanner(index)}
+                    aria-label={`البنر ${index + 1}`}
+                  />
+                ))}
+              </div>
+            ) : null}
           </>
         ) : null}
       </section>
@@ -2712,19 +2719,21 @@ function ProductView({
           />
         )}
       </section>
-      <div className="product-bottom-cart">
-        <QuantityControl
-          quantity={quantity}
-          onDecrease={() => setProductQuantity(product, quantity - 1)}
-          onIncrease={() => addToCart(product)}
-          label={product.name}
-        />
-        <Link href={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)} className="product-cart-link">
-          <ShoppingBag size={20} />
-          <span>{t.viewCart}</span>
-          <b>{cartCount}</b>
-        </Link>
-      </div>
+      {!isVertigo ? (
+        <div className="product-bottom-cart">
+          <QuantityControl
+            quantity={quantity}
+            onDecrease={() => setProductQuantity(product, quantity - 1)}
+            onIncrease={() => addToCart(product)}
+            label={product.name}
+          />
+          <Link href={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)} className="product-cart-link">
+            <ShoppingBag size={20} />
+            <span>{t.viewCart}</span>
+            <b>{cartCount}</b>
+          </Link>
+        </div>
+      ) : null}
     </main>
   );
 }
