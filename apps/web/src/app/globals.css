@@ -6726,6 +6726,351 @@ body:has(.public-page)::-webkit-scrollbar {
   white-space: nowrap;
 }
 
+.template-vertigo.view-product {
+  background: #ffffff;
+  padding: 14px 0 0;
+}
+
+.vertigo-product-detail {
+  background: #ffffff;
+  display: grid;
+  margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  padding: 0 0 108px;
+  width: 100%;
+}
+
+.vertigo-product-header {
+  align-items: center;
+  direction: ltr;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 42px minmax(0, 1fr) 36px;
+  padding: 2px 16px 12px;
+}
+
+.vertigo-product-header img,
+.vertigo-product-header .public-logo-fallback {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e7e7e7;
+  border-radius: 999px;
+  color: #111111;
+  display: flex;
+  font-size: 18px;
+  font-weight: 400;
+  height: 42px;
+  justify-content: center;
+  object-fit: cover;
+  width: 42px;
+}
+
+.vertigo-product-header p {
+  color: #111111;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  margin: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vertigo-product-header button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d8d8d8;
+  border-radius: 999px;
+  color: #111111;
+  display: flex;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.vertigo-product-detail .product-photo {
+  background: var(--color-surface);
+  border-radius: 16px;
+  height: clamp(255px, 67vw, 285px);
+  margin-inline: 8px;
+}
+
+.vertigo-product-detail .product-photo > img,
+.vertigo-product-detail .product-photo > .product-image-placeholder,
+.vertigo-product-detail .product-model-fallback > img,
+.vertigo-product-detail .product-model-fallback > .product-image-placeholder {
+  object-fit: cover;
+}
+
+.vertigo-product-detail .product-photo > .product-back-link {
+  display: none;
+}
+
+.vertigo-product-detail .product-photo > span:not(.product-image-placeholder) {
+  display: none;
+}
+
+.vertigo-product-detail .product-media-tabs {
+  inset-inline-start: 12px;
+  left: auto;
+  right: auto;
+  top: 12px;
+}
+
+.vertigo-product-detail .product-media-tabs button {
+  background: rgb(255 255 255 / 84%);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 10%);
+  min-height: 30px;
+  padding-inline: 9px;
+}
+
+.vertigo-product-detail .product-photo > button.product-gallery-arrow {
+  background: rgb(17 17 17 / 34%);
+  bottom: 12px;
+  height: 30px;
+  width: 30px;
+}
+
+.vertigo-product-detail .product-gallery-prev {
+  inset-inline-end: 48px;
+  left: auto;
+  right: auto;
+}
+
+.vertigo-product-detail .product-gallery-next {
+  inset-inline-end: 12px;
+  left: auto;
+  right: auto;
+}
+
+.vertigo-product-dots {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin: 10px 0 14px;
+}
+
+.vertigo-product-dots button {
+  background: #dedede;
+  border: 0;
+  border-radius: 999px;
+  height: 6px;
+  padding: 0;
+  width: 6px;
+}
+
+.vertigo-product-dots button.active {
+  background: #111111;
+}
+
+.vertigo-product-detail .product-sheet {
+  background: #ffffff;
+  border-radius: 0;
+  display: grid;
+  gap: 15px;
+  margin-top: 0;
+  overflow: visible;
+  padding: 0 18px 0;
+}
+
+.vertigo-product-detail .product-title-row {
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.vertigo-product-detail .product-title-row h1 {
+  color: var(--color-text);
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1.22;
+  text-align: start;
+}
+
+.vertigo-product-detail .product-title-row strong {
+  color: var(--color-text);
+  flex: 0 0 auto;
+  font-size: 20px;
+  max-width: 44%;
+}
+
+.vertigo-product-detail .product-title-row .product-price span {
+  font-size: 22px;
+}
+
+.vertigo-product-detail .product-title-row .product-price small {
+  font-size: 13px;
+}
+
+.vertigo-product-detail .product-description {
+  border: 0;
+  color: color-mix(in srgb, var(--color-text) 72%, #ffffff);
+  font-size: 14px;
+  line-height: 1.65;
+  padding: 0;
+  text-align: start;
+}
+
+.vertigo-product-detail .product-sheet h2 {
+  color: var(--color-text);
+  display: block;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+  margin: 4px 0 -2px;
+  text-align: start;
+}
+
+.vertigo-product-detail .ingredients-row {
+  display: flex;
+  gap: 8px;
+  margin: 0 -2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 2px 4px;
+  scroll-padding-inline: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.vertigo-product-detail .ingredients-row span,
+.vertigo-product-detail .ingredients-row .text-only {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 11px;
+  box-shadow: 0 5px 14px rgb(16 24 40 / 7%);
+  flex: 0 0 80px;
+  gap: 0;
+  grid-template-rows: 75px minmax(31px, 1fr);
+  height: 112px;
+  min-height: 112px;
+  overflow: hidden;
+  padding: 0;
+  width: 80px;
+}
+
+.vertigo-product-detail .ingredient-image-card {
+  background: color-mix(in srgb, var(--color-border) 18%, #ffffff);
+  border-radius: 10px 10px 6px 6px;
+  box-shadow: none;
+  height: 75px;
+  width: 100%;
+}
+
+.vertigo-product-detail .ingredients-row b {
+  align-self: center;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  max-width: 100%;
+  min-height: 0;
+  padding: 0 6px;
+  width: 100%;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.vertigo-product-detail .nutrition-card {
+  border-color: var(--color-border);
+  border-radius: 13px;
+  box-shadow: 0 6px 16px rgb(16 24 40 / 6%);
+}
+
+.vertigo-related-products {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.vertigo-related-products h2 {
+  margin-bottom: 0;
+}
+
+.vertigo-related-list {
+  display: grid;
+  gap: 14px;
+}
+
+.vertigo-related-card {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, #ffffff);
+  border-radius: 18px;
+  box-shadow: 0 7px 20px rgb(16 24 40 / 7%);
+  color: inherit;
+  display: flex;
+  gap: 12px;
+  min-height: 98px;
+  overflow: hidden;
+  padding: 6px;
+  text-decoration: none;
+}
+
+.vertigo-related-image {
+  background: var(--color-surface);
+  border-radius: 14px;
+  flex: 0 0 128px;
+  height: 86px;
+  overflow: hidden;
+}
+
+.vertigo-related-image img,
+.vertigo-related-image .product-image-placeholder {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.vertigo-related-copy {
+  align-content: center;
+  display: grid;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+  text-align: start;
+}
+
+.vertigo-related-name {
+  color: var(--color-text);
+  display: block;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vertigo-related-description {
+  color: color-mix(in srgb, var(--color-text) 62%, #ffffff);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.vertigo-related-price {
+  color: var(--color-text);
+  justify-content: flex-start;
+}
+
+.vertigo-related-price span {
+  font-size: 17px;
+}
+
+.vertigo-related-price small {
+  font-size: 11px;
+}
+
 .add-large {
   border-radius: 14px;
   width: 100%;

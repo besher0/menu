@@ -2431,6 +2431,7 @@ function ProductView({
 }) {
   const searchParams = useSearchParams();
   const related = getRelatedProducts(data.products, product);
+  const isVertigo = publicTemplate(data) === "vertigo";
   const ingredients = productIngredients(product);
   const mealDetails = productMealDetails(product, t);
   const model3dUrl = product.media?.model3dUrl ?? null;
@@ -2523,7 +2524,26 @@ function ProductView({
   }
 
   return (
-    <main className="product-detail">
+    <main className={`product-detail ${isVertigo ? "vertigo-product-detail" : ""}`.trim()}>
+      {isVertigo ? (
+        <div className="vertigo-product-header">
+          {data.restaurant.logoUrl ? (
+            <img src={data.restaurant.logoUrl} alt={data.restaurant.name} />
+          ) : (
+            <span className="public-logo-fallback">{data.restaurant.name.charAt(0).toUpperCase()}</span>
+          )}
+          <p dir="auto">{data.restaurant.name}</p>
+          <button
+            type="button"
+            onClick={() => sourceReturnHref ? navigateTo(sourceReturnHref) : navigateBack(productReturnHref, navigateTo)}
+            aria-label="ط§ظ„ط±ط¬ظˆط¹"
+          >
+            <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
+              <path d="M9 3.5 15.5 10 9 16.5" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
       <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}>
         <div className="product-media-tabs" role="group" aria-label={t.photos}>
           <button
@@ -2605,6 +2625,19 @@ function ProductView({
         ) : null}
         {mediaMode === "image" && gallery.length ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
       </div>
+      {isVertigo && mediaMode === "image" && gallery.length > 1 ? (
+        <div className="vertigo-product-dots" aria-label={t.photos}>
+          {gallery.map((image, index) => (
+            <button
+              key={`${image.url}-${index}`}
+              type="button"
+              className={index === activeImageIndex ? "active" : ""}
+              onClick={() => setActiveImageIndex(index)}
+              aria-label={`${t.photo} ${index + 1}`}
+            />
+          ))}
+        </div>
+      ) : null}
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
@@ -2615,7 +2648,7 @@ function ProductView({
         {ingredients.length ? (
           <>
             <h2>
-              <Flame size={18} />
+              {isVertigo ? null : <Flame size={18} />}
               {t.mealIncludes}
             </h2>
             <div className="ingredients-row">
@@ -2634,7 +2667,7 @@ function ProductView({
         {mealDetails.length ? (
           <>
             <h2>
-              <Flame size={18} />
+              {isVertigo ? null : <Flame size={18} />}
               {t.mealDetails}
             </h2>
             <div className="nutrition-card">
@@ -2655,18 +2688,29 @@ function ProductView({
           </>
         ) : null}
 
-        <ProductRail
-          title={t.youMayLike}
-          products={related}
-          restaurantSlug={data.restaurant.slug}
-          t={t}
-          fillPlaceholders={false}
-          showPrices={showPrices}
-          showViewAll={false}
-          onAddToCart={addToCart}
-          returnHref={currentProductHref}
-          useSubdomainRoutes={useSubdomainRoutes}
-        />
+        {isVertigo ? (
+          <VertigoRelatedProducts
+            title={t.youMayLike}
+            products={related}
+            restaurantSlug={data.restaurant.slug}
+            showPrices={showPrices}
+            returnHref={currentProductHref}
+            useSubdomainRoutes={useSubdomainRoutes}
+          />
+        ) : (
+          <ProductRail
+            title={t.youMayLike}
+            products={related}
+            restaurantSlug={data.restaurant.slug}
+            t={t}
+            fillPlaceholders={false}
+            showPrices={showPrices}
+            showViewAll={false}
+            onAddToCart={addToCart}
+            returnHref={currentProductHref}
+            useSubdomainRoutes={useSubdomainRoutes}
+          />
+        )}
       </section>
       <div className="product-bottom-cart">
         <QuantityControl
@@ -2682,6 +2726,54 @@ function ProductView({
         </Link>
       </div>
     </main>
+  );
+}
+
+function VertigoRelatedProducts({
+  title,
+  products,
+  restaurantSlug,
+  showPrices,
+  returnHref,
+  useSubdomainRoutes
+}: {
+  title: string;
+  products: PublicProduct[];
+  restaurantSlug: string;
+  showPrices: boolean;
+  returnHref?: string;
+  useSubdomainRoutes: boolean;
+}) {
+  if (!products.length) {
+    return null;
+  }
+
+  return (
+    <section className="vertigo-related-products">
+      <h2>{title}</h2>
+      <div className="vertigo-related-list">
+        {products.map((product) => (
+          <Link
+            key={`${product.id}-${product.slug}`}
+            className="vertigo-related-card"
+            href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)}
+            scroll
+            onClick={() => window.scrollTo(0, 0)}
+          >
+            <div className="vertigo-related-image">
+              <ProductImageMedia product={product} />
+            </div>
+            <div className="vertigo-related-copy">
+              <b className="vertigo-related-name" dir="auto">{product.name}</b>
+              {product.description ? (
+                <p className="vertigo-related-description" dir="auto">{product.description}</p>
+              ) : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" /> : null}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
