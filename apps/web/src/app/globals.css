@@ -4587,7 +4587,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .template-vertigo .hero-promo {
   aspect-ratio: 2.55 / 1;
   border-radius: 24px;
-  margin: 10px 0 26px;
+  margin: 0px 0 26px;
 }
 
 .template-vertigo .hero-promo.hero-promo-no-dots {
