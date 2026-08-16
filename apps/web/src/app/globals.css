@@ -4297,7 +4297,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .public-content {
   display: grid;
-  gap: 5px;
+  gap: 16px;
 }
 
 .public-content > section {
@@ -4533,7 +4533,7 @@ body:has(.public-page)::-webkit-scrollbar {
   color: #ffffff;
   display: grid;
   height: 238px;
-  margin: 0 -24px 12px;
+  margin: 0 -24px 0px;
   overflow: hidden;
   position: relative;
 }
