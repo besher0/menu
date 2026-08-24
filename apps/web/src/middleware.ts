@@ -96,6 +96,8 @@ function shouldBypass(pathname: string) {
   return (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
+    pathname === "/q" ||
+    pathname.startsWith("/q/") ||
     pathname.startsWith("/assets") ||
     pathname === "/m" ||
     pathname.startsWith("/m/") ||

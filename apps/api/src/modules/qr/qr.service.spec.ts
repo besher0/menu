@@ -110,6 +110,62 @@ describe("QrService updates", () => {
     });
   });
 
+  it("reads QrCode from the database on each scan so updated targetUrl is used", async () => {
+    const prisma = {
+      analyticsEvent: {
+        create: vi.fn().mockResolvedValue({})
+      },
+      qrCode: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce(
+            qrCode({
+              targetUrl: "https://restaurant-1.example/menu",
+              restaurant: { isActive: true, deletedAt: null }
+            })
+          )
+          .mockResolvedValueOnce(
+            qrCode({
+              targetUrl: "https://restaurant-2.example/menu",
+              restaurant: { isActive: true, deletedAt: null }
+            })
+          )
+      }
+    };
+    const service = createService(prisma);
+
+    await expect(service.trackAndResolve("qr-1", "vitest")).resolves.toBe("https://restaurant-1.example/menu");
+    await expect(service.trackAndResolve("qr-1", "vitest")).resolves.toBe("https://restaurant-2.example/menu");
+
+    expect(prisma.qrCode.findUnique).toHaveBeenCalledTimes(2);
+    expect(prisma.qrCode.findUnique).toHaveBeenNthCalledWith(1, {
+      where: { id: "qr-1" },
+      include: { branch: true, restaurant: true }
+    });
+    expect(prisma.qrCode.findUnique).toHaveBeenNthCalledWith(2, {
+      where: { id: "qr-1" },
+      include: { branch: true, restaurant: true }
+    });
+    expect(prisma.analyticsEvent.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          restaurantId: "restaurant-1",
+          path: "https://restaurant-1.example/menu"
+        })
+      })
+    );
+    expect(prisma.analyticsEvent.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          restaurantId: "restaurant-1",
+          path: "https://restaurant-2.example/menu"
+        })
+      })
+    );
+  });
+
   it("does not allow a restaurant to update another restaurant's QR", async () => {
     const prisma = {
       qrCode: {

@@ -31,6 +31,8 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/admin") ||
     url.pathname.startsWith("/dashboard") ||
     url.pathname.startsWith("/login") ||
+    url.pathname === "/q" ||
+    url.pathname.startsWith("/q/") ||
     url.pathname === "/sw.js";
 
   if (shouldBypassCache) {

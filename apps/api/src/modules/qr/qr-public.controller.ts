@@ -13,6 +13,10 @@ export class QrPublicController {
       Array.isArray(request.headers["user-agent"]) ? request.headers["user-agent"][0] : request.headers["user-agent"]
     );
 
+    response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    response.setHeader("Pragma", "no-cache");
+    response.setHeader("Expires", "0");
+
     return response.redirect(302, url);
   }
 }
