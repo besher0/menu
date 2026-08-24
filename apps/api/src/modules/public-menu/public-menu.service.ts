@@ -144,6 +144,12 @@ export class PublicMenuService {
     }
 
     await this.featureFlags.assertFeature(restaurant.id, "WHATSAPP_ORDERING");
+    if (restaurant.themeSettings?.settings && typeof restaurant.themeSettings.settings === "object" && !Array.isArray(restaurant.themeSettings.settings)) {
+      const publicUi = (restaurant.themeSettings.settings as { publicUi?: { whatsappOrderingEnabled?: unknown } }).publicUi;
+      if (publicUi?.whatsappOrderingEnabled === false) {
+        throw new BadRequestException("WhatsApp ordering is disabled");
+      }
+    }
 
     const branch = dto.branchSlug
       ? restaurant.branches.find((candidate) => candidate.slug === dto.branchSlug)
@@ -203,6 +209,11 @@ export class PublicMenuService {
       customerName: dto.customerName,
       customerPhone: dto.customerPhone,
       orderNote: dto.orderNote,
+      fulfillmentType: dto.fulfillmentType,
+      deliveryArea: dto.deliveryArea,
+      deliveryNear: dto.deliveryNear,
+      deliveryBeside: dto.deliveryBeside,
+      pickupTime: dto.pickupTime,
       currency: restaurant.currency,
       items,
       totalAmount,
@@ -340,6 +351,9 @@ export class PublicMenuService {
       whatsappPhone: restaurant.whatsappPhone,
       phone: dashboardSettings.phone ?? null,
       email: dashboardSettings.email ?? null,
+      instagramUrl: dashboardSettings.instagramUrl ?? null,
+      facebookUrl: dashboardSettings.facebookUrl ?? null,
+      whatsappUrl: dashboardSettings.whatsappUrl ?? null,
       showPrices: dashboardSettings.showPrices ?? true,
       productOpenMode: dashboardSettings.productOpenMode === "PAGE" ? "PAGE" : "MODAL",
       splashScreen: this.serializeSplashScreenSettings(
@@ -619,6 +633,11 @@ export class PublicMenuService {
     customerName?: string;
     customerPhone?: string;
     orderNote?: string;
+    fulfillmentType?: "pickup" | "delivery";
+    deliveryArea?: string;
+    deliveryNear?: string;
+    deliveryBeside?: string;
+    pickupTime?: string;
     currency: string;
     items: Array<{
       name: string;
@@ -638,10 +657,15 @@ export class PublicMenuService {
       input.branchName ? `الفرع: ${input.branchName}` : null,
       input.customerName ? `الزبون: ${input.customerName}` : null,
       input.customerPhone ? `الهاتف: ${input.customerPhone}` : null,
+      input.fulfillmentType ? `طريقة الاستلام: ${input.fulfillmentType === "delivery" ? "توصيل دليفري" : "استلام من المطعم"}` : null,
+      input.fulfillmentType === "delivery" && input.deliveryArea ? `المنطقة: ${input.deliveryArea}` : null,
+      input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${input.deliveryNear}` : null,
+      input.fulfillmentType === "delivery" && input.deliveryBeside ? `جانب: ${input.deliveryBeside}` : null,
+      input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: ${input.pickupTime}` : null,
       "",
       "العناصر:",
       ...input.items.flatMap((item, index) => [
-        `${index + 1}. ${item.quantity}x ${item.name}`,
+        `${index + 1}- ${item.quantity}x ${item.name}`,
         item.options.length ? `الإضافات: ${item.options.join(", ")}` : null,
         item.note ? `ملاحظة: ${item.note}` : null,
         input.showPrices ? `السعر: ${item.totalPrice.toFixed(2)} ${input.currency}` : null,

@@ -80,6 +80,9 @@ export type PublicMenuData = {
     city?: string | null;
     country?: string | null;
     whatsappPhone?: string | null;
+    instagramUrl?: string | null;
+    facebookUrl?: string | null;
+    whatsappUrl?: string | null;
     phone?: string | null;
     email?: string | null;
     description?: string | null;

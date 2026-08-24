@@ -4038,7 +4038,7 @@ body:has(.public-page)::-webkit-scrollbar {
   background-size: cover;
   inset: 0;
   position: fixed;
-  z-index: 50;
+  z-index: 500000000;
 }
 
 .public-splash.closing {
@@ -7884,6 +7884,31 @@ body:has(.public-page)::-webkit-scrollbar {
 .drawer-hours-list {
   display: grid;
   gap: 7px;
+}
+
+.drawer-social-links {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, 44px);
+  justify-content: center;
+}
+
+.drawer-social-links a {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #edf0f4;
+  border-radius: 50%;
+  color: #20242c;
+  display: inline-flex;
+  height: 44px;
+  justify-content: center;
+  text-decoration: none;
+  width: 44px;
+}
+
+.drawer-social-links a:hover {
+  background: color-mix(in srgb, var(--color-secondary) 13%, #fff);
+  color: var(--color-secondary);
 }
 
 .spin {

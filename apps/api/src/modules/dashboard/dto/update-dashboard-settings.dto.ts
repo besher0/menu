@@ -93,6 +93,18 @@ export class UpdateDashboardSettingsDto {
 
   @IsOptional()
   @IsString()
+  instagramUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  facebookUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  whatsappUrl?: string;
+
+  @IsOptional()
+  @IsString()
   logoUrl?: string;
 
   @IsOptional()

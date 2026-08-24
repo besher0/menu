@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -43,6 +44,26 @@ export class CreateWhatsappOrderDto {
   @IsOptional()
   @IsString()
   orderNote?: string;
+
+  @IsOptional()
+  @IsIn(["pickup", "delivery"])
+  fulfillmentType?: "pickup" | "delivery";
+
+  @IsOptional()
+  @IsString()
+  deliveryArea?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryNear?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryBeside?: string;
+
+  @IsOptional()
+  @IsString()
+  pickupTime?: string;
 
   @IsArray()
   @ArrayMinSize(1)

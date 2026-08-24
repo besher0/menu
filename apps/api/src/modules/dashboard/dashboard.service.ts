@@ -682,6 +682,9 @@ export class DashboardService {
         whatsappPhone: restaurant.whatsappPhone,
         phone: dashboardSettings.phone ?? "",
         email: dashboardSettings.email ?? "",
+        instagramUrl: dashboardSettings.instagramUrl ?? "",
+        facebookUrl: dashboardSettings.facebookUrl ?? "",
+        whatsappUrl: dashboardSettings.whatsappUrl ?? "",
         logoUrl: restaurant.logoUrl,
         currency: restaurant.currency,
         showPrices: dashboardSettings.showPrices ?? true,
@@ -760,6 +763,9 @@ export class DashboardService {
       ...existingDashboardSettings,
       ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
       ...(dto.email !== undefined ? { email: dto.email } : { email: existingDashboardSettings.email ?? "" }),
+      ...(dto.instagramUrl !== undefined ? { instagramUrl: dto.instagramUrl } : { instagramUrl: existingDashboardSettings.instagramUrl ?? "" }),
+      ...(dto.facebookUrl !== undefined ? { facebookUrl: dto.facebookUrl } : { facebookUrl: existingDashboardSettings.facebookUrl ?? "" }),
+      ...(dto.whatsappUrl !== undefined ? { whatsappUrl: dto.whatsappUrl } : { whatsappUrl: existingDashboardSettings.whatsappUrl ?? "" }),
       ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
       ...(dto.productOpenMode !== undefined
         ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }

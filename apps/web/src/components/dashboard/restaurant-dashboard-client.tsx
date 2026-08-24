@@ -110,6 +110,9 @@ type DashboardSettings = {
     whatsappPhone?: string | null;
     phone?: string | null;
     email?: string | null;
+    instagramUrl?: string | null;
+    facebookUrl?: string | null;
+    whatsappUrl?: string | null;
     logoUrl?: string | null;
     currency: string;
     showPrices: boolean;
@@ -1398,6 +1401,9 @@ function SettingsForm() {
           <Field label="رقم الواتس" value={form.whatsappPhone ?? ""} onChange={(value) => updateField("whatsappPhone", value)} />
           <Field label="رقم الهاتف" value={form.phone ?? ""} onChange={(value) => updateField("phone", value)} />
           <Field label="البريد الالكتروني (اختياري)" value={form.email ?? ""} onChange={(value) => updateField("email", value)} />
+          <Field label="رابط إنستغرام" value={form.instagramUrl ?? ""} onChange={(value) => updateField("instagramUrl", value)} />
+          <Field label="رابط فيسبوك" value={form.facebookUrl ?? ""} onChange={(value) => updateField("facebookUrl", value)} />
+          <Field label="رابط واتساب" value={form.whatsappUrl ?? ""} onChange={(value) => updateField("whatsappUrl", value)} />
         </div>
       </section>
       <section className="settings-card">

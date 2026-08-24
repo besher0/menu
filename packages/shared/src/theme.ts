@@ -85,6 +85,7 @@ export type ThemeSettings = {
     template?: PublicTemplateKey;
     headerVariant?: HeaderVariant;
     footerVariant?: FooterVariant;
+    whatsappOrderingEnabled?: boolean;
     productImagePlaceholderBackground?: string;
     moodChipLabelColor?: string;
     moodChipLabelFontSize?: string;
@@ -133,6 +134,7 @@ export const ABO_MALEK_THEME: ThemeSettings = {
     template: "default",
     headerVariant: "default",
     footerVariant: "default",
+    whatsappOrderingEnabled: true,
     productImagePlaceholderBackground: "#e5e7eb",
     moodChipLabelColor: "#ffffff",
     moodChipLabelFontSize: "16px"

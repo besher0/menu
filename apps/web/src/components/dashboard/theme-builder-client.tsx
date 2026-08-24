@@ -24,6 +24,9 @@ type ThemeResponse = {
 };
 
 type ProductOpenMode = "MODAL" | "PAGE";
+type PublicUiSettings = NonNullable<ThemeSettings["publicUi"]> & {
+  whatsappOrderingEnabled?: boolean;
+};
 type SettingsResponse = {
   data?: {
     restaurant?: {
@@ -67,6 +70,7 @@ export function ThemeBuilderClient() {
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "success" | "error">("loading");
   const [message, setMessage] = useState("");
 
+  const publicUi = theme.publicUi as PublicUiSettings | undefined;
   const previewStyle = useMemo(() => themeToCssVariables(theme) as React.CSSProperties, [theme]);
 
   useEffect(() => {
@@ -147,7 +151,7 @@ export function ThemeBuilderClient() {
     }));
   }
 
-  function updatePublicUi<K extends keyof NonNullable<ThemeSettings["publicUi"]>>(key: K, value: NonNullable<ThemeSettings["publicUi"]>[K]) {
+  function updatePublicUi<K extends keyof PublicUiSettings>(key: K, value: PublicUiSettings[K]) {
     setTheme((current) => ({
       ...current,
       publicUi: {
@@ -157,7 +161,7 @@ export function ThemeBuilderClient() {
     }));
   }
 
-  function applyPublicTemplate(template: NonNullable<ThemeSettings["publicUi"]>["template"]) {
+  function applyPublicTemplate(template: PublicUiSettings["template"]) {
     setTheme((current) => ({
       ...current,
       layout: {
@@ -374,6 +378,22 @@ export function ThemeBuilderClient() {
                   <option value="PAGE">صفحة تفاصيل المنتج</option>
                 </select>
               </label>
+            </div>
+            <div className="theme-segments">
+              <button
+                className={publicUi?.whatsappOrderingEnabled !== false ? "active" : ""}
+                type="button"
+                onClick={() => updatePublicUi("whatsappOrderingEnabled", true)}
+              >
+                تشغيل السلة وواتساب
+              </button>
+              <button
+                className={publicUi?.whatsappOrderingEnabled === false ? "active" : ""}
+                type="button"
+                onClick={() => updatePublicUi("whatsappOrderingEnabled", false)}
+              >
+                إطفاء السلة وواتساب
+              </button>
             </div>
           </section>
 

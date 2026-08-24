@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Flame, Heart, Home, Image as ImageIcon, LayoutGrid, List, Loader2, Menu, Minus, Plus, Rotate3D, Scale, Settings2, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 
@@ -23,6 +23,18 @@ type MenuDisplayMode = "large" | "list";
 type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
 type NormalizedMealDetail = { label: string; value: string; icon: string; iconUrl?: string | null };
+type FulfillmentType = "pickup" | "delivery";
+type PublicThemeUiSettings = NonNullable<PublicMenuData["theme"]["publicUi"]> & {
+  whatsappOrderingEnabled?: boolean;
+};
+type CheckoutDetails = {
+  fulfillmentType: FulfillmentType;
+  deliveryArea?: string;
+  deliveryNear?: string;
+  deliveryBeside?: string;
+  orderNote?: string;
+  pickupTime?: string;
+};
 
 const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 const MENU_SECTION_SCROLL_GAP = 6;
@@ -497,6 +509,34 @@ function stripTrailingSlash(value: string) {
   return value.length > 1 ? value.replace(/\/+$/, "") : value;
 }
 
+function normalizeSocialUrl(value?: string | null, host?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const path = trimmed.replace(/^@/, "").replace(/^\/+/, "");
+  if (host && (path.toLowerCase() === host.toLowerCase() || path.toLowerCase().startsWith(`${host.toLowerCase()}/`))) {
+    return `https://${path}`;
+  }
+
+  return host ? `https://${host}/${path}` : `https://${path}`;
+}
+
+function normalizeWhatsappUrl(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const digits = trimmed.replace(/[^\d]/g, "");
+  return digits ? `https://wa.me/${digits}` : normalizeSocialUrl(trimmed, "wa.me");
+}
+
 function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
   if (typeof window === "undefined") return true;
 
@@ -565,7 +605,7 @@ export function PublicMenuClient({
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
-  const [drawerTab, setDrawerTab] = useState<"info" | "hours" | null>(null);
+  const [drawerTab, setDrawerTab] = useState<"hours" | null>(null);
   const [splashVisible, setSplashVisible] = useState(false);
   const [splashClosing, setSplashClosing] = useState(false);
   const splashClickBlockUntil = useRef(0);
@@ -581,6 +621,8 @@ export function PublicMenuClient({
     : products[0];
   const t = translations[language];
   const showPrices = data.restaurant.showPrices ?? true;
+  const publicUi = data.theme?.publicUi as PublicThemeUiSettings | undefined;
+  const whatsappOrderingEnabled = publicUi?.whatsappOrderingEnabled !== false;
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
   const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
@@ -595,7 +637,10 @@ export function PublicMenuClient({
   const hasHomeSections = !data.menus?.length || allBuilderSections.some((section) =>
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
   );
-  const activeView = view === "home" && !hasHomeSections ? "menu" : view;
+  const requestedView = view === "home" && !hasHomeSections ? "menu" : view;
+  const activeView = !whatsappOrderingEnabled && requestedView === "cart"
+    ? hasHomeSections ? "home" : "menu"
+    : requestedView;
   const showMenuNavItem = Boolean(data.products.length || data.categories.length);
   const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
   const isSingleMenuPage = activeView === "menu" && showMenuNavItem && !hasHomeSections;
@@ -737,6 +782,10 @@ export function PublicMenuClient({
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function addToCart(product: PublicProduct) {
+    if (!whatsappOrderingEnabled) {
+      return;
+    }
+
     setCart((current) => {
       const existing = current.find((item) => item.slug === product.slug);
       if (existing) {
@@ -761,6 +810,10 @@ export function PublicMenuClient({
   }
 
   function setProductQuantity(product: PublicProduct, quantity: number) {
+    if (!whatsappOrderingEnabled) {
+      return;
+    }
+
     setCart((current) => {
       const nextQuantity = Math.max(0, quantity);
       const existing = current.find((item) => item.slug === product.slug);
@@ -880,21 +933,60 @@ export function PublicMenuClient({
     return lines.join("\n");
   }, [cart, cartTotal, currency, data.restaurant.name, language, showPrices, t]);
 
-  const whatsappUrl = `https://wa.me/${data.restaurant.whatsappPhone ?? ""}?text=${encodeURIComponent(whatsappMessage)}`;
+  const drawerSocialLinks = [
+    { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com"), icon: Instagram },
+    { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com"), icon: Facebook },
+    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone), icon: MessageCircle } : null
+  ].filter((item): item is { key: string; label: string; href: string | null; icon: LucideIcon } => Boolean(item)).filter((item): item is { key: string; label: string; href: string; icon: LucideIcon } => Boolean(item.href));
 
-  async function sendWhatsappOrder() {
-    if (!cart.length || orderSubmitting) {
+  function normalizeCheckoutDetails(details?: CheckoutDetails): CheckoutDetails | undefined {
+    if (!details) return undefined;
+
+    return {
+      fulfillmentType: details.fulfillmentType,
+      deliveryArea: details.deliveryArea?.trim(),
+      deliveryNear: details.deliveryNear?.trim(),
+      deliveryBeside: details.deliveryBeside?.trim(),
+      orderNote: details.orderNote?.trim(),
+      pickupTime: details.pickupTime?.trim()
+    };
+  }
+
+  function checkoutDetailsMessage(details?: CheckoutDetails) {
+    if (!details) return "";
+
+    const lines = [
+      details.fulfillmentType ? `طريقة الاستلام: ${details.fulfillmentType === "delivery" ? "توصيل دليفري" : "استلام من المطعم"}` : null,
+      details.fulfillmentType === "delivery" && details.deliveryArea ? `المنطقة: ${details.deliveryArea}` : null,
+      details.fulfillmentType === "delivery" && details.deliveryNear ? `قريب من: ${details.deliveryNear}` : null,
+      details.fulfillmentType === "delivery" && details.deliveryBeside ? `جانب: ${details.deliveryBeside}` : null,
+      details.fulfillmentType === "pickup" && details.pickupTime ? `وقت الاستلام: ${details.pickupTime}` : null,
+      details.orderNote ? `ملاحظة الطلب: ${details.orderNote}` : null
+    ].filter(Boolean);
+
+    return lines.length ? `\n\n${lines.join("\n")}` : "";
+  }
+
+  async function sendWhatsappOrder(details?: CheckoutDetails) {
+    if (!whatsappOrderingEnabled || !cart.length || orderSubmitting) {
       return;
     }
 
     setOrderSubmitting(true);
     setOrderMessage(null);
+    const checkoutDetails = normalizeCheckoutDetails(details);
 
     try {
       const response = await fetch(`${PUBLIC_API_BASE_URL}/public/menus/${data.restaurant.slug}/orders/whatsapp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          fulfillmentType: checkoutDetails?.fulfillmentType,
+          deliveryArea: checkoutDetails?.deliveryArea,
+          deliveryNear: checkoutDetails?.deliveryNear,
+          deliveryBeside: checkoutDetails?.deliveryBeside,
+          orderNote: checkoutDetails?.orderNote,
+          pickupTime: checkoutDetails?.pickupTime,
           items: cart.map((item) => ({
             productSlug: item.slug,
             quantity: item.quantity
@@ -911,7 +1003,8 @@ export function PublicMenuClient({
       window.open(nextWhatsappUrl, "_blank", "noreferrer");
     } catch {
       setOrderMessage(t.orderError);
-      window.open(whatsappUrl, "_blank", "noreferrer");
+      const fallbackMessage = `${whatsappMessage}${checkoutDetailsMessage(checkoutDetails)}`;
+      window.open(`https://wa.me/${data.restaurant.whatsappPhone ?? ""}?text=${encodeURIComponent(fallbackMessage)}`, "_blank", "noreferrer");
     } finally {
       setOrderSubmitting(false);
     }
@@ -994,7 +1087,7 @@ export function PublicMenuClient({
       </header> : null}
 
       {activeView === "home" ? (
-        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} useSubdomainRoutes={useSubdomainRoutes} />
+        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} whatsappOrderingEnabled={whatsappOrderingEnabled} useSubdomainRoutes={useSubdomainRoutes} />
       ) : activeView === "menu" ? (
         <MenuView
           data={data}
@@ -1003,6 +1096,7 @@ export function PublicMenuClient({
           getCartQuantity={getCartQuantity}
           t={t}
           showPrices={showPrices}
+          whatsappOrderingEnabled={whatsappOrderingEnabled}
           menuBackSignal={menuBackSignal}
           onNestedChange={setMenuNested}
           navigateTo={navigateTo}
@@ -1018,6 +1112,7 @@ export function PublicMenuClient({
           cartCount={cartCount}
           t={t}
           showPrices={showPrices}
+          whatsappOrderingEnabled={whatsappOrderingEnabled}
           navigateTo={navigateTo}
           useSubdomainRoutes={useSubdomainRoutes}
         />
@@ -1043,7 +1138,7 @@ export function PublicMenuClient({
         />
       )}
 
-      {cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
+      {whatsappOrderingEnabled && cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
         <Link href={publicPath("/cart")} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
           <ShoppingCart size={20} />
           <span>{t.viewCart}</span>
@@ -1076,34 +1171,29 @@ export function PublicMenuClient({
             <span>{t.language}</span>
             <b>{currentLanguageLabel}</b>
           </button>
-          <button type="button" className={drawerTab === "info" ? "active" : ""} onClick={() => setDrawerTab("info")}>
-            <span>{t.settings}</span>
-            <Settings2 size={18} />
-          </button>
-          <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab("hours")}>
+          {drawerSocialLinks.length ? (
+            <div className="drawer-social-links">
+              {drawerSocialLinks.map(({ key, label, href, icon: Icon }) => (
+                <a key={key} href={href} target="_blank" rel="noreferrer" aria-label={label} title={label} onClick={closeDrawer}>
+                  <Icon size={20} />
+                </a>
+              ))}
+            </div>
+          ) : null}
+          <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab((current) => current === "hours" ? null : "hours")}>
             <span>{t.hours}</span>
             <Clock3 size={18} />
           </button>
-          {[t.complaints, t.social, t.questions, t.rating].map((item) => (
+          {[t.complaints, t.questions, t.rating].map((item) => (
             <button key={item}>
               <span>{item}</span>
               <ArrowLeft size={18} />
             </button>
           ))}
-          {drawerTab ? <div className="drawer-restaurant-info">
-            {drawerTab === "info" ? (
-              <>
-                {data.restaurant.description ? <p>{data.restaurant.description}</p> : null}
-                {firstBranch?.address ? <span>{firstBranch.address}</span> : null}
-                {data.restaurant.phone ? <span>{data.restaurant.phone}</span> : null}
-                {data.restaurant.email ? <span>{data.restaurant.email}</span> : null}
-                <b>{currency}</b>
-              </>
-            ) : (
-              <div className="drawer-hours-list">
-                {openingHours?.length ? openingHours.map((row) => <small key={row}>{row}</small>) : <small>لا توجد أوقات دوام محددة</small>}
-              </div>
-            )}
+          {drawerTab === "hours" ? <div className="drawer-restaurant-info">
+            <div className="drawer-hours-list">
+              {openingHours?.length ? openingHours.map((row) => <small key={row}>{row}</small>) : <small>لا توجد أوقات دوام محددة</small>}
+            </div>
           </div> : null}
           <small>Version 0.1.0+12</small>
         </aside>
@@ -1117,17 +1207,19 @@ function HomeView({
   addToCart,
   t,
   showPrices,
+  whatsappOrderingEnabled,
   useSubdomainRoutes
 }: {
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
   t: PublicTranslations;
   showPrices: boolean;
+  whatsappOrderingEnabled: boolean;
   useSubdomainRoutes: boolean;
 }) {
   const featured = data.products.filter(isFeatured);
   const popular = data.products.filter(isPopular);
-  const featuredSlots = featured.slice(0, 2);
+  const featuredSlots = featured.slice(0, 10);
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const homePage = allPages.find((page) => page.isHome && page.sections?.some((section) => section.type === "HERO" && section.isActive !== false))
     ?? allPages.find((page) => page.isHome)
@@ -1340,7 +1432,7 @@ function HomeView({
         t={t}
         fillPlaceholders={false}
         showPrices={showPrices}
-        onAddToCart={addToCart}
+        onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
         showViewAll={false}
         returnHref={homeReturnHref}
         useSubdomainRoutes={useSubdomainRoutes}
@@ -1424,6 +1516,7 @@ function MenuView({
   getCartQuantity,
   t,
   showPrices,
+  whatsappOrderingEnabled,
   menuBackSignal,
   onNestedChange,
   navigateTo,
@@ -1435,6 +1528,7 @@ function MenuView({
   getCartQuantity: (slug: string) => number;
   t: PublicTranslations;
   showPrices: boolean;
+  whatsappOrderingEnabled: boolean;
   menuBackSignal: number;
   onNestedChange: (nested: boolean) => void;
   navigateTo: (href: string) => void;
@@ -1516,7 +1610,7 @@ function MenuView({
   const categoryProductsSource = selectedMood ? data.products : selectedCollection ? contextProducts : data.products;
   const visibleProducts = categoryProductsSource;
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
-  const showRowQuantityControls = productListLayout === "single" && !(isVertigo && productCardVariant === "horizontal-contained");
+  const showRowQuantityControls = whatsappOrderingEnabled && productListLayout === "single" && !(isVertigo && productCardVariant === "horizontal-contained");
   const menuReturnParams = new URLSearchParams(menuQuery);
 
   if (productListLayout === "single") {
@@ -1858,7 +1952,7 @@ function MenuView({
                 fillPlaceholders={false}
                 showPrices={showPrices}
                 showViewAll={false}
-                onAddToCart={addToCart}
+                onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
                 returnHref={menuReturnHref}
                 useSubdomainRoutes={useSubdomainRoutes}
               />
@@ -1934,7 +2028,7 @@ function MenuView({
                     <button type="button" className="category-spotlight-description-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                       {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
                     </button>
-                    {!isVertigo ? (
+                    {whatsappOrderingEnabled && !isVertigo ? (
                       <QuantityControl
                         className="spotlight-quantity"
                         quantity={getCartQuantity(spotlightProduct.slug)}
@@ -2077,10 +2171,10 @@ function ProductQuickViewModal({
           {gallery.length > 1 ? (
             <>
               <button type="button" className="prev" onClick={() => moveImage(-1)} aria-label="الصورة السابقة">
-                <ChevronRight size={18} />
+                <ChevronLeft size={18} />
               </button>
               <button type="button" className="next" onClick={() => moveImage(1)} aria-label="الصورة التالية">
-                <ChevronLeft size={18} />
+                <ChevronRight size={18} />
               </button>
             </>
           ) : null}
@@ -2156,7 +2250,7 @@ function CartView({
   updateCartItem: (slug: string, quantity: number) => void;
   removeCartItem: (slug: string) => void;
   addToCart: (product: PublicProduct) => void;
-  sendWhatsappOrder: () => void;
+  sendWhatsappOrder: (details?: CheckoutDetails) => void;
   orderSubmitting: boolean;
   orderMessage: string | null;
   t: PublicTranslations;
@@ -2164,7 +2258,12 @@ function CartView({
   useSubdomainRoutes: boolean;
 }) {
   const [cartStep, setCartStep] = useState<"review" | "confirm">("review");
-  const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup");
+  const [fulfillment, setFulfillment] = useState<FulfillmentType>("pickup");
+  const [deliveryArea, setDeliveryArea] = useState("");
+  const [deliveryNear, setDeliveryNear] = useState("");
+  const [deliveryBeside, setDeliveryBeside] = useState("");
+  const [orderNote, setOrderNote] = useState("");
+  const [pickupTime, setPickupTime] = useState("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
@@ -2228,17 +2327,28 @@ function CartView({
     }
 
     if (fulfillment === "delivery") {
-      const requiredInputs = Array.from(document.querySelectorAll<HTMLInputElement>(".cart-confirm-form input")).slice(0, 3);
-      const firstEmpty = requiredInputs.find((input) => !input.value.trim());
-      if (firstEmpty) {
+      if (!deliveryArea.trim() || !deliveryNear.trim() || !deliveryBeside.trim()) {
         setCheckoutError("يرجى تعبئة المنطقة وقريب من وجانب قبل إرسال الطلب.");
-        firstEmpty.focus();
         return;
       }
     }
 
     setCheckoutError(null);
-    sendWhatsappOrder();
+    sendWhatsappOrder(
+      fulfillment === "delivery"
+        ? {
+            fulfillmentType: fulfillment,
+            deliveryArea,
+            deliveryNear,
+            deliveryBeside,
+            orderNote
+          }
+        : {
+            fulfillmentType: fulfillment,
+            orderNote,
+            pickupTime
+          }
+    );
   }
 
   return (
@@ -2326,30 +2436,30 @@ function CartView({
             <>
               <label>
                 <span>المنطقة</span>
-                <input placeholder="حلب الجديدة" />
+                <input value={deliveryArea} onChange={(event) => setDeliveryArea(event.target.value)} placeholder="حلب الجديدة" />
               </label>
               <label>
                 <span>قريب من</span>
-                <input placeholder="مشفى الشهباء" />
+                <input value={deliveryNear} onChange={(event) => setDeliveryNear(event.target.value)} placeholder="مشفى الشهباء" />
               </label>
               <label>
                 <span>جانب</span>
-                <input placeholder="صيدلية باسل" />
+                <input value={deliveryBeside} onChange={(event) => setDeliveryBeside(event.target.value)} placeholder="صيدلية باسل" />
               </label>
               <label>
                 <span>ملاحظة للطلب</span>
-                <input placeholder="ملاحظة" />
+                <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="ملاحظة" />
               </label>
             </>
           ) : (
             <>
               <label>
                 <span>ملاحظة</span>
-                <input placeholder="ملاحظة" />
+                <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="ملاحظة" />
               </label>
               <label>
                 <span>وقت الاستلام</span>
-                <input placeholder="اسرع وقت" />
+                <input value={pickupTime} onChange={(event) => setPickupTime(event.target.value)} placeholder="اسرع وقت" />
               </label>
             </>
           )}
@@ -2422,6 +2532,7 @@ function ProductView({
   cartCount,
   t,
   showPrices,
+  whatsappOrderingEnabled,
   navigateTo,
   useSubdomainRoutes
 }: {
@@ -2433,6 +2544,7 @@ function ProductView({
   cartCount: number;
   t: PublicTranslations;
   showPrices: boolean;
+  whatsappOrderingEnabled: boolean;
   navigateTo: (href: string) => void;
   useSubdomainRoutes: boolean;
 }) {
@@ -2717,13 +2829,13 @@ function ProductView({
             fillPlaceholders={false}
             showPrices={showPrices}
             showViewAll={false}
-            onAddToCart={addToCart}
+            onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
             returnHref={currentProductHref}
             useSubdomainRoutes={useSubdomainRoutes}
           />
         )}
       </section>
-      {!isVertigo ? (
+      {whatsappOrderingEnabled && !isVertigo ? (
         <div className="product-bottom-cart">
           <QuantityControl
             quantity={quantity}
