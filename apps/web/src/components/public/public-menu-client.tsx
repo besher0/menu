@@ -1962,7 +1962,6 @@ function MenuView({
                 showViewAll={false}
                 onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
                 returnHref={menuReturnHref}
-                initialScrollEdge="end"
                 useSubdomainRoutes={useSubdomainRoutes}
               />
             </section>
@@ -2923,8 +2922,7 @@ function ProductRail({
   showViewAll = true,
   viewAllHref,
   returnHref,
-  useSubdomainRoutes,
-  initialScrollEdge = "start"
+  useSubdomainRoutes
 }: {
   title: string;
   products: PublicProduct[];
@@ -2938,7 +2936,6 @@ function ProductRail({
   viewAllHref?: string;
   returnHref?: string;
   useSubdomainRoutes: boolean;
-  initialScrollEdge?: "start" | "end";
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const railPointerId = useRef<number | null>(null);
@@ -2984,10 +2981,10 @@ function ProductRail({
     if (!rail) return;
 
     const frame = window.requestAnimationFrame(() => {
-      setRailScrollPosition(rail, initialScrollEdge === "end" ? maxRailScroll(rail) : 0);
+      setRailScrollPosition(rail, 0);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [initialScrollEdge, railProductSignature]);
+  }, [railProductSignature]);
 
   if (!products.length && !fillPlaceholders) {
     return null;

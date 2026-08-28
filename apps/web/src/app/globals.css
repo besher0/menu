@@ -4917,7 +4917,6 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .menu-context-products .rail-scroll {
-  inline-size: min(100%, 440px);
   overflow-x: auto;
   padding-bottom: 12px;
 }
