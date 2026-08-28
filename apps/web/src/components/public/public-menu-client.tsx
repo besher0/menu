@@ -659,6 +659,14 @@ export function PublicMenuClient({
 
   useEffect(() => {
     setCartLoaded(false);
+
+    if (!whatsappOrderingEnabled) {
+      setCart([]);
+      window.localStorage.removeItem(storageKey);
+      setCartLoaded(true);
+      return;
+    }
+
     const stored = window.localStorage.getItem(storageKey);
     if (stored) {
       try {
@@ -679,7 +687,7 @@ export function PublicMenuClient({
       setCart([]);
     }
     setCartLoaded(true);
-  }, [data.restaurant.currency, storageKey]);
+  }, [data.restaurant.currency, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(languageStorageKey);
@@ -689,11 +697,11 @@ export function PublicMenuClient({
   }, [languageStorageKey]);
 
   useEffect(() => {
-    if (!cartLoaded) {
+    if (!cartLoaded || !whatsappOrderingEnabled) {
       return;
     }
     window.localStorage.setItem(storageKey, JSON.stringify(cart));
-  }, [cart, cartLoaded, storageKey]);
+  }, [cart, cartLoaded, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
     window.localStorage.setItem(languageStorageKey, language);
@@ -2936,11 +2944,7 @@ function ProductRail({
   const railDragMoved = useRef(false);
   const railRtlScrollType = useRef<"negative" | "reverse" | null>(null);
   const railDragThreshold = 8;
-
-  if (!products.length && !fillPlaceholders) {
-    return null;
-  }
-
+  const railProductSignature = products.map((product) => product.slug).join("|");
   const railSlots = fillPlaceholders ? Array.from({ length: Math.max(3, products.length) }) : products;
   const maxRailScroll = (rail: HTMLDivElement) => Math.max(0, rail.scrollWidth - rail.clientWidth);
   const getRailRtlScrollType = (rail: HTMLDivElement) => {
@@ -2971,6 +2975,20 @@ function ProductRail({
 
     rail.scrollLeft = getRailRtlScrollType(rail) === "negative" ? -next : max - next;
   };
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      setRailScrollPosition(rail, 0);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [railProductSignature]);
+
+  if (!products.length && !fillPlaceholders) {
+    return null;
+  }
 
   const handleRailPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -3039,6 +3057,9 @@ function ProductRail({
               onClick={(event) => {
                 if (railDragMoved.current) {
                   railDragMoved.current = false;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
                 }
 
                 window.scrollTo(0, 0);

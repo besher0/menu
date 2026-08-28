@@ -66,7 +66,7 @@ export class PublicMenuService {
         productsCount: category._count.products
       })),
       products: restaurant.products.map((product) => this.serializeProduct(product, features, restaurant.currency)),
-      theme: restaurant.themeSettings?.settings ?? null,
+      theme: this.serializePublicThemeSettings(restaurant.themeSettings?.settings, features),
       menus: this.serializeMenus(menus)
     };
   }
@@ -101,7 +101,8 @@ export class PublicMenuService {
 
   async theme(restaurantSlug: string) {
     const restaurant = await this.findPublicRestaurant(restaurantSlug);
-    return restaurant.themeSettings?.settings ?? null;
+    const features = await this.featureFlags.listFeatures(restaurant.id);
+    return this.serializePublicThemeSettings(restaurant.themeSettings?.settings, features);
   }
 
   async track(
@@ -448,6 +449,29 @@ export class PublicMenuService {
         }))
       }))
     }));
+  }
+
+  private serializePublicThemeSettings(settings: any, features: Array<{ key: string; enabled: boolean }>) {
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return settings ?? null;
+    }
+
+    const orderingFeaturesEnabled = ["CART_ORDERING", "WHATSAPP_ORDERING"].every((key) =>
+      features.some((feature) => feature.key === key && feature.enabled)
+    );
+    const theme = { ...settings };
+
+    if (!orderingFeaturesEnabled) {
+      const currentPublicUi = theme.publicUi && typeof theme.publicUi === "object" && !Array.isArray(theme.publicUi)
+        ? theme.publicUi
+        : {};
+      theme.publicUi = {
+        ...currentPublicUi,
+        whatsappOrderingEnabled: false
+      };
+    }
+
+    return theme;
   }
 
   private serializeNutrition(nutrition: Prisma.JsonValue | null) {

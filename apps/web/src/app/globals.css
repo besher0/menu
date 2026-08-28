@@ -4037,7 +4037,9 @@ body:has(.public-page)::-webkit-scrollbar {
   background-position: center;
   background-size: cover;
   inset: 0;
+  pointer-events: auto;
   position: fixed;
+  touch-action: none;
   z-index: 500000000;
 }
 
@@ -4087,7 +4089,6 @@ body:has(.public-page)::-webkit-scrollbar {
 
   100% {
     opacity: 0;
-    pointer-events: none;
   }
 }
 
@@ -4719,10 +4720,16 @@ body:has(.public-page)::-webkit-scrollbar {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
-  padding: 0 16px 10px;
+  padding: 0 0 10px;
   scrollbar-width: none;
   touch-action: auto;
   user-select: none;
+}
+
+.rail-scroll::before,
+.rail-scroll::after {
+  content: "";
+  flex: 0 0 4px;
 }
 
 .rail-scroll:active {
