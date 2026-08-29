@@ -3046,6 +3046,7 @@ function ProductRail({
         onPointerUp={handleRailPointerEnd}
         onDragStart={(event) => event.preventDefault()}
       >
+        <span className="rail-scroll-gutter" aria-hidden="true" />
         {railSlots.map((_, index) => {
           const product = products[index];
           return product ? (
@@ -3079,6 +3080,7 @@ function ProductRail({
             <article key={`rail-placeholder-${index}`} className="rail-product rail-product-placeholder" aria-hidden="true" />
           );
         })}
+        <span className="rail-scroll-gutter" aria-hidden="true" />
       </div>
     </section>
   );
