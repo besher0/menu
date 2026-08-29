@@ -4713,6 +4713,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .rail-scroll {
+  -webkit-overflow-scrolling: touch;
   cursor: grab;
   display: flex;
   gap: 12px;
@@ -4720,16 +4721,16 @@ body:has(.public-page)::-webkit-scrollbar {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
-  padding: 0 0 10px;
+  padding: 0 16px 10px;
   scrollbar-width: none;
-  touch-action: auto;
+  scroll-padding-inline: 16px;
+  touch-action: pan-x;
   user-select: none;
 }
 
 .rail-scroll::before,
 .rail-scroll::after {
-  content: "";
-  flex: 0 0 4px;
+  display: none;
 }
 
 .rail-scroll:active {
@@ -4743,7 +4744,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .rail-scroll a,
 .rail-scroll img {
   -webkit-user-drag: none;
-  touch-action: manipulation;
+  touch-action: pan-x;
   user-select: none;
 }
 
@@ -4917,6 +4918,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .menu-context-products .rail-scroll {
+  inline-size: 100%;
   overflow-x: auto;
   padding-bottom: 12px;
 }
