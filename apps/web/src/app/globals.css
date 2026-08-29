@@ -4692,6 +4692,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .product-rail {
   min-height: 166px;
+  min-width: 0;
 }
 
 .rail-head {
@@ -4717,20 +4718,24 @@ body:has(.public-page)::-webkit-scrollbar {
   cursor: grab;
   display: flex;
   gap: 12px;
+  inline-size: calc(100% + 32px);
   margin-inline: -16px;
+  max-inline-size: calc(100% + 32px);
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
-  padding: 0 16px 10px;
+  padding: 0 0 10px;
   scrollbar-width: none;
   scroll-padding-inline: 16px;
-  touch-action: pan-x;
+  touch-action: auto;
   user-select: none;
 }
 
-.rail-scroll::before,
-.rail-scroll::after {
-  display: none;
+.rail-scroll-gutter {
+  flex: 0 0 4px;
+  inline-size: 4px;
+  pointer-events: none;
 }
 
 .rail-scroll:active {
@@ -4744,7 +4749,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .rail-scroll a,
 .rail-scroll img {
   -webkit-user-drag: none;
-  touch-action: pan-x;
+  touch-action: manipulation;
   user-select: none;
 }
 
@@ -4899,6 +4904,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .menu-context-products {
   display: grid;
   gap: 0;
+  min-width: 0;
 }
 
 .menu-context-products .product-rail {
@@ -4918,7 +4924,6 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .menu-context-products .rail-scroll {
-  inline-size: 100%;
   overflow-x: auto;
   padding-bottom: 12px;
 }
