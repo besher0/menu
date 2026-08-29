@@ -2991,7 +2991,7 @@ function ProductRail({
   }
 
   const handleRailPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
     if ((event.target as HTMLElement | null)?.closest("a, button")) return;
     if (maxRailScroll(event.currentTarget) <= 1) return;
 
