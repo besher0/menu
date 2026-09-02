@@ -1979,7 +1979,13 @@ function MenuView({
         <div className="menu-product-copy">
           <b>{product.name}</b>
           <p>{product.description}</p>
-          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+          {showPrices ? (
+            <ProductPrice
+              price={productPrice(product)}
+              currency={product.currency}
+              priceFirst={productListLayout === "double"}
+            />
+          ) : null}
         </div>
       </>
     );
