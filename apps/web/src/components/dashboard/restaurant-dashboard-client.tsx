@@ -112,6 +112,7 @@ type DashboardSettings = {
     email?: string | null;
     instagramUrl?: string | null;
     facebookUrl?: string | null;
+    tiktokUrl?: string | null;
     whatsappUrl?: string | null;
     logoUrl?: string | null;
     currency: string;
@@ -1403,6 +1404,7 @@ function SettingsForm() {
           <Field label="البريد الالكتروني (اختياري)" value={form.email ?? ""} onChange={(value) => updateField("email", value)} />
           <Field label="رابط إنستغرام" value={form.instagramUrl ?? ""} onChange={(value) => updateField("instagramUrl", value)} />
           <Field label="رابط فيسبوك" value={form.facebookUrl ?? ""} onChange={(value) => updateField("facebookUrl", value)} />
+          <Field label="رابط تيك توك" value={form.tiktokUrl ?? ""} onChange={(value) => updateField("tiktokUrl", value)} />
           <Field label="رابط واتساب" value={form.whatsappUrl ?? ""} onChange={(value) => updateField("whatsappUrl", value)} />
         </div>
       </section>

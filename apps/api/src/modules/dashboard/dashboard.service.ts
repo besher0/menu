@@ -684,6 +684,7 @@ export class DashboardService {
         email: dashboardSettings.email ?? "",
         instagramUrl: dashboardSettings.instagramUrl ?? "",
         facebookUrl: dashboardSettings.facebookUrl ?? "",
+        tiktokUrl: dashboardSettings.tiktokUrl ?? "",
         whatsappUrl: dashboardSettings.whatsappUrl ?? "",
         logoUrl: restaurant.logoUrl,
         currency: restaurant.currency,
@@ -765,6 +766,7 @@ export class DashboardService {
       ...(dto.email !== undefined ? { email: dto.email } : { email: existingDashboardSettings.email ?? "" }),
       ...(dto.instagramUrl !== undefined ? { instagramUrl: dto.instagramUrl } : { instagramUrl: existingDashboardSettings.instagramUrl ?? "" }),
       ...(dto.facebookUrl !== undefined ? { facebookUrl: dto.facebookUrl } : { facebookUrl: existingDashboardSettings.facebookUrl ?? "" }),
+      ...(dto.tiktokUrl !== undefined ? { tiktokUrl: dto.tiktokUrl } : { tiktokUrl: existingDashboardSettings.tiktokUrl ?? "" }),
       ...(dto.whatsappUrl !== undefined ? { whatsappUrl: dto.whatsappUrl } : { whatsappUrl: existingDashboardSettings.whatsappUrl ?? "" }),
       ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
       ...(dto.productOpenMode !== undefined

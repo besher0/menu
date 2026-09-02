@@ -233,7 +233,7 @@ export function MenuBuilderClient() {
 
     async function loadProducts() {
       try {
-        const response = await fetch(`${API_URL}/dashboard/products?limit=100`, {
+        const response = await fetch(`${API_URL}/dashboard/products`, {
           headers: selectedRestaurantHeaders(),
           cache: "no-store"
         });

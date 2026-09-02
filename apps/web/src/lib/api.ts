@@ -82,6 +82,7 @@ export type PublicMenuData = {
     whatsappPhone?: string | null;
     instagramUrl?: string | null;
     facebookUrl?: string | null;
+    tiktokUrl?: string | null;
     whatsappUrl?: string | null;
     phone?: string | null;
     email?: string | null;

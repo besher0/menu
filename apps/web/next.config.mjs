@@ -3,6 +3,10 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@menu/shared"],
   allowedDevOrigins: [
+    "ordersawa.test:3000",
+    "*.ordersawa.test:3000",
+    "http://ordersawa.test:3000",
+    "http://*.ordersawa.test:3000",
     "10.128.45.122",
     "10.36.8.122",
     "192.168.*.*",

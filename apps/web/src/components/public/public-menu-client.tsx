@@ -537,6 +537,24 @@ function normalizeWhatsappUrl(value?: string | null) {
   return digits ? `https://wa.me/${digits}` : normalizeSocialUrl(trimmed, "wa.me");
 }
 
+function TikTokIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M15.1 3h3.1c.2 1.2.7 2.2 1.5 3 .7.8 1.7 1.3 3 1.5v3.2c-1.6-.1-3.1-.6-4.5-1.5v6.1c0 1.8-.6 3.2-1.8 4.3-1.1 1.1-2.6 1.7-4.4 1.7-1.6 0-3-.5-4.1-1.5-1.1-1-1.7-2.3-1.7-3.9 0-1.7.6-3 1.8-4.1 1.2-1 2.7-1.5 4.6-1.4v3.2c-.9-.1-1.6.1-2.2.5-.5.4-.8 1-.8 1.7 0 .6.2 1.2.7 1.6.4.4 1 .6 1.7.6.8 0 1.5-.3 2-.8.5-.6.8-1.3.8-2.2V3h.3Z"
+      />
+    </svg>
+  );
+}
+
+function SocialIcon({ type, size = 20 }: { type: string; size?: number }) {
+  if (type === "instagram") return <Instagram size={size} />;
+  if (type === "facebook") return <Facebook size={size} />;
+  if (type === "tiktok") return <TikTokIcon size={size} />;
+  return <MessageCircle size={size} />;
+}
+
 function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
   if (typeof window === "undefined") return true;
 
@@ -941,11 +959,12 @@ export function PublicMenuClient({
     return lines.join("\n");
   }, [cart, cartTotal, currency, data.restaurant.name, language, showPrices, t]);
 
-  const drawerSocialLinks = [
-    { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com"), icon: Instagram },
-    { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com"), icon: Facebook },
-    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone), icon: MessageCircle } : null
-  ].filter((item): item is { key: string; label: string; href: string | null; icon: LucideIcon } => Boolean(item)).filter((item): item is { key: string; label: string; href: string; icon: LucideIcon } => Boolean(item.href));
+  const socialLinks = [
+    { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com") },
+    { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com") },
+    { key: "tiktok", label: "TikTok", href: normalizeSocialUrl(data.restaurant.tiktokUrl, "tiktok.com") },
+    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone) } : null
+  ].filter((item): item is { key: string; label: string; href: string | null } => Boolean(item)).filter((item): item is { key: string; label: string; href: string } => Boolean(item.href));
 
   function normalizeCheckoutDetails(details?: CheckoutDetails): CheckoutDetails | undefined {
     if (!details) return undefined;
@@ -1179,15 +1198,6 @@ export function PublicMenuClient({
             <span>{t.language}</span>
             <b>{currentLanguageLabel}</b>
           </button>
-          {drawerSocialLinks.length ? (
-            <div className="drawer-social-links">
-              {drawerSocialLinks.map(({ key, label, href, icon: Icon }) => (
-                <a key={key} href={href} target="_blank" rel="noreferrer" aria-label={label} title={label} onClick={closeDrawer}>
-                  <Icon size={20} />
-                </a>
-              ))}
-            </div>
-          ) : null}
           <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab((current) => current === "hours" ? null : "hours")}>
             <span>{t.hours}</span>
             <Clock3 size={18} />
@@ -1204,6 +1214,7 @@ export function PublicMenuClient({
             </div>
           </div> : null}
           <small>Version 0.1.0+12</small>
+          <DrawerSocialLinks links={socialLinks} onNavigate={closeDrawer} />
         </aside>
       ) : null}
     </div>
@@ -1642,6 +1653,13 @@ function MenuView({
     ? visibleProducts
     : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
   const spotlightProduct = activeProducts[activeProducts.length ? activeSpotlightIndex % activeProducts.length : 0];
+  const spotlightCategorySlug = spotlightProduct ? spotlightProduct.category?.slug ?? spotlightProduct.categorySlug ?? "" : "";
+  const spotlightCategoryName = spotlightCategorySlug
+    ? regularCategories.find((category) => category.slug === spotlightCategorySlug)?.name ?? spotlightProduct?.category?.name ?? ""
+    : "";
+  const highlightedCategorySlug = menuDisplayMode === "large" && selectedCategorySlug === "all" && spotlightCategorySlug
+    ? spotlightCategorySlug
+    : selectedCategorySlug;
   const productsWithoutCategory = selectedCategorySlug === "all"
     ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
     : [];
@@ -1652,6 +1670,15 @@ function MenuView({
       setSelectedCategorySlug("all");
     }
   }, [selectedCollection, selectedMood]);
+
+  useEffect(() => {
+    const nextCategorySlug = selectedCategoryParam || (selectedMood || selectedCollection || !showCategoryLanding ? "all" : "");
+    setSelectedCategorySlug((current) => current === nextCategorySlug ? current : nextCategorySlug);
+  }, [selectedCategoryParam, selectedCollection, selectedMood, showCategoryLanding]);
+
+  useEffect(() => {
+    setMenuDisplayMode((current) => current === selectedDisplayParam ? current : selectedDisplayParam);
+  }, [selectedDisplayParam]);
 
   useEffect(() => {
     if (!showCategoryLanding && !selectedCategorySlug) {
@@ -1748,6 +1775,25 @@ function MenuView({
     return () => window.cancelAnimationFrame(frame);
   }, [selectedCategorySlug, showNestedCategoryStrip]);
 
+  useEffect(() => {
+    if (!showNestedCategoryStrip || menuDisplayMode !== "large" || !highlightedCategorySlug) {
+      return;
+    }
+
+    const frame = scrollCategoryChipIntoView(highlightedCategorySlug);
+    return () => window.cancelAnimationFrame(frame);
+  }, [highlightedCategorySlug, menuDisplayMode, showNestedCategoryStrip]);
+
+  useEffect(() => {
+    if (!selectedCategoryParam || selectedCategoryParam === "all" || selectedMood || selectedCollection || menuDisplayMode !== "list") {
+      return;
+    }
+
+    manualCategoryScrollUntil.current = Date.now() + 900;
+    const frame = scrollToCategory(selectedCategoryParam);
+    return () => window.cancelAnimationFrame(frame);
+  }, [menuDisplayMode, selectedCategoryParam, selectedCollection, selectedMood]);
+
   function scrollToCategory(slug: string) {
     const targetId = menuDisplayMode === "large" || slug === "all" ? "menu-products-start" : `category-section-${slug}`;
     return window.requestAnimationFrame(() => {
@@ -1778,6 +1824,16 @@ function MenuView({
   function selectCategory(slug: string) {
     manualCategoryScrollUntil.current = Date.now() + 900;
     setSelectedCategorySlug(slug);
+
+    if (!selectedMood && !selectedCollection) {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set("category", slug);
+      if (productListLayout === "single") {
+        currentUrl.searchParams.set("display", menuDisplayMode);
+      }
+      window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
+    }
+
     scrollToCategory(slug);
   }
 
@@ -1970,7 +2026,7 @@ function MenuView({
           {showNestedCategoryStrip ? <section className={`menu-category-strip category-nav-${categoryNavVariant}`} id="menu-categories" ref={categoryStripRef}>
             {headerCategories.map((category) => {
               const isAllCategory = category.slug === "all";
-              const isActive = category.slug === selectedCategorySlug;
+              const isActive = category.slug === highlightedCategorySlug;
               const productsCount = isAllCategory
                 ? visibleProducts.length
                 : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
@@ -2024,6 +2080,7 @@ function MenuView({
                 onTouchStart={handleSpotlightTouchStart}
                 onTouchEnd={handleSpotlightTouchEnd}
               >
+                {spotlightCategoryName ? <span className="category-spotlight-badge">{spotlightCategoryName}</span> : null}
                 <button type="button" className="category-spotlight-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                   <ProductImageMedia product={spotlightProduct} />
                 </button>
@@ -2200,16 +2257,27 @@ function ProductQuickViewModal({
 function ProductPrice({
   price,
   currency,
-  className = ""
+  className = "",
+  priceFirst = false
 }: {
   price: number;
   currency: string;
   className?: string;
+  priceFirst?: boolean;
 }) {
   return (
     <strong className={`product-price ${className}`.trim()}>
-      <span>{price}</span>
-      <small>{currency}</small>
+      {priceFirst ? (
+        <>
+          <span>{price}</span>
+          <small>{currency}</small>
+        </>
+      ) : (
+        <>
+          <small>{currency}</small>
+          <span>{price}</span>
+        </>
+      )}
     </strong>
   );
 }
@@ -3067,8 +3135,8 @@ function ProductRail({
               }}
             >
               <ProductImageMedia product={product} />
-              <b>{product.name}</b>
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" /> : null}
+        {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" priceFirst /> : null}
+        <b>{product.name}</b>
             </Link>
             {onAddToCart ? (
               <button type="button" onClick={() => onAddToCart(product)} aria-label={`${t.addToCart} ${product.name}`}>
@@ -3083,6 +3151,37 @@ function ProductRail({
         <span className="rail-scroll-gutter" aria-hidden="true" />
       </div>
     </section>
+  );
+}
+
+function DrawerSocialLinks({
+  links,
+  onNavigate
+}: {
+  links: Array<{ key: string; label: string; href: string }>;
+  onNavigate: () => void;
+}) {
+  if (!links.length) {
+    return null;
+  }
+
+  return (
+    <nav className="drawer-social-links" aria-label="Social links">
+      {links.map((link) => (
+        <a
+          key={link.key}
+          className={`social-link social-${link.key}`}
+          href={link.href}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={link.label}
+          title={link.label}
+          onClick={onNavigate}
+        >
+          <SocialIcon type={link.key} size={20} />
+        </a>
+      ))}
+    </nav>
   );
 }
 
