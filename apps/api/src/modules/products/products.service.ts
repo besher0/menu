@@ -19,7 +19,7 @@ export class ProductsService {
 
   async list(restaurantId: string, query: ListProductsQueryDto = {}) {
     const page = this.clampPositiveInt(query.page, 1);
-    const limit = Math.min(this.clampPositiveInt(query.limit, 20), 100);
+    const limit = query.limit === undefined ? undefined : this.clampPositiveInt(query.limit, 20);
     const where: Prisma.ProductWhereInput = {
       restaurantId,
       deletedAt: null,
@@ -53,8 +53,7 @@ export class ProductsService {
         }
         },
         orderBy,
-        skip: (page - 1) * limit,
-        take: limit
+        ...(limit === undefined ? {} : { skip: (page - 1) * limit, take: limit })
       })
     ]);
     const views = await this.productViewCounts(
@@ -66,9 +65,9 @@ export class ProductsService {
       data: products.map((product) => this.serializeProduct(product, views.get(product.id) ?? 0)),
       meta: {
         page,
-        limit,
+        limit: limit ?? total,
         total,
-        pages: Math.max(1, Math.ceil(total / limit))
+        pages: limit === undefined ? 1 : Math.max(1, Math.ceil(total / limit))
       }
     };
   }

@@ -319,7 +319,7 @@ export class PublicMenuService {
               }
             }
           },
-          orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
+          orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }]
         },
         themeSettings: true
       }
@@ -354,6 +354,7 @@ export class PublicMenuService {
       email: dashboardSettings.email ?? null,
       instagramUrl: dashboardSettings.instagramUrl ?? null,
       facebookUrl: dashboardSettings.facebookUrl ?? null,
+      tiktokUrl: dashboardSettings.tiktokUrl ?? null,
       whatsappUrl: dashboardSettings.whatsappUrl ?? null,
       showPrices: dashboardSettings.showPrices ?? true,
       productOpenMode: dashboardSettings.productOpenMode === "PAGE" ? "PAGE" : "MODAL",

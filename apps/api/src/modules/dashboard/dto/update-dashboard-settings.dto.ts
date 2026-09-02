@@ -101,6 +101,10 @@ export class UpdateDashboardSettingsDto {
 
   @IsOptional()
   @IsString()
+  tiktokUrl?: string;
+
+  @IsOptional()
+  @IsString()
   whatsappUrl?: string;
 
   @IsOptional()

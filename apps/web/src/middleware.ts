@@ -21,6 +21,14 @@ export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (pathname === "/m" || pathname.startsWith("/m/")) {
+    if (process.env.NODE_ENV !== "production") {
+      return NextResponse.next({
+        request: {
+          headers: requestHeaders
+        }
+      });
+    }
+
     if (
       incomingInternalToken === INTERNAL_RESTAURANT_REWRITE_TOKEN &&
       incomingInternalSlug &&
@@ -74,7 +82,7 @@ export function middleware(request: NextRequest) {
   const rewriteUrl = request.nextUrl.clone();
   rewriteUrl.protocol = protocol;
   rewriteUrl.hostname = publicHostname;
-  rewriteUrl.port = "";
+  rewriteUrl.port = process.env.NODE_ENV === "production" ? "" : request.nextUrl.port;
   rewriteUrl.pathname = internalPath;
   rewriteUrl.search = search;
 
