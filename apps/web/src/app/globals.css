@@ -6761,7 +6761,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .template-vertigo.view-product {
   background: #ffffff;
-  padding: 14px 0 0;
+  padding: 14px 0 118px;
 }
 
 .vertigo-product-detail {
@@ -6770,7 +6770,7 @@ body:has(.public-page)::-webkit-scrollbar {
   margin: 4px;
   max-width: 100%;
   overflow-x: hidden;
-  padding: 0 0 28px;
+  padding: 0 0 96px;
   width: 98%;
 }
 
