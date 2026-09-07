@@ -7110,7 +7110,6 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .vertigo-related-price small {
   font-size: 13px;
-  order: -1;
 }
 
 .add-large {

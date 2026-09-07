@@ -2118,7 +2118,7 @@ function MenuView({
                 <div className="category-spotlight-copy">
                   <button type="button" className="category-spotlight-title-row" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                     <b>{spotlightProduct.name}</b>
-                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" /> : null}
+                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" priceFirst /> : null}
                   </button>
                   <div className="category-spotlight-detail-row">
                     <button type="button" className="category-spotlight-description-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
@@ -2873,7 +2873,7 @@ function ProductView({
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
-          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst /> : null}
         </div>
         <p className="product-description" title={product.description ?? undefined}>{product.description}</p>
 
