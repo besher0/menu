@@ -1519,7 +1519,7 @@ function VertigoFeaturedProducts({
             <div>
               <b>{product.name}</b>
               {product.description ? <p>{product.description}</p> : null}
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst /> : null}
             </div>
           </Link>
         ))}
@@ -1560,7 +1560,7 @@ function MenuView({
     ? searchParams.get("collection")
     : "";
   const selectedCategoryParam = searchParams.get("category")?.trim() || "";
-  const selectedDisplayParam = searchParams.get("display") === "large" ? "large" : "list";
+  const displayParam = searchParams.get("display");
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const categoryGridSection = allPages
     .flatMap((page) => page.sections ?? [])
@@ -1569,6 +1569,7 @@ function MenuView({
     .flatMap((page) => page.sections ?? [])
     .find((section) => section.type === "PRODUCT_LIST");
   const isVertigo = publicTemplate(data) === "vertigo";
+  const selectedDisplayParam: MenuDisplayMode = displayParam === "large" || (!displayParam && !isVertigo) ? "large" : "list";
   const categoryNavVariant = categoryGridSection?.settings?.categoryNavVariant ?? (isVertigo ? "text-tabs" : "image-chips");
   const productCardVariant = productListSection?.settings?.cardVariant ?? (isVertigo ? "horizontal-contained" : "");
   const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
@@ -1899,7 +1900,7 @@ function MenuView({
     const deltaX = endX - spotlightTouchStartX.current;
     spotlightTouchStartX.current = null;
     if (Math.abs(deltaX) < 40) return;
-    if (moveSpotlight(deltaX > 0 ? -1 : 1)) {
+    if (moveSpotlight(deltaX > 0 ? 1 : -1)) {
       markSpotlightDragged();
     }
   }
@@ -1930,7 +1931,7 @@ function MenuView({
 
     if (absX < 40 || absX < absY * 1.15) return;
     event.preventDefault();
-    if (moveSpotlight(deltaX > 0 ? -1 : 1)) {
+    if (moveSpotlight(deltaX > 0 ? 1 : -1)) {
       markSpotlightDragged();
     }
   }
@@ -2277,7 +2278,7 @@ function ProductQuickViewModal({
         <div className="product-quick-body">
           <div className="product-quick-title-row">
             <h2>{product.name}</h2>
-            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst /> : null}
           </div>
           <p>{product.description}</p>
         </div>
@@ -3001,7 +3002,7 @@ function VertigoRelatedProducts({
               {product.description ? (
                 <p className="vertigo-related-description" dir="auto">{product.description}</p>
               ) : null}
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" /> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" priceFirst /> : null}
             </div>
           </Link>
         ))}
