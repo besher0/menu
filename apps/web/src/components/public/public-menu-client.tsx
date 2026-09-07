@@ -1652,7 +1652,12 @@ function MenuView({
   const activeProducts = selectedCategorySlug === "all"
     ? visibleProducts
     : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
-  const spotlightProduct = activeProducts[activeProducts.length ? activeSpotlightIndex % activeProducts.length : 0];
+  const normalizedSpotlightIndex = activeProducts.length
+    ? Math.min(Math.max(activeSpotlightIndex, 0), activeProducts.length - 1)
+    : 0;
+  const canMoveSpotlightPrevious = activeProducts.length > 1 && normalizedSpotlightIndex > 0;
+  const canMoveSpotlightNext = activeProducts.length > 1;
+  const spotlightProduct = activeProducts[normalizedSpotlightIndex];
   const spotlightCategorySlug = spotlightProduct ? spotlightProduct.category?.slug ?? spotlightProduct.categorySlug ?? "" : "";
   const spotlightCategoryName = spotlightCategorySlug
     ? regularCategories.find((category) => category.slug === spotlightCategorySlug)?.name ?? spotlightProduct?.category?.name ?? ""
@@ -1837,9 +1842,27 @@ function MenuView({
     scrollToCategory(slug);
   }
 
+  function moveSpotlightPrevious() {
+    if (!canMoveSpotlightPrevious) return false;
+    setActiveSpotlightIndex((current) => Math.max(0, Math.min(current, activeProducts.length - 1) - 1));
+    return true;
+  }
+
+  function moveSpotlightNext() {
+    if (!canMoveSpotlightNext) return false;
+    setActiveSpotlightIndex((current) => {
+      const normalizedCurrent = Math.max(0, Math.min(current, activeProducts.length - 1));
+      return (normalizedCurrent + 1) % activeProducts.length;
+    });
+    return true;
+  }
+
   function moveSpotlight(direction: -1 | 1) {
-    if (activeProducts.length <= 1) return;
-    setActiveSpotlightIndex((current) => (current + direction + activeProducts.length) % activeProducts.length);
+    if (direction === -1) {
+      return moveSpotlightPrevious();
+    }
+
+    return moveSpotlightNext();
   }
 
   function markSpotlightDragged() {
@@ -1876,8 +1899,9 @@ function MenuView({
     const deltaX = endX - spotlightTouchStartX.current;
     spotlightTouchStartX.current = null;
     if (Math.abs(deltaX) < 40) return;
-    markSpotlightDragged();
-    moveSpotlight(deltaX > 0 ? -1 : 1);
+    if (moveSpotlight(deltaX > 0 ? -1 : 1)) {
+      markSpotlightDragged();
+    }
   }
 
   function handleSpotlightPointerDown(event: PointerEvent<HTMLElement>) {
@@ -1905,9 +1929,10 @@ function MenuView({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
 
     if (absX < 40 || absX < absY * 1.15) return;
-    markSpotlightDragged();
     event.preventDefault();
-    moveSpotlight(deltaX > 0 ? -1 : 1);
+    if (moveSpotlight(deltaX > 0 ? -1 : 1)) {
+      markSpotlightDragged();
+    }
   }
 
   function handleSpotlightPointerCancel() {
@@ -2113,10 +2138,10 @@ function MenuView({
               </article>
               <div className="spotlight-actions">
                 <div className="spotlight-pager">
-                  <button type="button" className="spotlight-arrow prev" onClick={() => moveSpotlight(-1)} aria-label="المنتج السابق" disabled={activeProducts.length <= 1}>
+                  <button type="button" className="spotlight-arrow prev" onClick={moveSpotlightPrevious} aria-label="المنتج السابق" disabled={!canMoveSpotlightPrevious}>
                     <ChevronRight size={22} />
                   </button>
-                  <button type="button" className="spotlight-arrow next" onClick={() => moveSpotlight(1)} aria-label="المنتج التالي" disabled={activeProducts.length <= 1}>
+                  <button type="button" className="spotlight-arrow next" onClick={moveSpotlightNext} aria-label="المنتج التالي" disabled={!canMoveSpotlightNext}>
                     <ChevronLeft size={22} />
                   </button>
                 </div>
@@ -2251,9 +2276,11 @@ function ProductQuickViewModal({
           ) : null}
         </div>
         <div className="product-quick-body">
-          <h2>{product.name}</h2>
+          <div className="product-quick-title-row">
+            <h2>{product.name}</h2>
+            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
+          </div>
           <p>{product.description}</p>
-          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} /> : null}
         </div>
       </article>
     </div>
@@ -2746,7 +2773,7 @@ function ProductView({
         </div>
       ) : null}
       <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}>
-        {!isVertigo || Boolean(model3dUrl) ? (
+        {model3dUrl ? (
           <div className="product-media-tabs" role="group" aria-label={t.photos}>
             {!isVertigo ? (
               <button
