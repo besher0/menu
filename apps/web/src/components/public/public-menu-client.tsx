@@ -2111,7 +2111,6 @@ function MenuView({
                 onTouchStart={handleSpotlightTouchStart}
                 onTouchEnd={handleSpotlightTouchEnd}
               >
-                {spotlightCategoryName ? <span className="category-spotlight-badge">{spotlightCategoryName}</span> : null}
                 <button type="button" className="category-spotlight-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                   <ProductImageMedia product={spotlightProduct} />
                 </button>
