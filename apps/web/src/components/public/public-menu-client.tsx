@@ -1569,7 +1569,10 @@ function MenuView({
     .flatMap((page) => page.sections ?? [])
     .find((section) => section.type === "PRODUCT_LIST");
   const isVertigo = publicTemplate(data) === "vertigo";
-  const selectedDisplayParam: MenuDisplayMode = displayParam === "large" || (!displayParam && !isVertigo) ? "large" : "list";
+  const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
+  const selectedDisplayParam: MenuDisplayMode = productListLayout === "double"
+    ? "list"
+    : displayParam === "large" || (!displayParam && !isVertigo) ? "large" : "list";
   const categoryNavVariant = categoryGridSection?.settings?.categoryNavVariant ?? (isVertigo ? "text-tabs" : "image-chips");
   const productCardVariant = productListSection?.settings?.cardVariant ?? (isVertigo ? "horizontal-contained" : "");
   const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
@@ -1629,7 +1632,6 @@ function MenuView({
   const contextProducts = selectedMood ? moodProducts : collectionProducts;
   const categoryProductsSource = selectedMood ? data.products : selectedCollection ? contextProducts : data.products;
   const visibleProducts = categoryProductsSource;
-  const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const showRowQuantityControls = whatsappOrderingEnabled && productListLayout === "single" && !(isVertigo && productCardVariant === "horizontal-contained");
   const menuReturnParams = new URLSearchParams(menuQuery);
 
