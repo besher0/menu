@@ -4760,7 +4760,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border-radius: 14px;
   box-shadow: 0 3px 12px rgb(16 24 40 / 8%);
   flex: 0 0 128px;
-  min-height: 140px;
+  min-height: 144px;
   overflow: hidden;
   position: relative;
   text-align: center;
@@ -4815,16 +4815,14 @@ body:has(.public-page)::-webkit-scrollbar {
   line-height: 1.58;
   min-height: 28px;
   overflow: hidden;
-  padding-top: 6px;
-  padding-bottom: 2px;
+  padding: 9px 8px 3px 34px;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rail-product-cartable b {
   margin-bottom: 0;
-  padding: 9px 8px 3px 34px;
-  text-align: right;
 }
 
 .rail-product small {
@@ -4859,7 +4857,7 @@ body:has(.public-page)::-webkit-scrollbar {
   padding-top: 2px;
 }
 
-.rail-product-cartable .rail-price {
+.rail-product .rail-price {
   bottom: 11px;
   justify-content: flex-end;
   padding-top: 0;
