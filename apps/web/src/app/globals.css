@@ -4338,6 +4338,7 @@ body:has(.public-page)::-webkit-scrollbar {
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  color: var(--color-text-first, #201217);
   font-size: 16px;
   margin: 0;
   padding: 0 1px 0 0;
@@ -5581,7 +5582,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .category-section-title span {
-  color: #16181d;
+  color: var(--color-text-first, #201217);
   direction: rtl;
   flex: 0 0 auto;
   font-size: 18px;
@@ -10779,6 +10780,8 @@ body {
   .category-spotlight-card b,
   .menu-product-row b,
   .menu-product-card b,
+  .mood-strip h1,
+  .category-section-title span,
   .product-quick-body h2,
   .product-title-row h1,
   .vertigo-related-name,
@@ -10803,9 +10806,7 @@ body {
 .public-screen :where(
   .public-header p,
   .public-header-title .restaurant-name,
-  .mood-strip h1,
   .public-content .rail-head h2,
-  .category-section-title span,
   .checkout-steps div,
   .cart-confirm-form label span,
   .cart-checkout-meta,
