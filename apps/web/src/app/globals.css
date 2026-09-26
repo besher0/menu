@@ -4706,7 +4706,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .public-content .rail-head h2 {
-  color: #11141a;
+  color: var(--color-text-first, #201217);
   font-size: 16px;
   font-weight: 900;
   line-height: 1.2;
@@ -10786,6 +10786,7 @@ body {
   .menu-product-row b,
   .menu-product-card b,
   .mood-strip h1,
+  .public-content .rail-head h2,
   .category-section-title span,
   .product-quick-body h2,
   .product-title-row h1,
@@ -10811,7 +10812,6 @@ body {
 .public-screen :where(
   .public-header p,
   .public-header-title .restaurant-name,
-  .public-content .rail-head h2,
   .checkout-steps div,
   .cart-confirm-form label span,
   .cart-checkout-meta,
