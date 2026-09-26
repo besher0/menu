@@ -48,6 +48,8 @@ export type ThemeSettings = {
     secondary: string;
     background: string;
     surface: string;
+    textFirst: string;
+    textSecondary: string;
     text: string;
     muted: string;
     border: string;
@@ -98,6 +100,8 @@ export const ABO_MALEK_THEME: ThemeSettings = {
     secondary: "#f59e0b",
     background: "#fff8f8",
     surface: "#ffffff",
+    textFirst: "#201217",
+    textSecondary: "#60656f",
     text: "#151515",
     muted: "#7b7b7b",
     border: "#f1e3e3",
@@ -187,6 +191,8 @@ export function themeToCssVariables(theme: ThemeSettings): Record<string, string
     "--color-secondary": theme.colors.secondary,
     "--color-background": theme.colors.background,
     "--color-surface": theme.colors.surface,
+    "--color-text-first": theme.colors.textFirst ?? "#201217",
+    "--color-text-secondary": theme.colors.textSecondary ?? "#60656f",
     "--color-text": theme.colors.text,
     "--color-muted": theme.colors.muted,
     "--color-border": theme.colors.border,
