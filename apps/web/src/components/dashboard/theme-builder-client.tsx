@@ -43,6 +43,8 @@ const colorFields: Array<{ key: keyof ThemeSettings["colors"]; label: string }> 
   { key: "secondary", label: "Secondary" },
   { key: "background", label: "Background" },
   { key: "surface", label: "Surface" },
+  { key: "textFirst", label: "Text First - اسم الوجبة" },
+  { key: "textSecondary", label: "Text Secondary - وصف الوجبة" },
   { key: "text", label: "Text" },
   { key: "muted", label: "Muted" },
   { key: "border", label: "Border" }
