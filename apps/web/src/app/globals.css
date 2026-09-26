@@ -6088,6 +6088,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .product-detail {
+  background: var(--color-surface);
   box-sizing: border-box;
   margin: -12px -16px 0;
   max-width: calc(100% + 32px);
@@ -6370,7 +6371,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .product-sheet {
-  background: white;
+  background: var(--color-surface);
   border-radius: 28px 28px 0 0;
   box-sizing: border-box;
   display: grid;
@@ -6764,12 +6765,12 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .template-vertigo.view-product {
-  background: #ffffff;
+  background: var(--color-surface);
   padding: 14px 0 118px;
 }
 
 .vertigo-product-detail {
-  background: #ffffff;
+  background: var(--color-surface);
   display: grid;
   margin: 4px;
   max-width: 100%;
@@ -6905,7 +6906,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .vertigo-product-detail .product-sheet {
-  background: #ffffff;
+  background: var(--color-surface);
   border-radius: 0;
   display: grid;
   gap: 15px;
@@ -10719,9 +10720,13 @@ body {
 .public-screen.view-menu,
 .public-screen.view-cart,
 .public-screen .public-content,
-.public-screen .cart-page,
-.public-screen .product-detail {
+.public-screen .cart-page {
   background: var(--color-background);
+}
+
+.public-screen.view-product,
+.public-screen .product-detail {
+  background: var(--color-surface);
 }
 
 .public-screen :where(
