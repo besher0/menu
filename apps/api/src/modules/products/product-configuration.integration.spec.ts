@@ -1,9 +1,28 @@
-import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  INestApplication,
+  Module,
+  NotFoundException,
+  ValidationPipe
+} from "@nestjs/common";
 import { ProductConfigurationV1 } from "@menu/shared";
 import { PrismaClient } from "@prisma/client";
+import { JwtModule, JwtService } from "@nestjs/jwt";
+import { NestFactory } from "@nestjs/core";
+import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ApiResponseInterceptor } from "../../common/api-response.interceptor";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
+import { DashboardService } from "../dashboard/dashboard.service";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { PublicMenuService } from "../public-menu/public-menu.service";
 import { ProductConfigurationService } from "./product-configuration.service";
+import { ProductsController } from "./products.controller";
+import { ProductsImportService } from "./products-import.service";
 import { ProductsService } from "./products.service";
 
 const databaseUrl = process.env.PRODUCT_CONFIGURATION_TEST_DATABASE_URL;
@@ -77,18 +96,37 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     {} as any,
     { get: () => undefined } as any
   );
+  const dashboardService = new DashboardService(prisma as any, featureFlags);
+  const publicMenuService = new PublicMenuService(
+    prisma as any,
+    featureFlags,
+    { get: () => undefined } as any
+  );
+  let httpApp: INestApplication;
+  let httpOrigin: string;
+  let ownerToken: string;
+  let employeeToken: string;
 
   beforeAll(async () => {
     await prisma.$connect();
     await prisma.productConfigurationDependency.deleteMany();
     await prisma.product.deleteMany();
+    await prisma.category.deleteMany();
+    await prisma.restaurantMember.deleteMany();
+    await prisma.user.deleteMany();
     await prisma.restaurantSubscription.deleteMany();
     await prisma.subscriptionFeature.deleteMany();
     await prisma.subscriptionPlan.deleteMany();
     await prisma.restaurant.deleteMany();
 
     await prisma.restaurant.createMany({ data: [
-      { id: "stage3-r1", name: "Restaurant One", slug: "stage3-r1", currency: "EGP" },
+      {
+        id: "stage3-r1",
+        name: "Restaurant One",
+        slug: "stage3-r1",
+        currency: "EGP",
+        whatsappPhone: "201000000000"
+      },
       { id: "stage3-r2", name: "Restaurant Two", slug: "stage3-r2", currency: "EGP" }
     ] });
     await prisma.subscriptionPlan.create({
@@ -96,7 +134,12 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         id: "stage3-plan",
         name: "Stage 3 Test Plan",
         key: "STAGE3_TEST",
-        features: { create: { id: "stage3-feature", key: "PRODUCT_CONFIGURATION", enabled: true } }
+        features: {
+          create: [
+            { id: "stage3-feature", key: "PRODUCT_CONFIGURATION", enabled: true },
+            { id: "stage3-whatsapp-feature", key: "WHATSAPP_ORDERING", enabled: true }
+          ]
+        }
       }
     });
     await prisma.restaurantSubscription.create({
@@ -104,7 +147,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         id: "stage3-subscription",
         restaurantId: "stage3-r1",
         planId: "stage3-plan",
-        status: "CANCELED",
+        status: "ACTIVE",
         startsAt: new Date("2026-01-01T00:00:00.000Z")
       }
     });
@@ -119,6 +162,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       "cycle-b",
       "cycle-c",
       "owner-cycle",
+      "owner-http",
       "legacy-null-zero"
     ];
     await prisma.product.createMany({
@@ -150,9 +194,77 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         isAvailable: false
       }
     });
+
+    await prisma.user.createMany({
+      data: [
+        {
+          id: "stage3-owner-user",
+          email: "stage3-owner@example.test",
+          passwordHash: "not-used",
+          role: "USER"
+        },
+        {
+          id: "stage3-employee-user",
+          email: "stage3-employee@example.test",
+          passwordHash: "not-used",
+          role: "USER"
+        }
+      ]
+    });
+    await prisma.restaurantMember.createMany({
+      data: [
+        {
+          id: "stage3-owner-membership",
+          restaurantId: "stage3-r1",
+          userId: "stage3-owner-user",
+          role: "OWNER"
+        },
+        {
+          id: "stage3-employee-membership",
+          restaurantId: "stage3-r1",
+          userId: "stage3-employee-user",
+          role: "EMPLOYEE"
+        }
+      ]
+    });
+
+    @Module({
+      imports: [JwtModule.register({ secret: randomBytes(32).toString("hex") })],
+      controllers: [ProductsController],
+      providers: [
+        JwtAuthGuard,
+        RestaurantContextGuard,
+        FeatureFlagsService,
+        ProductConfigurationService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ProductsService, useValue: productsService },
+        { provide: ProductsImportService, useValue: {} }
+      ]
+    })
+    class ProductConfigurationHttpTestModule {}
+
+    httpApp = await NestFactory.create(ProductConfigurationHttpTestModule, { logger: false });
+    httpApp.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidUnknownValues: true }));
+    httpApp.useGlobalInterceptors(new ApiResponseInterceptor());
+    await httpApp.listen(0, "127.0.0.1");
+    const address = httpApp.getHttpServer().address();
+    if (!address || typeof address === "string") throw new Error("HTTP E2E server did not expose a TCP address");
+    httpOrigin = `http://127.0.0.1:${address.port}`;
+    const jwt = httpApp.get(JwtService);
+    ownerToken = await jwt.signAsync({
+      sub: "stage3-owner-user",
+      email: "stage3-owner@example.test",
+      role: "USER"
+    });
+    employeeToken = await jwt.signAsync({
+      sub: "stage3-employee-user",
+      email: "stage3-employee@example.test",
+      role: "USER"
+    });
   });
 
   afterAll(async () => {
+    await httpApp?.close();
     await prisma.$disconnect();
   });
 
@@ -165,7 +277,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       mode: "NETWORK",
       configurationVersion: 1,
       basePrice: "0",
-      isAvailable: false
+      isAvailable: true
     });
     expect(await prisma.productConfigurationDependency.count({
       where: { productId: "owner-atomic", sourceProductId: "source-original", configurationVersion: 1 }
@@ -195,11 +307,28 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
   });
 
   it("rejects cross-restaurant, missing, self, and unconfigured ORIGINAL sources without partial writes", async () => {
-    for (const sourceId of ["foreign-source", "missing-source", "source-custom"]) {
+    for (const sourceId of ["foreign-source", "missing-source"]) {
       await expect(service.save("stage3-r1", "owner-rollback", {
         expectedVersion: 0,
         configuration: linkedConfiguration("owner-rollback", sourceId)
       })).rejects.toBeInstanceOf(ConflictException);
+    }
+    try {
+      await service.save("stage3-r1", "owner-rollback", {
+        expectedVersion: 0,
+        configuration: linkedConfiguration("owner-rollback", "source-custom")
+      });
+      throw new Error("Expected legacy ORIGINAL source rejection");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({
+        error: "ORIGINAL_LINKED_SOURCE_REQUIRES_NETWORK_CONFIGURATION",
+        details: {
+          sourceProductIds: ["source-custom"],
+          allowedWithoutSourceConversion: ["CUSTOM"],
+          requiresExplicitSourceConfigurationForOriginal: true
+        }
+      });
     }
     await expect(service.save("stage3-r1", "owner-rollback", {
       expectedVersion: 0,
@@ -283,6 +412,99 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
   it("protects linked sources from service soft-delete and database hard-delete", async () => {
     await expect(productsService.delete("stage3-r1", "source-original")).rejects.toBeInstanceOf(ConflictException);
     await expect(prisma.product.delete({ where: { id: "source-original" } })).rejects.toMatchObject({ code: "P2003" });
+  });
+
+  it("protects a category containing a linked source product", async () => {
+    const category = await prisma.category.create({
+      data: {
+        id: "stage3-linked-category",
+        restaurantId: "stage3-r1",
+        name: "Linked products",
+        slug: "stage3-linked-products"
+      }
+    });
+    await prisma.product.update({ where: { id: "source-original" }, data: { categoryId: category.id } });
+    await expect(dashboardService.deleteCategory("stage3-r1", category.id)).rejects.toBeInstanceOf(ConflictException);
+    expect((await prisma.category.findUniqueOrThrow({ where: { id: category.id } })).deletedAt).toBeNull();
+  });
+
+  it("keeps network products out of legacy public listing and ordering without changing isAvailable", async () => {
+    const configured = await prisma.product.findUniqueOrThrow({ where: { id: "owner-atomic" } });
+    expect(configured.isAvailable).toBe(true);
+
+    const publicProducts = await publicMenuService.products("stage3-r1");
+    expect(publicProducts.map((product) => product.id)).not.toContain("owner-atomic");
+    await expect(publicMenuService.createWhatsappOrder("stage3-r1", {
+      items: [{ productSlug: "owner-atomic", quantity: 1 }]
+    })).rejects.toBeInstanceOf(BadRequestException);
+
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: "owner-atomic" } })).isAvailable).toBe(true);
+  });
+
+  it("enforces authentication and configuration authorization over real HTTP", async () => {
+    const unauthenticated = await fetch(`${httpOrigin}/dashboard/products/owner-http/configuration`);
+    expect(unauthenticated.status).toBe(401);
+
+    const forbidden = await fetch(`${httpOrigin}/dashboard/products/owner-http/configuration`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${employeeToken}`,
+        "content-type": "application/json",
+        "x-restaurant-id": "stage3-r1"
+      },
+      body: JSON.stringify({ expectedVersion: 0, configuration: baseConfiguration("owner-http") })
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ error: "PRODUCT_CONFIGURATION_PERMISSION_DENIED" });
+  });
+
+  it("enforces tenant isolation over real HTTP", async () => {
+    const hidden = await fetch(`${httpOrigin}/dashboard/products/foreign-source/configuration`, {
+      headers: { authorization: `Bearer ${ownerToken}`, "x-restaurant-id": "stage3-r1" }
+    });
+    expect(hidden.status).toBe(404);
+
+    const spoofed = await fetch(`${httpOrigin}/dashboard/products/foreign-source/configuration`, {
+      headers: { authorization: `Bearer ${ownerToken}`, "x-restaurant-id": "stage3-r2" }
+    });
+    expect(spoofed.status).toBe(403);
+  });
+
+  it("returns structured validation errors over real HTTP", async () => {
+    const invalid = linkedConfiguration("owner-http", "owner-http");
+    const response = await fetch(`${httpOrigin}/dashboard/products/owner-http/configuration`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${ownerToken}`,
+        "content-type": "application/json",
+        "x-restaurant-id": "stage3-r1"
+      },
+      body: JSON.stringify({ expectedVersion: 0, configuration: invalid })
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "PRODUCT_CONFIGURATION_VALIDATION_FAILED",
+      issues: expect.arrayContaining([expect.objectContaining({ code: "SELF_LINK" })])
+    });
+  });
+
+  it("returns an optimistic revision conflict over real HTTP", async () => {
+    const request = {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${ownerToken}`,
+        "content-type": "application/json",
+        "x-restaurant-id": "stage3-r1"
+      },
+      body: JSON.stringify({ expectedVersion: 0, configuration: baseConfiguration("owner-http") })
+    };
+    const first = await fetch(`${httpOrigin}/dashboard/products/owner-http/configuration`, request);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ data: { mode: "NETWORK", configurationVersion: 1 } });
+
+    const stale = await fetch(`${httpOrigin}/dashboard/products/owner-http/configuration`, request);
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: "PRODUCT_CONFIGURATION_CONFLICT" });
   });
 
   it("preserves legacy zero pricing and tenant isolation", async () => {

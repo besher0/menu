@@ -5,6 +5,17 @@ import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
 
+// Network activation must not overwrite the merchant-controlled availability flag.
+// Until the public configurator exists, legacy listing and ordering require both
+// legacy persistence markers so backfilled/configured products cannot leak through.
+const LEGACY_PUBLIC_PRODUCT_FILTER = {
+  isActive: true,
+  isAvailable: true,
+  configurationVersion: 0,
+  configurationTree: { equals: Prisma.DbNull },
+  deletedAt: null
+} satisfies Prisma.ProductWhereInput;
+
 @Injectable()
 export class PublicMenuService {
   constructor(
@@ -173,9 +184,7 @@ export class PublicMenuService {
       where: {
         restaurantId: restaurant.id,
         slug: { in: productSlugs },
-        isActive: true,
-        isAvailable: true,
-        deletedAt: null
+        ...LEGACY_PUBLIC_PRODUCT_FILTER
       }
     });
 
@@ -303,7 +312,7 @@ export class PublicMenuService {
           orderBy: { sortOrder: "asc" }
         },
         products: {
-          where: { isActive: true, isAvailable: true, deletedAt: null },
+          where: LEGACY_PUBLIC_PRODUCT_FILTER,
           include: {
             category: true,
             images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },

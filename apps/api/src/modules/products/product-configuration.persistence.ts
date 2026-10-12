@@ -17,6 +17,14 @@ export class ProductConfigurationValidationError extends Error {
 
 export class ProductConfigurationConflictError extends Error {
   readonly kind = "PRODUCT_CONFIGURATION_CONFLICT" as const;
+
+  constructor(
+    message: string,
+    readonly code = "PRODUCT_CONFIGURATION_CONFLICT",
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+  }
 }
 
 export class ProductConfigurationCapabilityError extends Error {
@@ -155,7 +163,13 @@ export async function persistProductConfiguration(
         .map((source) => source.id);
       if (unconfiguredOriginalSources.length) {
         throw new ProductConfigurationConflictError(
-          `ORIGINAL linked products require a saved configuration: ${unconfiguredOriginalSources.join(", ")}`
+          `ORIGINAL linked products require a saved network configuration: ${unconfiguredOriginalSources.join(", ")}`,
+          "ORIGINAL_LINKED_SOURCE_REQUIRES_NETWORK_CONFIGURATION",
+          {
+            sourceProductIds: unconfiguredOriginalSources,
+            allowedWithoutSourceConversion: ["CUSTOM"],
+            requiresExplicitSourceConfigurationForOriginal: true
+          }
         );
       }
     }

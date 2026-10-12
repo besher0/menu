@@ -109,7 +109,7 @@ describe("ProductConfigurationService", () => {
   });
 
   it("saves a valid six-decimal configuration with the atomic persistence helper", async () => {
-    const { service, prisma } = createHarness();
+    const { service, prisma, transaction } = createHarness();
     prisma.product.findFirst
       .mockResolvedValueOnce({ id: "product-1" })
       .mockResolvedValueOnce({
@@ -125,6 +125,7 @@ describe("ProductConfigurationService", () => {
     })).resolves.toMatchObject({ mode: "NETWORK", configurationVersion: 1, basePrice: "12.345678" });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.product.updateMany.mock.calls[0][0].data).not.toHaveProperty("isAvailable");
   });
 
   it("rejects malformed, self-linked, mismatched, and skipped-revision requests before persistence", async () => {

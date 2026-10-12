@@ -105,7 +105,6 @@ export class ProductConfigurationService {
           productId,
           expectedVersion: dto.expectedVersion,
           configuration,
-          disablePublicOrdering: true,
           requiredCapabilityKey: "PRODUCT_CONFIGURATION"
         });
         return this.get(restaurantId, productId);
@@ -186,8 +185,13 @@ export class ProductConfigurationService {
     ) {
       return new ConflictException({
         statusCode: 409,
-        error: "PRODUCT_CONFIGURATION_CONFLICT",
-        message: error instanceof Error ? error.message : "Product configuration conflict"
+        error: error instanceof ProductConfigurationConflictError
+          ? error.code
+          : "PRODUCT_CONFIGURATION_CONFLICT",
+        message: error instanceof Error ? error.message : "Product configuration conflict",
+        ...(error instanceof ProductConfigurationConflictError && error.details
+          ? { details: error.details }
+          : {})
       });
     }
     if (this.isSerializableRetry(error)) {

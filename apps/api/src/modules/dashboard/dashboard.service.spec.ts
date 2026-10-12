@@ -119,7 +119,8 @@ describe("DashboardService linked-product category protection", () => {
           productId: "combo-product",
           owner: { name: "Combo" }
         }])
-      }
+      },
+      $transaction: vi.fn(async (callback: (transaction: unknown) => unknown) => callback(prisma))
     };
 
     await expect(createService(prisma).deleteCategory("restaurant-1", "category-1"))

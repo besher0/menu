@@ -383,56 +383,69 @@ export class DashboardService {
   }
 
   async deleteCategory(restaurantId: string, id: string) {
-    const category = await this.prisma.category.findFirst({
-      where: { id, restaurantId, deletedAt: null },
-      include: {
-        products: { select: { id: true } },
-        _count: { select: { products: true } }
-      }
-    });
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const category = await transaction.category.findFirst({
+          where: { id, restaurantId, deletedAt: null },
+          include: {
+            products: { select: { id: true } },
+            _count: { select: { products: true } }
+          }
+        });
 
-    if (!category) {
-      throw new BadRequestException("Category not found");
-    }
-
-    if (category.slug === "all") {
-      throw new BadRequestException("قسم الكل أساسي ولا يمكن حذفه.");
-    }
-
-    const categoryProductIds = category.products.map((product) => product.id);
-    if (categoryProductIds.length) {
-      const linkedDependents = await this.prisma.productConfigurationDependency.findMany({
-        where: {
-          restaurantId,
-          sourceProductId: { in: categoryProductIds }
-        },
-        select: {
-          sourceProductId: true,
-          productId: true,
-          owner: { select: { name: true } }
+        if (!category) {
+          throw new BadRequestException("Category not found");
         }
-      });
-      if (linkedDependents.length) {
+
+        if (category.slug === "all") {
+          throw new BadRequestException("قسم الكل أساسي ولا يمكن حذفه.");
+        }
+
+        const categoryProductIds = category.products.map((product) => product.id);
+        if (categoryProductIds.length) {
+          const linkedDependents = await transaction.productConfigurationDependency.findMany({
+            where: {
+              restaurantId,
+              sourceProductId: { in: categoryProductIds }
+            },
+            select: {
+              sourceProductId: true,
+              productId: true,
+              owner: { select: { name: true } }
+            }
+          });
+          if (linkedDependents.length) {
+            throw new ConflictException({
+              statusCode: 409,
+              error: "CATEGORY_PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS",
+              message: "The category contains products used by other product configurations.",
+              dependents: linkedDependents
+            });
+          }
+        }
+
+        if (category._count.products > 0) {
+          throw new BadRequestException("لا يمكن حذف قسم يحتوي منتجات. انقل المنتجات إلى قسم آخر أولاً.");
+        }
+
+        return transaction.category.update({
+          where: { id },
+          data: {
+            isActive: false,
+            deletedAt: new Date()
+          }
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
         throw new ConflictException({
           statusCode: 409,
-          error: "CATEGORY_PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS",
-          message: "The category contains products used by other product configurations.",
-          dependents: linkedDependents
+          error: "CATEGORY_DELETE_CONFLICT",
+          message: "Category products changed concurrently; reload and retry deletion."
         });
       }
+      throw error;
     }
-
-    if (category._count.products > 0) {
-      throw new BadRequestException("لا يمكن حذف قسم يحتوي منتجات. انقل المنتجات إلى قسم آخر أولاً.");
-    }
-
-    return this.prisma.category.update({
-      where: { id },
-      data: {
-        isActive: false,
-        deletedAt: new Date()
-      }
-    });
   }
 
   async reorderCategories(restaurantId: string, items: Array<{ id: string; sortOrder: number }>) {

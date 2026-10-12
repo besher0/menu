@@ -403,37 +403,9 @@ export class ProductsService {
       throw new NotFoundException("Product not found");
     }
 
-    if (!product.isAvailable && product.configurationTree !== null && product.configurationVersion > 0) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: "PRODUCT_CONFIGURATION_PUBLIC_INTEGRATION_PENDING",
-        message: "Configured products cannot be exposed through the legacy public ordering path before public integration."
-      });
-    }
-
-    if (!product.isAvailable) {
-      const enabled = await this.prisma.product.updateMany({
-        where: {
-          id,
-          restaurantId,
-          deletedAt: null,
-          configurationVersion: 0
-        },
-        data: { isAvailable: true }
-      });
-      if (enabled.count !== 1) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: "PRODUCT_CONFIGURATION_PUBLIC_INTEGRATION_PENDING",
-          message: "The product became configured while availability was changing; reload and retry."
-        });
-      }
-      return this.findOne(restaurantId, id);
-    }
-
     await this.prisma.product.update({
       where: { id },
-      data: { isAvailable: false }
+      data: { isAvailable: !product.isAvailable }
     });
     return this.findOne(restaurantId, id);
   }

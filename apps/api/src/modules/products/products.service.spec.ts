@@ -34,7 +34,7 @@ describe("ProductsService product-configuration compatibility", () => {
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
 
-  it("blocks quick price changes and legacy publication for configured products", async () => {
+  it("blocks quick price changes while keeping operational availability independent", async () => {
     const product = {
       id: "configured",
       basePrice: null,
@@ -45,14 +45,17 @@ describe("ProductsService product-configuration compatibility", () => {
     const prisma = {
       product: {
         findFirst: vi.fn().mockResolvedValue(product),
-        update: vi.fn()
+        update: vi.fn().mockResolvedValue({ ...product, isAvailable: true })
       }
     };
     const service = createService(prisma);
 
     await expect(service.updatePrice("restaurant-1", "configured", 0)).rejects.toBeInstanceOf(ConflictException);
-    await expect(service.toggleAvailability("restaurant-1", "configured")).rejects.toBeInstanceOf(ConflictException);
-    expect(prisma.product.update).not.toHaveBeenCalled();
+    await service.toggleAvailability("restaurant-1", "configured");
+    expect(prisma.product.update).toHaveBeenCalledWith({
+      where: { id: "configured" },
+      data: { isAvailable: true }
+    });
   });
 
   it("keeps legacy quick pricing and preserves null instead of coercing it to zero", async () => {
@@ -93,5 +96,32 @@ describe("ProductsService product-configuration compatibility", () => {
       configurationMode: "NETWORK",
       configurationVersion: 1
     });
+  });
+
+  it("prevents generic product updates from changing network-managed pricing", async () => {
+    const configured = {
+      id: "configured",
+      restaurantId: "restaurant-1",
+      slug: "configured",
+      name: "Configured",
+      currency: "EGP",
+      basePrice: new Prisma.Decimal("10.000000"),
+      configurationTree: { schemaVersion: 1 },
+      configurationVersion: 1,
+      images: [],
+      options: []
+    };
+    const prisma = {
+      product: {
+        findFirst: vi.fn().mockResolvedValue(configured),
+        update: vi.fn()
+      }
+    };
+
+    await expect(createService(prisma).update("restaurant-1", "configured", {
+      name: "Configured",
+      basePrice: 11
+    })).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.product.update).not.toHaveBeenCalled();
   });
 });

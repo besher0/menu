@@ -161,7 +161,14 @@ describe("product configuration persistence preparation", () => {
       productId: "owner",
       expectedVersion: 0,
       configuration: linked
-    })).rejects.toThrow("require a saved configuration");
+    })).rejects.toMatchObject({
+      code: "ORIGINAL_LINKED_SOURCE_REQUIRES_NETWORK_CONFIGURATION",
+      details: {
+        sourceProductIds: ["source"],
+        allowedWithoutSourceConversion: ["CUSTOM"],
+        requiresExplicitSourceConfigurationForOriginal: true
+      }
+    });
     expect(unconfigured.transaction.product.updateMany).not.toHaveBeenCalled();
   });
 
