@@ -186,7 +186,7 @@ export class ProductsImportService {
         "",
         product.name,
         product.category?.name ?? "",
-        Number(product.basePrice),
+        product.basePrice?.toString() ?? "",
         product.description ?? "",
         product.isPopular ? "true" : "false",
         product.isNew ? "true" : "false",

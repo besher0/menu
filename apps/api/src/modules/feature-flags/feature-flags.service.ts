@@ -31,6 +31,27 @@ export class FeatureFlagsService {
     }
   }
 
+  /**
+   * Product Configuration is an assigned package capability, not a billing-cycle switch.
+   * The current schema stores the assigned plan on RestaurantSubscription, so this lookup
+   * intentionally ignores subscription status while still requiring an enabled plan feature.
+   */
+  async canUseAssignedFeature(restaurantId: string, key: FeatureKey): Promise<boolean> {
+    const feature = await this.getAssignedFeature(restaurantId, key);
+    return Boolean(feature?.enabled);
+  }
+
+  async assertAssignedFeature(restaurantId: string, key: FeatureKey): Promise<void> {
+    if (!(await this.canUseAssignedFeature(restaurantId, key))) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "FEATURE_LOCKED",
+        message: "This capability is not assigned to the current restaurant package",
+        featureKey: key
+      });
+    }
+  }
+
   async listFeatures(restaurantId: string) {
     const subscription = await this.prisma.restaurantSubscription.findUnique({
       where: { restaurantId },
@@ -73,5 +94,22 @@ export class FeatureFlagsService {
     }
 
     return subscription.plan.features[0] ?? null;
+  }
+
+  private async getAssignedFeature(restaurantId: string, key: FeatureKey) {
+    const subscription = await this.prisma.restaurantSubscription.findUnique({
+      where: { restaurantId },
+      include: {
+        plan: {
+          include: {
+            features: {
+              where: { key }
+            }
+          }
+        }
+      }
+    });
+
+    return subscription?.plan.features[0] ?? null;
   }
 }

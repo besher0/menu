@@ -26,9 +26,10 @@ export class CreateProductDto {
   @IsString()
   description?: string;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  basePrice: number;
+  basePrice?: number;
 
   @IsOptional()
   @IsString()

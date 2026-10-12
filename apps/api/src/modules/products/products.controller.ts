@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Inject, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Inject, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { roleHasPermission } from "@menu/shared";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { AppRequest } from "../../common/app-request";
@@ -9,9 +10,11 @@ import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsQueryDto } from "./dto/list-products-query.dto";
 import { ReorderProductsDto } from "./dto/reorder-products.dto";
 import { UpdateProductPriceDto } from "./dto/update-product-price.dto";
+import { UpdateProductConfigurationDto } from "./dto/update-product-configuration.dto";
 import { UpdateProductSortDto } from "./dto/update-product-sort.dto";
 import { ProductsImportService } from "./products-import.service";
 import { ProductsService } from "./products.service";
+import { ProductConfigurationService } from "./product-configuration.service";
 
 const excelUploadOptions = () => ({
   storage: memoryStorage(),
@@ -31,7 +34,8 @@ const excelUploadOptions = () => ({
 export class ProductsController {
   constructor(
     @Inject(ProductsService) private readonly productsService: ProductsService,
-    @Inject(ProductsImportService) private readonly productsImportService: ProductsImportService
+    @Inject(ProductsImportService) private readonly productsImportService: ProductsImportService,
+    @Inject(ProductConfigurationService) private readonly productConfigurationService: ProductConfigurationService
   ) {}
 
   @Get()
@@ -90,6 +94,21 @@ export class ProductsController {
     return this.productsService.findOne(request.restaurant!.id, id);
   }
 
+  @Get(":id/configuration")
+  configuration(@Req() request: AppRequest, @Param("id") id: string) {
+    return this.productConfigurationService.get(request.restaurant!.id, id);
+  }
+
+  @Put(":id/configuration")
+  saveConfiguration(
+    @Req() request: AppRequest,
+    @Param("id") id: string,
+    @Body() dto: UpdateProductConfigurationDto
+  ) {
+    this.assertCanManageConfiguration(request);
+    return this.productConfigurationService.save(request.restaurant!.id, id, dto);
+  }
+
   @Patch(":id")
   update(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: CreateProductDto) {
     return this.productsService.update(request.restaurant!.id, id, dto, request.user?.role === "SUPER_ADMIN");
@@ -118,6 +137,17 @@ export class ProductsController {
   private assertCanUseExcel(request: AppRequest) {
     if (request.user?.role !== "SUPER_ADMIN") {
       throw new ForbiddenException("Only admins can use product Excel import/export");
+    }
+  }
+
+  private assertCanManageConfiguration(request: AppRequest) {
+    const role = request.restaurant?.role;
+    if (!role || !roleHasPermission(role, "product.configuration.manage")) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "PRODUCT_CONFIGURATION_PERMISSION_DENIED",
+        message: "The current restaurant role cannot manage product configuration."
+      });
     }
   }
 }

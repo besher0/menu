@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { slugify } from "../../common/slugify";
@@ -73,6 +73,9 @@ export class ProductsService {
   }
 
   async create(restaurantId: string, dto: CreateProductDto, allowAdvancedMedia = false) {
+    if (dto.basePrice === undefined) {
+      throw new BadRequestException("Legacy product creation requires basePrice");
+    }
     const limit = await this.featureFlags.getFeatureLimit(restaurantId, "MAX_PRODUCTS");
     const currentCount = await this.prisma.product.count({
       where: { restaurantId, deletedAt: null }
@@ -341,6 +344,18 @@ export class ProductsService {
       throw new NotFoundException("Product not found");
     }
 
+    const isConfigured = existing.configurationTree !== null && existing.configurationVersion > 0;
+    if (isConfigured && dto.basePrice !== undefined) {
+      const submittedPrice = new Prisma.Decimal(dto.basePrice.toString());
+      if (existing.basePrice === null || !existing.basePrice.equals(submittedPrice)) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: "PRODUCT_CONFIGURATION_PRICE_MANAGED",
+          message: "Use the product configuration endpoint to change pricing for a network product."
+        });
+      }
+    }
+
     const productSlug = dto.slug ? await this.uniqueProductSlug(restaurantId, dto.slug, id) : existing.slug;
 
     const product = await this.prisma.product.update({
@@ -350,7 +365,7 @@ export class ProductsService {
         name: dto.name,
         slug: productSlug,
         description: dto.description,
-        basePrice: dto.basePrice,
+        basePrice: isConfigured ? undefined : dto.basePrice,
         currency: dto.currency ?? existing.currency,
         moodKey: this.serializeMoodKeyValue(this.normalizeMoodKeysInput(dto)),
         ingredients: dto.ingredients as Prisma.InputJsonValue | undefined,
@@ -388,19 +403,39 @@ export class ProductsService {
       throw new NotFoundException("Product not found");
     }
 
-    const updated = await this.prisma.product.update({
-      where: { id },
-      data: { isAvailable: !product.isAvailable },
-      include: {
-        category: true,
-        images: true,
-        media3d: true,
-        vrMedia: true,
-        options: { include: { options: true } }
-      }
-    });
+    if (!product.isAvailable && product.configurationTree !== null && product.configurationVersion > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "PRODUCT_CONFIGURATION_PUBLIC_INTEGRATION_PENDING",
+        message: "Configured products cannot be exposed through the legacy public ordering path before public integration."
+      });
+    }
 
-    return this.serializeProduct(updated);
+    if (!product.isAvailable) {
+      const enabled = await this.prisma.product.updateMany({
+        where: {
+          id,
+          restaurantId,
+          deletedAt: null,
+          configurationVersion: 0
+        },
+        data: { isAvailable: true }
+      });
+      if (enabled.count !== 1) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: "PRODUCT_CONFIGURATION_PUBLIC_INTEGRATION_PENDING",
+          message: "The product became configured while availability was changing; reload and retry."
+        });
+      }
+      return this.findOne(restaurantId, id);
+    }
+
+    await this.prisma.product.update({
+      where: { id },
+      data: { isAvailable: false }
+    });
+    return this.findOne(restaurantId, id);
   }
 
   async updateSortOrder(restaurantId: string, id: string, sortOrder: number) {
@@ -434,6 +469,14 @@ export class ProductsService {
 
     if (!product) {
       throw new NotFoundException("Product not found");
+    }
+
+    if (product.configurationTree !== null && product.configurationVersion > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "PRODUCT_CONFIGURATION_PRICE_MANAGED",
+        message: "Use the product configuration endpoint to change pricing for a network product."
+      });
     }
 
     const updated = await this.prisma.product.update({
@@ -475,22 +518,59 @@ export class ProductsService {
   }
 
   async delete(restaurantId: string, id: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { id, restaurantId, deletedAt: null }
-    });
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        const product = await transaction.product.findFirst({
+          where: { id, restaurantId, deletedAt: null }
+        });
 
-    if (!product) {
-      throw new NotFoundException("Product not found");
-    }
+        if (!product) {
+          throw new NotFoundException("Product not found");
+        }
 
-    await this.prisma.product.update({
-      where: { id },
-      data: {
-        isActive: false,
-        isAvailable: false,
-        deletedAt: new Date()
+        const dependents = await transaction.productConfigurationDependency.findMany({
+          where: { restaurantId, sourceProductId: id },
+          select: {
+            productId: true,
+            optionId: true,
+            path: true,
+            owner: { select: { name: true } }
+          },
+          orderBy: { productId: "asc" }
+        });
+        if (dependents.length) {
+          throw new ConflictException({
+            statusCode: 409,
+            error: "PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS",
+            message: "This product is used by another product configuration and cannot be removed.",
+            dependents: dependents.map((dependency) => ({
+              productId: dependency.productId,
+              productName: dependency.owner.name,
+              optionId: dependency.optionId,
+              path: dependency.path
+            }))
+          });
+        }
+
+        await transaction.product.update({
+          where: { id },
+          data: {
+            isActive: false,
+            isAvailable: false,
+            deletedAt: new Date()
+          }
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+        throw new ConflictException({
+          statusCode: 409,
+          error: "PRODUCT_CONFIGURATION_DELETE_CONFLICT",
+          message: "Product dependencies changed concurrently; reload and retry deletion."
+        });
       }
-    });
+      throw error;
+    }
 
     return { deleted: true };
   }
@@ -503,7 +583,10 @@ export class ProductsService {
       slug: product.slug,
       name: product.name,
       description: product.description,
-      basePrice: Number(product.basePrice),
+      basePrice: product.basePrice === null || product.basePrice === undefined ? null : Number(product.basePrice),
+      configurationMode:
+        product.configurationTree !== null && product.configurationVersion > 0 ? "NETWORK" : "LEGACY",
+      configurationVersion: product.configurationVersion ?? 0,
       currency: product.currency,
       isActive: product.isActive,
       isAvailable: product.isAvailable,

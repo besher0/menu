@@ -1,24 +1,35 @@
 import { randomUUID } from "node:crypto";
 import {
   collectDependencyEdges,
+  type FeatureKey,
   ProductConfigurationV1,
   validateConfiguration
 } from "@menu/shared";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 export class ProductConfigurationValidationError extends Error {
+  readonly kind = "PRODUCT_CONFIGURATION_VALIDATION" as const;
+
   constructor(readonly issues: ReturnType<typeof validateConfiguration>) {
     super("Product configuration validation failed");
   }
 }
 
-export class ProductConfigurationConflictError extends Error {}
+export class ProductConfigurationConflictError extends Error {
+  readonly kind = "PRODUCT_CONFIGURATION_CONFLICT" as const;
+}
+
+export class ProductConfigurationCapabilityError extends Error {
+  readonly kind = "PRODUCT_CONFIGURATION_CAPABILITY_DENIED" as const;
+}
 
 export type PersistProductConfigurationInput = {
   restaurantId: string;
   productId: string;
   expectedVersion: number;
   configuration: ProductConfigurationV1;
+  disablePublicOrdering?: boolean;
+  requiredCapabilityKey?: FeatureKey;
 };
 
 type DependencyPair = {
@@ -71,8 +82,8 @@ export async function persistProductConfiguration(
   if (input.configuration.productId !== input.productId) {
     throw new ProductConfigurationConflictError("Configuration productId does not match the target product");
   }
-  if (input.configuration.revision <= input.expectedVersion) {
-    throw new ProductConfigurationConflictError("Configuration revision must advance beyond expectedVersion");
+  if (input.configuration.revision !== input.expectedVersion + 1) {
+    throw new ProductConfigurationConflictError("Configuration revision must equal expectedVersion + 1");
   }
 
   const issues = validateConfiguration(input.configuration);
@@ -83,6 +94,26 @@ export async function persistProductConfiguration(
   const uniqueSourceIds = [...new Set(edges.map((edge) => edge.sourceProductId))];
 
   return prisma.$transaction(async (transaction) => {
+    if (input.requiredCapabilityKey) {
+      const subscription = await transaction.restaurantSubscription.findUnique({
+        where: { restaurantId: input.restaurantId },
+        include: {
+          plan: {
+            include: {
+              features: {
+                where: { key: input.requiredCapabilityKey }
+              }
+            }
+          }
+        }
+      });
+      if (!subscription?.plan.features[0]?.enabled) {
+        throw new ProductConfigurationCapabilityError(
+          "Product Configuration capability is no longer assigned to this restaurant"
+        );
+      }
+    }
+
     const owner = await transaction.product.findFirst({
       where: {
         id: input.productId,
@@ -105,13 +136,26 @@ export async function persistProductConfiguration(
           id: { in: uniqueSourceIds },
           deletedAt: null
         },
-        select: { id: true }
+        select: { id: true, configurationTree: true, configurationVersion: true }
       });
       const found = new Set(sources.map((source) => source.id));
       const missing = uniqueSourceIds.filter((sourceId) => !found.has(sourceId));
       if (missing.length) {
         throw new ProductConfigurationConflictError(
           `Linked products are missing or outside the restaurant: ${missing.join(", ")}`
+        );
+      }
+
+      const originalSourceIds = new Set(
+        edges.filter((edge) => edge.mode === "ORIGINAL").map((edge) => edge.sourceProductId)
+      );
+      const unconfiguredOriginalSources = sources
+        .filter((source) => originalSourceIds.has(source.id))
+        .filter((source) => source.configurationTree === null || source.configurationVersion < 1)
+        .map((source) => source.id);
+      if (unconfiguredOriginalSources.length) {
+        throw new ProductConfigurationConflictError(
+          `ORIGINAL linked products require a saved configuration: ${unconfiguredOriginalSources.join(", ")}`
         );
       }
     }
@@ -144,7 +188,8 @@ export async function persistProductConfiguration(
             ? null
             : new Prisma.Decimal(input.configuration.basePrice),
         configurationTree,
-        configurationVersion: input.configuration.revision
+        configurationVersion: input.configuration.revision,
+        ...(input.disablePublicOrdering ? { isAvailable: false } : {})
       }
     });
     if (updated.count !== 1) {

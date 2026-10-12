@@ -385,7 +385,10 @@ export class DashboardService {
   async deleteCategory(restaurantId: string, id: string) {
     const category = await this.prisma.category.findFirst({
       where: { id, restaurantId, deletedAt: null },
-      include: { _count: { select: { products: true } } }
+      include: {
+        products: { select: { id: true } },
+        _count: { select: { products: true } }
+      }
     });
 
     if (!category) {
@@ -394,6 +397,29 @@ export class DashboardService {
 
     if (category.slug === "all") {
       throw new BadRequestException("قسم الكل أساسي ولا يمكن حذفه.");
+    }
+
+    const categoryProductIds = category.products.map((product) => product.id);
+    if (categoryProductIds.length) {
+      const linkedDependents = await this.prisma.productConfigurationDependency.findMany({
+        where: {
+          restaurantId,
+          sourceProductId: { in: categoryProductIds }
+        },
+        select: {
+          sourceProductId: true,
+          productId: true,
+          owner: { select: { name: true } }
+        }
+      });
+      if (linkedDependents.length) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: "CATEGORY_PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS",
+          message: "The category contains products used by other product configurations.",
+          dependents: linkedDependents
+        });
+      }
     }
 
     if (category._count.products > 0) {

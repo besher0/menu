@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { DashboardService } from "./dashboard.service";
 
@@ -97,5 +98,32 @@ describe("DashboardService settings persistence", () => {
       phone: "456",
       splashScreen
     });
+  });
+});
+
+describe("DashboardService linked-product category protection", () => {
+  it("blocks category deletion when one of its products is a linked source", async () => {
+    const prisma = {
+      category: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "category-1",
+          slug: "pizza",
+          products: [{ id: "source-product" }],
+          _count: { products: 1 }
+        }),
+        update: vi.fn()
+      },
+      productConfigurationDependency: {
+        findMany: vi.fn().mockResolvedValue([{
+          sourceProductId: "source-product",
+          productId: "combo-product",
+          owner: { name: "Combo" }
+        }])
+      }
+    };
+
+    await expect(createService(prisma).deleteCategory("restaurant-1", "category-1"))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.category.update).not.toHaveBeenCalled();
   });
 });

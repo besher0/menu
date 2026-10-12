@@ -11,6 +11,7 @@ export const ROLE_PERMISSIONS: Record<RestaurantRole, string[]> = {
     "branch.update",
     "product.create",
     "product.update",
+    "product.configuration.manage",
     "theme.update",
     "menu.publish",
     "analytics.view",
@@ -23,11 +24,12 @@ export const ROLE_PERMISSIONS: Record<RestaurantRole, string[]> = {
     "branch.update",
     "product.create",
     "product.update",
+    "product.configuration.manage",
     "theme.update",
     "menu.publish",
     "analytics.view"
   ],
-  EDITOR: ["product.create", "product.update", "theme.update", "menu.publish"],
+  EDITOR: ["product.create", "product.update", "product.configuration.manage", "theme.update", "menu.publish"],
   EMPLOYEE: ["product.update"]
 };
 

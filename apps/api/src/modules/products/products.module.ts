@@ -4,11 +4,12 @@ import { MediaModule } from "../media/media.module";
 import { ProductsController } from "./products.controller";
 import { ProductsImportService } from "./products-import.service";
 import { ProductsService } from "./products.service";
+import { ProductConfigurationService } from "./product-configuration.service";
 
 @Module({
   imports: [FeatureFlagsModule, MediaModule],
   controllers: [ProductsController],
-  providers: [ProductsService, ProductsImportService],
+  providers: [ProductsService, ProductsImportService, ProductConfigurationService],
   exports: [ProductsService]
 })
 export class ProductsModule {}
