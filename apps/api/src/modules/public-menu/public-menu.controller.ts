@@ -25,6 +25,15 @@ export class PublicMenuController {
     return this.publicMenuService.products(restaurantSlug);
   }
 
+  @Get(":restaurantSlug/products/:productId/configuration")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+  productConfiguration(
+    @Param("restaurantSlug") restaurantSlug: string,
+    @Param("productId") productId: string
+  ) {
+    return this.publicMenuService.productConfiguration(restaurantSlug, productId);
+  }
+
   @Get(":restaurantSlug/theme")
   @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
   theme(@Param("restaurantSlug") restaurantSlug: string) {

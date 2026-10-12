@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-12
 
-Current state: **Stage 4.1 Dashboard Functional Verification is complete. The real Dashboard/API were exercised against isolated PostgreSQL, the skipped API suite now passes 79/79, one Combo Demo source-selection defect was fixed, and the Stage 4.1 report/handoff are saved under the commit titled `test(web): verify Stage 4 dashboard editor`. Stop until the user explicitly approves Stage 5.**
+Current state: **Stage 5 Public Product Configurator is complete in source and verified on isolated PostgreSQL. The public Network configurator is preview-only; Network products remain blocked from legacy Cart/WhatsApp ordering. Tests pass 128/128 with no skips. Read `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md` before any further work. Stage 6 requires a new explicit approval.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -23,6 +23,7 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - The commit titled `docs: update Codex handoff after Stage 3.1` contains this handoff revision.
 - Stage 4 implementation/report/handoff commit: `feat(web): add Stage 4 product configuration editor` (use `git log -1 --oneline` for its hash).
 - Stage 4.1 verification/fix/report/handoff commit: `test(web): verify Stage 4 dashboard editor` (use `git log -1 --oneline` for its hash after completion).
+- Stage 5 implementation/report/handoff commit: `feat(public): add Stage 5 preview-only product configurator` (use `git log -1 --oneline` for its final hash).
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -218,6 +219,19 @@ Fixed one Stage 4 defect:
 
 Stage 4.1 changed only Dashboard demo selection/tests and documentation. It did not change Backend, Prisma, migrations, Public Menu, Cart, Checkout, deployment, Production data, package billing, or Business/Outlet architecture.
 
+### Stage 5 - Public Product Configurator
+
+Completed in source. Full details: `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`.
+
+- Added a public, tenant-scoped, read-only configuration API at `GET /public/menus/:restaurantSlug/products/:productId/configuration`.
+- Public listing includes valid Network cards with decimal-string minimum price and `STARTING_AT`/`UNAVAILABLE` state only when `PRODUCT_CONFIGURATION` is assigned. The full response explicitly says `previewOnly: true` and `orderAction: STAGE_6_REQUIRED`.
+- Public React configurator uses the existing Shared selection, validation, minimum-price, and pricing logic. It supports full Size prices, nested groups, quantities, Included Quantity, size overrides, ORIGINAL/CUSTOM, and stable independent repeated Linked Product selections.
+- Saved preview selections live in `sessionStorage` keyed by restaurant, product, and configuration revision. No server-side order is created.
+- Network products remain excluded from the legacy WhatsApp order query and from Public Menu cart controls. A Legacy product with `basePrice=null` is also blocked from the legacy order path; an explicit zero price remains valid.
+- Added a guarded, idempotent development fixture command (`seed:stage5-public-demo`) for newly prepared local disposable Stage 2C databases only. It creates Pizza, Combo, Included Quantity, and a Legacy CUSTOM source under `stage5-demo`.
+- Browser verification covered Pizza, Combo, repeated ORIGINAL units, CUSTOM, RTL, mobile 390×844, and Legacy compatibility. The single-choice replacement defect found in that run was fixed.
+- No Prisma schema/migration, real database, Dashboard, Cart, Checkout, Billing, or deployment change occurred.
+
 ## 4. Current architectural decisions
 
 ### Canonical model
@@ -409,7 +423,35 @@ Error codes include:
 - `apps/web/src/components/dashboard/product-form.tsx`
 - `apps/web/src/app/globals.css`
 
+### Stage 5 Public configurator
+
+- `apps/api/src/modules/public-menu/public-product-configuration.ts`
+- `apps/api/src/modules/public-menu/public-menu.controller.ts`
+- `apps/api/src/modules/public-menu/public-menu.service.ts`
+- `apps/api/prisma/seed-stage5-public-demo.ts`
+- `apps/web/src/components/public/product-configurator.tsx`
+- `apps/web/src/components/public/product-configurator-model.ts`
+- `apps/web/src/components/public/product-configurator.module.css`
+- `apps/web/src/components/public/public-menu-client.tsx`
+- `apps/web/src/lib/api.ts`
+- `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`
+
 ## 7. Final verified test state
+
+Stage 5 final run on a new PostgreSQL 16 disposable cluster, bound to `127.0.0.1:55440`:
+
+- Shared: 21/21 passed.
+- API Unit, disposable DB Integration, and HTTP: 85/85 passed in 16 files; 0 skipped.
+- Web Component/Model: 22/22 passed in 5 files.
+- Total executed: 128/128 passed; 0 skipped.
+- Root Typecheck and Root Build passed; Next.js generated 27/27 pages/routes.
+- Prisma Validate passed; Schema Diff against disposable Stage 2C schema reported no difference.
+- Guarded Demo seed ran twice without duplicate records and exposed three Network examples plus a Legacy source in disposable DB only.
+- Browser verification passed for Pizza and Combo, pricing changes, stable repeated ORIGINAL units, CUSTOM, Legacy, RTL, and mobile without horizontal overflow. Screenshots were displayed in the Codex session but were not exported to files.
+- No CLI Browser E2E runner is installed; browser work was interactive. The reproducible automated coverage is Shared, Web, API, HTTP, and disposable DB integration.
+- Next.js, NestJS, and PostgreSQL were stopped; no listeners remained on ports 3000, 5000, or 55440. The disposable test cluster directory `../work/stage5-postgres-data` remains outside Git because workspace policy rejected its recursive removal. It contains only test fixtures; do not treat it as a real OrderSawa database.
+
+The older Stage 3/4 verification history below is retained for provenance.
 
 All final runs used the repository source and a workspace-local TEMP directory because the Windows sandbox denies Vitest access to the normal user Temp path.
 
@@ -464,7 +506,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 1. **Migration history is still unaudited on any real OrderSawa database.** Do not deploy the Stage 2C migration until the read-only history audit is separately approved and completed.
 2. **No initial migration exists in the repository.** Follow the Stage 2C runbook; never rewrite or guess production history.
 3. **Backfill rollout safety is now enforced at legacy public boundaries:** converted products are excluded by tree/version markers without mutating `isAvailable`. Backfill still must not run on real data without separate approval, dry-run review, checkpoint/quarantine planning, and migration-history audit.
-4. **Public integration is not implemented.** Network Products are intentionally excluded from legacy listing and WhatsApp ordering until the approved configurator exists.
+4. **Public preview is implemented, ordering is not.** Network Products appear in Public Menu only when assigned the capability, but cannot enter legacy Cart/WhatsApp. Stage 6 needs trusted Server Quote, Revalidation, Canonical Cart Identity, Trusted Checkout Pricing, and Immutable Order Snapshot.
 5. **Capability model is an adapter.** Package version/snapshot/exception/market semantics need a future schema decision.
 6. **Default package assignment is unresolved.** The capability exists but is not automatically mapped to BASIC/PRO/PREMIUM.
 7. **Currency rounding policy is unresolved.** Keep decimal strings/`DECIMAL(24,6)`; do not introduce ad hoc rounding.
@@ -472,6 +514,8 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 9. **Legacy ORIGINAL prerequisite:** ORIGINAL cannot resolve a Legacy source that has no canonical Network tree. Use explicit CUSTOM snapshot or explicitly configure the source first; never auto-convert it.
 10. **Business/Outlet differential architecture is not implemented.** Do not hard-code assumptions that make it impossible, but do not build it without approval.
 11. **Test-source TypeScript cleanup:** the Product Import Buffer typing issue noted in section 7 is unrelated and deferred to a separate maintenance task.
+12. **Runtime context:** Public API currently resolves at Restaurant scope; Outlet Differential, Service Mode, and Product Scheduling remain unimplemented and explicitly marked false in its response.
+13. **Browser automation:** Stage 5 was verified interactively; no Playwright/Puppeteer runner is installed for repeatable CLI Browser E2E.
 
 ## 9. Mandatory database safety rules
 
@@ -488,9 +532,9 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 1. Read this file fully.
 2. Read the authoritative source files listed in section 2 fully.
 3. Verify branch, status, and commits.
-4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, and Stage 4 files actually exist.
+4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, Stage 4, Stage 4.1, and Stage 5 files actually exist.
 5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
-6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md` before considering Stage 5.
+6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md` and `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md` before considering Stage 6.
 7. Re-run the baseline tests before a new stage if practical.
 8. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 9. Ask for explicit approval if the requested work would change an unresolved decision above.
@@ -515,8 +559,6 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-The next proposed stage is **Stage 5 - Public Product Configurator and ordering-path integration**, only after explicit user approval and a fresh review of its exact authorized scope.
+The next proposed stage is **Stage 6 - trusted ordering integration**, only after a new explicit approval and review of its exact authorized scope. It should address Server Quote, Revalidation, Canonical Cart Identity, Trusted Checkout Pricing, and Immutable Order Snapshot. Do not infer implementation details or a currency rounding policy from this handoff alone.
 
-Likely Stage 5 concerns include public rendering, selection persistence into Cart/Checkout, order snapshots, and safe rollout of Network Products. Do not infer or implement those details from this handoff alone; re-read the authoritative workflow and the user's new approval.
-
-Do not begin Stage 5, deployment, or any real migration automatically. Do not expose Network Products through the Legacy ordering path. Stop and wait for explicit approval.
+Do not begin Stage 6, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.

@@ -4,16 +4,37 @@ import { Prisma } from "@prisma/client";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
+import {
+  resolvePublicProductConfiguration,
+  type PublicConfigurationProductRecord,
+  type PublicProductConfigurationResponse
+} from "./public-product-configuration";
 
 // Network activation must not overwrite the merchant-controlled availability flag.
-// Until the public configurator exists, legacy listing and ordering require both
-// legacy persistence markers so backfilled/configured products cannot leak through.
+// The legacy order path requires both legacy persistence markers; the Network
+// configurator is preview-only until trusted ordering is implemented in Stage 6.
 const LEGACY_PUBLIC_PRODUCT_FILTER = {
   isActive: true,
   isAvailable: true,
   configurationVersion: 0,
   configurationTree: { equals: Prisma.DbNull },
   deletedAt: null
+} satisfies Prisma.ProductWhereInput;
+
+const PUBLIC_PRODUCT_CANDIDATE_FILTER = {
+  isActive: true,
+  isAvailable: true,
+  deletedAt: null,
+  OR: [
+    {
+      configurationVersion: 0,
+      configurationTree: { equals: Prisma.DbNull }
+    },
+    {
+      configurationVersion: { gt: 0 },
+      configurationTree: { not: Prisma.DbNull }
+    }
+  ]
 } satisfies Prisma.ProductWhereInput;
 
 @Injectable()
@@ -38,8 +59,9 @@ export class PublicMenuService {
       });
     }
 
-    const [features, menus] = await Promise.all([
+    const [features, configurationCapabilityEnabled, menus] = await Promise.all([
       this.featureFlags.listFeatures(restaurant.id),
+      this.featureFlags.canUseAssignedFeature(restaurant.id, "PRODUCT_CONFIGURATION"),
       this.prisma.menu.findMany({
         where: { restaurantId: restaurant.id, status: "PUBLISHED" },
         include: {
@@ -56,6 +78,14 @@ export class PublicMenuService {
         orderBy: { createdAt: "asc" }
       })
     ]);
+
+    const products = await this.serializeProducts(
+      restaurant.id,
+      restaurant.products,
+      features,
+      restaurant.currency,
+      configurationCapabilityEnabled
+    );
 
     return {
       restaurant: this.serializeRestaurant(restaurant),
@@ -76,7 +106,7 @@ export class PublicMenuService {
         visualScrollEnabled: category.visualScrollEnabled,
         productsCount: category._count.products
       })),
-      products: restaurant.products.map((product) => this.serializeProduct(product, features, restaurant.currency)),
+      products,
       theme: this.serializePublicThemeSettings(restaurant.themeSettings?.settings, features),
       menus: this.serializeMenus(menus)
     };
@@ -106,8 +136,46 @@ export class PublicMenuService {
 
   async products(restaurantSlug: string) {
     const restaurant = await this.findPublicRestaurant(restaurantSlug);
-    const features = await this.featureFlags.listFeatures(restaurant.id);
-    return restaurant.products.map((product) => this.serializeProduct(product, features, restaurant.currency));
+    const [features, configurationCapabilityEnabled] = await Promise.all([
+      this.featureFlags.listFeatures(restaurant.id),
+      this.featureFlags.canUseAssignedFeature(restaurant.id, "PRODUCT_CONFIGURATION")
+    ]);
+    return this.serializeProducts(
+      restaurant.id,
+      restaurant.products,
+      features,
+      restaurant.currency,
+      configurationCapabilityEnabled
+    );
+  }
+
+  async productConfiguration(restaurantSlug: string, productId: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
+      select: { id: true }
+    });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+
+    const capabilityEnabled = await this.featureFlags.canUseAssignedFeature(
+      restaurant.id,
+      "PRODUCT_CONFIGURATION"
+    );
+    if (!capabilityEnabled) throw new NotFoundException("Product configuration is unavailable");
+
+    const catalogProducts = await this.configurationCatalogProducts(restaurant.id);
+    const owner = catalogProducts.find((product) => product.id === productId || product.slug === productId);
+    if (!owner || !owner.isActive || !owner.isAvailable || owner.deletedAt !== null) {
+      throw new NotFoundException("Product configuration is unavailable");
+    }
+
+    const resolved = resolvePublicProductConfiguration({
+      restaurantId: restaurant.id,
+      owner,
+      catalogProducts,
+      capabilityEnabled
+    });
+    if (!resolved) throw new NotFoundException("Product configuration is unavailable");
+    return resolved;
   }
 
   async theme(restaurantSlug: string) {
@@ -190,6 +258,9 @@ export class PublicMenuService {
 
     if (products.length !== productSlugs.length) {
       throw new BadRequestException("One or more products are unavailable");
+    }
+    if (products.some((product) => product.basePrice === null)) {
+      throw new BadRequestException("One or more products do not have a legacy price");
     }
 
     const items = dto.items.map((item) => {
@@ -312,7 +383,7 @@ export class PublicMenuService {
           orderBy: { sortOrder: "asc" }
         },
         products: {
-          where: LEGACY_PUBLIC_PRODUCT_FILTER,
+          where: PUBLIC_PRODUCT_CANDIDATE_FILTER,
           include: {
             category: true,
             images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
@@ -401,7 +472,7 @@ export class PublicMenuService {
       slug: product.slug,
       name: product.name,
       description: product.description,
-      basePrice: Number(product.basePrice),
+      basePrice: product.basePrice === null ? null : Number(product.basePrice),
       currency,
       sortOrder: product.sortOrder,
       isFeatured: product.isFeatured,
@@ -430,6 +501,73 @@ export class PublicMenuService {
         vrUrl: canUseVr && product.vrMedia?.isActive ? this.publicAssetUrl(product.vrMedia.panoramaUrl) : null
       }
     };
+  }
+
+  private async serializeProducts(
+    restaurantId: string,
+    products: any[],
+    features: Array<{ key: string; enabled: boolean }>,
+    currency: string,
+    capabilityEnabled: boolean
+  ) {
+    const hasNetworkCandidates = products.some(
+      (product) => product.configurationVersion > 0 && product.configurationTree !== null
+    );
+    const catalogProducts = capabilityEnabled && hasNetworkCandidates
+      ? await this.configurationCatalogProducts(restaurantId)
+      : [];
+
+    return products.flatMap((product) => {
+      const legacy = product.configurationVersion === 0 && product.configurationTree === null;
+      if (legacy) return [this.serializeProduct(product, features, currency)];
+      if (!capabilityEnabled) return [];
+
+      const owner = catalogProducts.find((candidate) => candidate.id === product.id);
+      if (!owner) return [];
+      const configuration = resolvePublicProductConfiguration({
+        restaurantId,
+        owner,
+        catalogProducts,
+        capabilityEnabled
+      });
+      if (!configuration) return [];
+
+      return [{
+        ...this.serializeProduct(product, features, currency),
+        basePrice: null,
+        price: configuration.minimumPrice,
+        productConfiguration: this.configurationSummary(configuration)
+      }];
+    });
+  }
+
+  private configurationSummary(configuration: PublicProductConfigurationResponse) {
+    return {
+      mode: "NETWORK" as const,
+      configurationRevision: configuration.configurationRevision,
+      orderable: configuration.orderable,
+      previewOnly: true as const,
+      minimumPrice: configuration.minimumPrice,
+      priceDisplay: configuration.priceDisplay,
+      issueCodes: configuration.issues.map((issue) => issue.code)
+    };
+  }
+
+  private async configurationCatalogProducts(restaurantId: string): Promise<PublicConfigurationProductRecord[]> {
+    return this.prisma.product.findMany({
+      where: { restaurantId },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        basePrice: true,
+        configurationTree: true,
+        configurationVersion: true,
+        isActive: true,
+        isAvailable: true,
+        deletedAt: true
+      }
+    });
   }
 
   private parseStoredMoodKeys(value?: string | null) {

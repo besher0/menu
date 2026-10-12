@@ -20,6 +20,7 @@ import { DashboardService } from "../dashboard/dashboard.service";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicMenuService } from "../public-menu/public-menu.service";
+import { PublicMenuController } from "../public-menu/public-menu.controller";
 import { ProductConfigurationService } from "./product-configuration.service";
 import { ProductsController } from "./products.controller";
 import { ProductsImportService } from "./products-import.service";
@@ -109,6 +110,9 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
 
   beforeAll(async () => {
     await prisma.$connect();
+    await prisma.orderItem.deleteMany();
+    await prisma.order.deleteMany();
+    await prisma.analyticsEvent.deleteMany();
     await prisma.productConfigurationDependency.deleteMany();
     await prisma.product.deleteMany();
     await prisma.category.deleteMany();
@@ -163,7 +167,8 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       "cycle-c",
       "owner-cycle",
       "owner-http",
-      "legacy-null-zero"
+      "legacy-null-zero",
+      "legacy-null-price"
     ];
     await prisma.product.createMany({
       data: productIds.map((id) => ({
@@ -171,7 +176,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         restaurantId: "stage3-r1",
         name: id,
         slug: id,
-        basePrice: id === "legacy-null-zero" ? "0.000000" : "7.000000",
+        basePrice: id === "legacy-null-zero" ? "0.000000" : id === "legacy-null-price" ? null : "7.000000",
         currency: "EGP"
       }))
     });
@@ -230,12 +235,13 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
 
     @Module({
       imports: [JwtModule.register({ secret: randomBytes(32).toString("hex") })],
-      controllers: [ProductsController],
+      controllers: [ProductsController, PublicMenuController],
       providers: [
         JwtAuthGuard,
         RestaurantContextGuard,
         FeatureFlagsService,
         ProductConfigurationService,
+        { provide: PublicMenuService, useValue: publicMenuService },
         { provide: PrismaService, useValue: prisma },
         { provide: ProductsService, useValue: productsService },
         { provide: ProductsImportService, useValue: {} }
@@ -406,6 +412,11 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       configuration: linkedConfiguration("owner-atomic", "source-original", 3)
     })).rejects.toBeInstanceOf(ForbiddenException);
     expect((await prisma.product.findUniqueOrThrow({ where: { id: "owner-atomic" } })).configurationVersion).toBe(2);
+    expect(await publicMenuService.products("stage3-r1")).not.toContainEqual(
+      expect.objectContaining({ id: "owner-atomic" })
+    );
+    await expect(publicMenuService.productConfiguration("stage3-r1", "owner-atomic"))
+      .rejects.toBeInstanceOf(NotFoundException);
     await prisma.subscriptionFeature.update({ where: { id: "stage3-feature" }, data: { enabled: true } });
   });
 
@@ -428,17 +439,56 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     expect((await prisma.category.findUniqueOrThrow({ where: { id: category.id } })).deletedAt).toBeNull();
   });
 
-  it("keeps network products out of legacy public listing and ordering without changing isAvailable", async () => {
+  it("publishes network products as preview-only while keeping legacy ordering blocked", async () => {
     const configured = await prisma.product.findUniqueOrThrow({ where: { id: "owner-atomic" } });
     expect(configured.isAvailable).toBe(true);
 
     const publicProducts = await publicMenuService.products("stage3-r1");
-    expect(publicProducts.map((product) => product.id)).not.toContain("owner-atomic");
+    expect(publicProducts).toContainEqual(expect.objectContaining({
+      id: "owner-atomic",
+      productConfiguration: expect.objectContaining({ mode: "NETWORK", previewOnly: true })
+    }));
+    expect(publicProducts).toContainEqual(expect.objectContaining({
+      id: "legacy-null-zero",
+      basePrice: 0
+    }));
+    expect(publicProducts).toContainEqual(expect.objectContaining({
+      id: "legacy-null-price",
+      basePrice: null
+    }));
+    const configuration = await publicMenuService.productConfiguration("stage3-r1", "owner-atomic");
+    expect(configuration).toMatchObject({
+      productId: "owner-atomic",
+      previewOnly: true,
+      orderAction: "STAGE_6_REQUIRED"
+    });
     await expect(publicMenuService.createWhatsappOrder("stage3-r1", {
       items: [{ productSlug: "owner-atomic", quantity: 1 }]
     })).rejects.toBeInstanceOf(BadRequestException);
+    const legacyOrder = await publicMenuService.createWhatsappOrder("stage3-r1", {
+      items: [{ productSlug: "legacy-null-zero", quantity: 1 }]
+    });
+    expect(legacyOrder.orderId).toBeTruthy();
+    await expect(publicMenuService.createWhatsappOrder("stage3-r1", {
+      items: [{ productSlug: "legacy-null-price", quantity: 1 }]
+    })).rejects.toBeInstanceOf(BadRequestException);
 
     expect((await prisma.product.findUniqueOrThrow({ where: { id: "owner-atomic" } })).isAvailable).toBe(true);
+  });
+
+  it("serves the public configuration over HTTP without cross-tenant fallback", async () => {
+    const response = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/owner-atomic/configuration`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      data: {
+        productId: "owner-atomic",
+        previewOnly: true,
+        runtimeContext: { scope: "RESTAURANT", outletDifferentialApplied: false }
+      }
+    });
+
+    const crossTenant = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/foreign-source/configuration`);
+    expect(crossTenant.status).toBe(404);
   });
 
   it("enforces authentication and configuration authorization over real HTTP", async () => {

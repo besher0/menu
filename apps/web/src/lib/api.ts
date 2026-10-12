@@ -1,4 +1,10 @@
-import { ABO_MALEK_THEME, themeToCssVariables, ThemeSettings } from "@menu/shared";
+import {
+  ABO_MALEK_THEME,
+  themeToCssVariables,
+  type ConfigurationIssue,
+  type ProductConfigurationV1,
+  type ThemeSettings
+} from "@menu/shared";
 
 export type PublicCategory = {
   id?: string;
@@ -38,8 +44,8 @@ export type PublicProduct = {
   slug: string;
   name: string;
   description?: string | null;
-  basePrice: number;
-  price?: number;
+  basePrice: number | null;
+  price?: number | string | null;
   currency: string;
   imageUrl?: string | null;
   images?: Array<{ url: string; altText?: string | null }>;
@@ -69,6 +75,48 @@ export type PublicProduct = {
     vrType?: string | null;
     has3d?: boolean;
     hasVr?: boolean;
+  };
+  productConfiguration?: {
+    mode: "NETWORK";
+    configurationRevision: number;
+    orderable: boolean;
+    previewOnly: true;
+    minimumPrice: string | null;
+    priceDisplay: "EXACT" | "STARTING_AT" | "UNAVAILABLE";
+    issueCodes: string[];
+  };
+};
+
+export type PublicLinkedConfigurationSource = {
+  productId: string;
+  slug: string;
+  name: string;
+  mode: "NETWORK" | "LEGACY";
+  available: boolean;
+  orderable: boolean;
+  configuration: ProductConfigurationV1;
+};
+
+export type PublicProductConfigurationResponse = {
+  schemaVersion: 1;
+  productId: string;
+  productSlug: string;
+  productName: string;
+  configurationRevision: number;
+  configuration: ProductConfigurationV1;
+  linkedProducts: PublicLinkedConfigurationSource[];
+  orderable: boolean;
+  previewOnly: true;
+  orderAction: "STAGE_6_REQUIRED";
+  minimumPrice: string | null;
+  maximumRequiredPrice: string | null;
+  priceDisplay: "EXACT" | "STARTING_AT" | "UNAVAILABLE";
+  issues: ConfigurationIssue[];
+  runtimeContext: {
+    scope: "RESTAURANT";
+    outletDifferentialApplied: false;
+    serviceModeApplied: false;
+    productScheduleApplied: false;
   };
 };
 
@@ -209,6 +257,15 @@ async function apiGet<T>(path: string): Promise<T> {
 export async function getPublicMenu(slug: string, options: { track?: boolean } = {}): Promise<PublicMenuData> {
   const track = options.track === false ? "?track=0" : "";
   return apiGet<PublicMenuData>(`/public/menus/${slug}${track}`);
+}
+
+export async function getPublicProductConfiguration(
+  restaurantSlug: string,
+  productId: string
+): Promise<PublicProductConfigurationResponse> {
+  return apiGet<PublicProductConfigurationResponse>(
+    `/public/menus/${encodeURIComponent(restaurantSlug)}/products/${encodeURIComponent(productId)}/configuration`
+  );
 }
 
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {

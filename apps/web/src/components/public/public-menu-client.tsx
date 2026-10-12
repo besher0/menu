@@ -6,6 +6,7 @@ import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, 
 import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
+import { ProductConfigurator } from "./product-configurator";
 
 type CartItem = {
   slug: string;
@@ -233,6 +234,21 @@ function categoryChipStyle(category: PublicCategory): CategoryChipStyle {
 
 function productPrice(product: PublicProduct) {
   return product.price ?? product.basePrice;
+}
+
+function isNetworkProduct(product: PublicProduct) {
+  return product.productConfiguration?.mode === "NETWORK";
+}
+
+function legacyProductPrice(product: PublicProduct) {
+  const price = productPrice(product);
+  if (price === null) return null;
+  const parsed = typeof price === "number" ? price : Number(price);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasLegacyOrderPrice(product: PublicProduct) {
+  return !isNetworkProduct(product) && legacyProductPrice(product) !== null;
 }
 
 function moodMenuHref(restaurantSlug: string, key: string, useSubdomainRoutes = false) {
@@ -808,9 +824,11 @@ export function PublicMenuClient({
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function addToCart(product: PublicProduct) {
-    if (!whatsappOrderingEnabled) {
+    if (!whatsappOrderingEnabled || isNetworkProduct(product)) {
       return;
     }
+    const price = legacyProductPrice(product);
+    if (price === null) return;
 
     setCart((current) => {
       const existing = current.find((item) => item.slug === product.slug);
@@ -826,7 +844,7 @@ export function PublicMenuClient({
           slug: product.slug,
           name: product.name,
           quantity: 1,
-          price: productPrice(product),
+          price,
           currency: product.currency,
           imageUrl: productImage(product),
           description: product.description
@@ -836,9 +854,11 @@ export function PublicMenuClient({
   }
 
   function setProductQuantity(product: PublicProduct, quantity: number) {
-    if (!whatsappOrderingEnabled) {
+    if (!whatsappOrderingEnabled || isNetworkProduct(product)) {
       return;
     }
+    const price = legacyProductPrice(product);
+    if (price === null) return;
 
     setCart((current) => {
       const nextQuantity = Math.max(0, quantity);
@@ -854,7 +874,7 @@ export function PublicMenuClient({
             ? {
               ...item,
               quantity: nextQuantity,
-              price: productPrice(product),
+              price,
               currency: product.currency,
               imageUrl: productImage(product),
               description: product.description
@@ -869,7 +889,7 @@ export function PublicMenuClient({
           slug: product.slug,
           name: product.name,
           quantity: nextQuantity,
-          price: productPrice(product),
+          price,
           currency: product.currency,
           imageUrl: productImage(product),
           description: product.description
@@ -1519,7 +1539,7 @@ function VertigoFeaturedProducts({
             <div>
               <b>{product.name}</b>
               {product.description ? <p>{product.description}</p> : null}
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst /> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
             </div>
           </Link>
         ))}
@@ -2012,6 +2032,7 @@ function MenuView({
               price={productPrice(product)}
               currency={product.currency}
               priceFirst={productListLayout === "double"}
+              startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"}
             />
           ) : null}
         </div>
@@ -2023,7 +2044,7 @@ function MenuView({
         <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
           {productContent}
         </button>
-        {showRowQuantityControls ? (
+        {showRowQuantityControls && hasLegacyOrderPrice(product) ? (
           <QuantityControl
             className="menu-product-quantity"
             quantity={quantity}
@@ -2120,13 +2141,13 @@ function MenuView({
                 <div className="category-spotlight-copy">
                   <button type="button" className="category-spotlight-title-row" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                     <b>{spotlightProduct.name}</b>
-                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" priceFirst /> : null}
+                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" priceFirst startingAt={spotlightProduct.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
                   </button>
                   <div className="category-spotlight-detail-row">
                     <button type="button" className="category-spotlight-description-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                       {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
                     </button>
-                    {whatsappOrderingEnabled && !isVertigo ? (
+                    {whatsappOrderingEnabled && !isVertigo && hasLegacyOrderPrice(spotlightProduct) ? (
                       <QuantityControl
                         className="spotlight-quantity"
                         quantity={getCartQuantity(spotlightProduct.slug)}
@@ -2280,7 +2301,7 @@ function ProductQuickViewModal({
         <div className="product-quick-body">
           <div className="product-quick-title-row">
             <h2>{product.name}</h2>
-            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst /> : null}
+            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
           </div>
           <p>{product.description}</p>
         </div>
@@ -2293,15 +2314,21 @@ function ProductPrice({
   price,
   currency,
   className = "",
-  priceFirst = false
+  priceFirst = false,
+  startingAt = false
 }: {
-  price: number;
+  price: number | string | null;
   currency: string;
   className?: string;
   priceFirst?: boolean;
+  startingAt?: boolean;
 }) {
+  if (price === null) {
+    return <strong className={`product-price ${className}`.trim()}><span>غير متاح</span></strong>;
+  }
   return (
     <strong className={`product-price ${className}`.trim()}>
+      {startingAt ? <em>ابتداءً من</em> : null}
       {priceFirst ? (
         <>
           <span>{price}</span>
@@ -2875,9 +2902,17 @@ function ProductView({
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
-          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst /> : null}
+          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
         </div>
         <p className="product-description" title={product.description ?? undefined}>{product.description}</p>
+
+        {isNetworkProduct(product) && product.id ? (
+          <ProductConfigurator
+            restaurantSlug={data.restaurant.slug}
+            productId={product.id}
+            currency={product.currency}
+          />
+        ) : null}
 
         {ingredients.length ? (
           <>
@@ -2946,7 +2981,7 @@ function ProductView({
           />
         )}
       </section>
-      {whatsappOrderingEnabled && !isVertigo ? (
+      {whatsappOrderingEnabled && !isVertigo && hasLegacyOrderPrice(product) ? (
         <div className="product-bottom-cart">
           <QuantityControl
             quantity={quantity}
@@ -3004,7 +3039,7 @@ function VertigoRelatedProducts({
               {product.description ? (
                 <p className="vertigo-related-description" dir="auto">{product.description}</p>
               ) : null}
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" priceFirst /> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
             </div>
           </Link>
         ))}
@@ -3170,10 +3205,10 @@ function ProductRail({
               }}
             >
               <ProductImageMedia product={product} />
-        {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" priceFirst /> : null}
+        {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
         <b>{product.name}</b>
             </Link>
-            {onAddToCart ? (
+            {onAddToCart && hasLegacyOrderPrice(product) ? (
               <button type="button" onClick={() => onAddToCart(product)} aria-label={`${t.addToCart} ${product.name}`}>
                 <ShoppingCart size={14} />
               </button>

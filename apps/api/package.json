@@ -15,7 +15,8 @@
     "prisma:backfill-libraries": "tsx prisma/backfill-product-libraries.ts",
     "prisma:reset-user-password": "tsx prisma/reset-user-password.ts",
     "seed": "tsx prisma/seed.ts",
-    "seed:demo": "tsx prisma/seed.ts --demo"
+    "seed:demo": "tsx prisma/seed.ts --demo",
+    "seed:stage5-public-demo": "tsx prisma/seed-stage5-public-demo.ts"
   },
   "dependencies": {
     "@menu/shared": "0.1.0",

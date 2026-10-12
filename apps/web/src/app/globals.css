@@ -5847,6 +5847,13 @@ body:has(.public-page)::-webkit-scrollbar {
   font-weight: 800;
 }
 
+.product-price em {
+  color: inherit;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .rail-price {
   display: flex;
   justify-content: center;
