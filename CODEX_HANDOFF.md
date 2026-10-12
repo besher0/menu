@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-12
 
-Current state: **Stage 3 is complete, tested, and committed. Stop here until the user explicitly approves Stage 4.**
+Current state: **Stage 3.1 Backend Stabilization is complete, tested, and committed. Stop here until the user explicitly approves Stage 4.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -18,9 +18,11 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 2C implementation commit: `6d92288 feat(api): finalize Stage 2C migration preparation`.
 - Stage 2C handoff commit: `2c2f09d docs: add Stage 2C Codex handoff`.
 - Stage 3 implementation/report commit: `5fe7b82 feat(api): complete Stage 3 product configuration integration`.
-- The commit titled `docs: update Codex handoff after Stage 3` contains this handoff revision.
+- Stage 3 handoff commit: `542f6e4 docs: update Codex handoff after Stage 3`.
+- Stage 3.1 implementation/report commit: `2507720 fix(api): stabilize Stage 3 product configuration backend`.
+- The commit titled `docs: update Codex handoff after Stage 3.1` contains this handoff revision.
 
-At the end of Stage 3, the expected state is a clean working tree on the branch above. Verify with:
+At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
 ```powershell
 git branch --show-current
@@ -142,9 +144,30 @@ Implemented:
 - Structural management permission.
 - Soft/hard delete dependency protection and category dependency review.
 - Legacy serialization/import/export/quick-price compatibility fixes.
-- Public rollout safety without editing Public Menu: saving a Network product atomically sets `isAvailable=false`, and the legacy availability endpoint cannot re-enable it before public integration.
+- Stage 3 originally used `isAvailable=false` as temporary public-rollout protection; Stage 3.1 replaced that coupling with structural Legacy filters at the public boundaries.
 
 No Dashboard UI, Public Menu, Cart, Checkout, migration history, schema migration, deployment, or production data was changed in Stage 3.
+
+### Stage 3.1 - Backend Stabilization
+
+Completed and committed in `2507720`.
+
+Full report:
+
+`STAGE_3_1_BACKEND_STABILIZATION_REPORT_AR.md`
+
+Implemented:
+
+- Preserved merchant-controlled `isAvailable` when saving or backfilling a Network Product.
+- Added a single Legacy public-product predicate requiring both `configurationVersion = 0` and database-null `configurationTree` in public listing and WhatsApp ordering.
+- Kept Legacy sources linkable through explicit CUSTOM snapshots without converting the source.
+- Kept ORIGINAL tied to a live saved Network source and added structured 409 error `ORIGINAL_LINKED_SOURCE_REQUIRES_NETWORK_CONFIGURATION`.
+- Added actual HTTP socket E2E coverage with real guards, controller, service, Prisma, JWTs generated at runtime, and disposable PostgreSQL.
+- Made Category dependency scan plus soft-delete one Serializable Transaction, with concurrency conflict mapping.
+- Audited all Product writers and added regression coverage for generic update/quick-price/configuration boundaries.
+- Revalidated capability loss: stored tree and dependency data remain readable, writes are denied, and no Base Price fallback occurs.
+
+Stage 3.1 deliberately did not change Prisma schema, migrations, the backfill algorithm, Dashboard UI, Cart, Checkout, Billing, or Business/Outlet architecture. Its limited `PublicMenuService` change is a deny-only legacy boundary, not a public configurator.
 
 ## 4. Current architectural decisions
 
@@ -182,7 +205,8 @@ No Dashboard UI, Public Menu, Cart, Checkout, migration history, schema migratio
 - No Business Catalog + Outlet Differential layer has been implemented yet.
 - ORIGINAL uses the latest live source structure/rules, with parent-local price overrides.
 - CUSTOM stores a local subtree snapshot while source identity and orderability remain live.
-- Source products in ORIGINAL mode must already have a persisted configuration.
+- Source products in ORIGINAL mode must already have a persisted Network configuration.
+- A Legacy source can be used in CUSTOM only with an explicit valid snapshot. No automatic Legacy-to-Network conversion occurs.
 - Self-links and all direct/deep graph cycles are forbidden by the backend.
 - Source deletion is blocked if any owner depends on it. Never silently detach or mutate the parent tree.
 - Hide/availability is operational and is not structural removal.
@@ -201,11 +225,12 @@ No Dashboard UI, Public Menu, Cart, Checkout, migration history, schema migratio
 
 ### Public-ordering safety before Stage 5
 
-- Every Admin API network save sets `Product.isAvailable=false` atomically.
-- Legacy toggle availability refuses to re-enable configured products.
+- `isAvailable` remains a merchant-controlled operational field and is not changed by configuration save.
+- Legacy public listing and WhatsApp ordering require `configurationVersion = 0` and `configurationTree IS NULL` in addition to the existing active/available/not-deleted checks.
+- This structural boundary also protects backfilled Network Products whose `isAvailable` remains true.
 - Quick price updates refuse configured products.
 - Metadata updates cannot alter configured pricing outside the configuration endpoint.
-- This is a temporary rollout safety gate. Stage 5 must replace it with the approved public resolver/configurator behavior.
+- Stage 5 must add the approved public resolver/configurator behavior before Network Products become publicly orderable.
 
 ## 5. Stage 3 API contract
 
@@ -254,11 +279,13 @@ Error codes include:
 - `PRODUCT_CONFIGURATION_VALIDATION_FAILED` — 400 with structured issues.
 - `PRODUCT_CONFIGURATION_PERMISSION_DENIED` — 403.
 - `FEATURE_LOCKED` — 403.
-- `PRODUCT_CONFIGURATION_CONFLICT` — 409.
-- `PRODUCT_CONFIGURATION_CONCURRENT_UPDATE` — 409.
-- `PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS` — 409.
-- `PRODUCT_CONFIGURATION_PRICE_MANAGED` — 409.
-- `PRODUCT_CONFIGURATION_PUBLIC_INTEGRATION_PENDING` — 409.
+- `PRODUCT_CONFIGURATION_CONFLICT` - 409.
+- `ORIGINAL_LINKED_SOURCE_REQUIRES_NETWORK_CONFIGURATION` - 409 with source IDs and the explicit CUSTOM alternative.
+- `PRODUCT_CONFIGURATION_CONCURRENT_UPDATE` - 409.
+- `PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS` - 409.
+- `CATEGORY_PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS` - 409.
+- `CATEGORY_DELETE_CONFLICT` - 409.
+- `PRODUCT_CONFIGURATION_PRICE_MANAGED` - 409.
 
 ## 6. Important implementation files
 
@@ -299,7 +326,12 @@ Error codes include:
 - `packages/shared/src/feature-keys.ts`
 - `packages/shared/src/roles.ts`
 
-### Stage 3 tests
+### Stage reports
+
+- `STAGE_3_ADMIN_API_IMPLEMENTATION_REPORT_AR.md`
+- `STAGE_3_1_BACKEND_STABILIZATION_REPORT_AR.md`
+
+### Stage 3 and 3.1 tests
 
 - `apps/api/src/modules/products/product-configuration.integration.spec.ts`
 - `apps/api/src/modules/products/product-configuration.service.spec.ts`
@@ -314,9 +346,9 @@ Error codes include:
 All final runs used the repository source and a workspace-local TEMP directory because the Windows sandbox denies Vitest access to the normal user Temp path.
 
 - Shared Vitest: 21/21 passed.
-- API unit + disposable integration: 72/72 passed in 15 files.
-- Total: 93/93 passed.
-- Disposable PostgreSQL integration subset: 8/8 passed.
+- API unit + disposable PostgreSQL + HTTP E2E: 79/79 passed in 15 files.
+- Total: 100/100 passed.
+- Disposable PostgreSQL integration subset: 14/14 passed.
 - Prisma validate: passed.
 - Prisma schema diff against disposable Stage 2C schema: `This is an empty migration.`
 - Product-configuration tools typecheck: passed.
@@ -333,18 +365,21 @@ Disposable DB details from the test run:
 - No `db push`, `migrate deploy`, real `.env`, existing database, or existing volume was used.
 - The disposable server was stopped after testing.
 
+An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --noEmit`) still reports a pre-existing, out-of-scope generic `Buffer` mismatch in `apps/api/src/modules/products/import/product-import-parser.spec.ts:23`. Official API/root typecheck, build, and all Vitest suites pass.
+
 ## 8. Unresolved risks and required decisions
 
 1. **Migration history is still unaudited on any real OrderSawa database.** Do not deploy the Stage 2C migration until the read-only history audit is separately approved and completed.
 2. **No initial migration exists in the repository.** Follow the Stage 2C runbook; never rewrite or guess production history.
-3. **Backfill rollout safety:** the Stage 2C backfill does not currently force `isAvailable=false`. Do not run it on real data before an approved rollout order prevents Network products from entering legacy public ordering.
-4. **Public integration is not implemented.** Network products saved through Stage 3 are intentionally unavailable to public legacy paths.
+3. **Backfill rollout safety is now enforced at legacy public boundaries:** converted products are excluded by tree/version markers without mutating `isAvailable`. Backfill still must not run on real data without separate approval, dry-run review, checkpoint/quarantine planning, and migration-history audit.
+4. **Public integration is not implemented.** Network Products are intentionally excluded from legacy listing and WhatsApp ordering until the approved configurator exists.
 5. **Capability model is an adapter.** Package version/snapshot/exception/market semantics need a future schema decision.
 6. **Default package assignment is unresolved.** The capability exists but is not automatically mapped to BASIC/PRO/PREMIUM.
 7. **Currency rounding policy is unresolved.** Keep decimal strings/`DECIMAL(24,6)`; do not introduce ad hoc rounding.
 8. **External writers:** DB constraints enforce envelope/FK invariants, but semantic validation depends on the shared engine and atomic helper. New writers must use them.
-9. **No HTTP socket E2E harness exists.** Stage 3 coverage is controller/service/unit plus real PostgreSQL integration.
+9. **Legacy ORIGINAL prerequisite:** ORIGINAL cannot resolve a Legacy source that has no canonical Network tree. Use explicit CUSTOM snapshot or explicitly configure the source first; never auto-convert it.
 10. **Business/Outlet differential architecture is not implemented.** Do not hard-code assumptions that make it impossible, but do not build it without approval.
+11. **Test-source TypeScript cleanup:** the Product Import Buffer typing issue noted in section 7 is unrelated and deferred to a separate maintenance task.
 
 ## 9. Mandatory database safety rules
 
@@ -361,8 +396,8 @@ Disposable DB details from the test run:
 1. Read this file fully.
 2. Read the authoritative source files listed in section 2 fully.
 3. Verify branch, status, and commits.
-4. Confirm Stage 1, Stage 2C, and Stage 3 files actually exist.
-5. Read the Stage 3 Arabic implementation report.
+4. Confirm Stage 1, Stage 2C, Stage 3, and Stage 3.1 files actually exist.
+5. Read both Stage 3 and Stage 3.1 Arabic implementation reports.
 6. Re-run the baseline tests before a new stage if practical.
 7. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 8. Ask for explicit approval if the requested work would change an unresolved decision above.
