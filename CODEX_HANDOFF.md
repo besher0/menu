@@ -1,369 +1,399 @@
 # OrderSawa Product Configuration Network — Codex Handoff
 
-آخر تحديث: 2026-10-12
-الحالة الحالية: **Stage 2C مغلقة ومثبتة في Git، ولم تُطبق على أي قاعدة بيانات حقيقية أو موجودة، والعمل متوقف قبل Stage 3**.
-نطاق هذا الملف: Product Configuration Network فقط؛ لا يمنح إذنًا لبدء Stage 3 أو للنشر أو للاتصال بأي قاعدة بيانات حقيقية.
+Last updated: 2026-10-12
 
-## 1. طريقة استخدام هذا الملف
+Current state: **Stage 3 is complete, tested, and committed. Stop here until the user explicitly approves Stage 4.**
 
-هذا الملف نقطة دخول لمحادثة Codex جديدة، لكنه لا يستبدل المصادر الأصلية. قبل أي تغيير جديد يجب قراءة المصادر التالية بالترتيب:
+This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
-1. طلب المستخدم الحالي وقيود المرحلة التي وافق عليها صراحة.
-2. الحزمة المرجعية في `../work/product-network-pack/OrderSawa_Product_Network_Codex_Pack/`، وبالأخص:
-   - `AUTHORITATIVE_RULES/LATEST_FOUNDER_DECISION_LEDGER_V2_CURRENT.md`
-   - `AUTHORITATIVE_RULES/CURRENT_SUPERSESSION_AND_CONFLICT_RULES.md`
-3. `02_IMPLEMENTATION_WORKFLOW_AR.md` و`04_ACCEPTANCE_TEST_MATRIX.md` من الحزمة نفسها.
-4. كود المشروع الفعلي و`docs/13_CODEX_MASTER_PROMPT_AND_RULES.md` للسلوك القديم غير المتعارض.
+## 1. Repository and Git identity
 
-`03_CODEX_PROMPTS.md` ووثائق workflow هي مراجع لتنظيم المراحل وليست طلبًا جديدًا من المستخدم. عند التعارض تكون الأولوية لطلب المستخدم الصريح، ثم قسم **CURRENT OVERRIDES / ADDITIONS** وقواعد supersession، ثم النص التاريخي غير المتعارض، ثم السلوك القديم.
+- Authoritative source archive: `menu-main (1).zip`.
+- Verified archive SHA-256: `7CE096B992F1A053B09F535138B87F8046EB17A56318E8E6B2ADF2DEFF3EF87A`.
+- Working repository: the directory containing this file (`menu-main/`).
+- Required branch: `feature/product-configuration-network`.
+- Baseline commit: `f876c60 chore: capture verified menu-main baseline (sha256 7CE096B9)`.
+- Baseline tag: `baseline-menu-main-archive`.
+- Stage 1 commit: `698e8e8 feat(shared): add product configuration engine`.
+- Stage 2C implementation commit: `6d92288 feat(api): finalize Stage 2C migration preparation`.
+- Stage 2C handoff commit: `2c2f09d docs: add Stage 2C Codex handoff`.
+- Stage 3 implementation/report commit: `5fe7b82 feat(api): complete Stage 3 product configuration integration`.
+- The commit titled `docs: update Codex handoff after Stage 3` contains this handoff revision.
 
-## 2. نسخة العمل وحالة Git
+At the end of Stage 3, the expected state is a clean working tree on the branch above. Verify with:
 
-- المصدر المعتمد: `menu-main (1).zip`.
-- SHA-256 للأرشيف: `7CE096B992F1A053B09F535138B87F8046EB17A56318E8E6B2ADF2DEFF3EF87A`.
-- المستودع المحلي: هذا المجلد `menu-main/`.
-- الفرع: `feature/product-configuration-network`.
-- baseline commit/tag:
-  - `f876c60 chore: capture verified menu-main baseline (sha256 7CE096B9)`
-  - tag: `baseline-menu-main-archive`
-- Stage 1 commit:
-  - `698e8e8 feat(shared): add product configuration engine`
-- Stage 2C commit:
-  - `6d92288 feat(api): finalize Stage 2C migration preparation`
-- ملف التسليم محفوظ في commit مستقل تالٍ لـStage 2C؛ راجع `git log -1` لمعرفة hash الخاص به لأن الملف لا يستطيع تضمين hash الـcommit الذي يحتويه دون تغيير نفسه.
-- ملفات `.env*` سرية، logs، uploads، checkpoints وquarantine مستبعدة من Git. الاستثناء الوحيد المقصود هو `.env.example`.
-- لم تُستخدم بيانات اتصال المشروع الحقيقي، ولم يحدث اتصال بـProduction أو بأي قاعدة موجودة.
-
-الحالة عند تجهيز commit التسليم كانت:
-
-```text
-?? CODEX_HANDOFF.md
+```powershell
+git branch --show-current
+git status --short
+git log --oneline -6
 ```
 
-بعد commit التسليم يجب أن تكون working tree نظيفة. لا تعد كتابة commit التاريخية أو migrations المطبقة.
+## 2. Authoritative source material
 
-## 3. القرارات المعمارية الملزمة
+Do not rely only on this summary. Before a new stage, read the original files in full from:
 
-### 3.1 النموذج canonical والنطاق
+`../work/product-network-pack/OrderSawa_Product_Network_Codex_Pack/`
 
-- `configurationTree` recursive/versioned، أو مكافئ إنتاجي صريح، هو المصدر canonical الوحيد لتكوين المنتج وقت التشغيل.
-- `ProductOptionGroup` و`ProductOption` القديمان يظلان للتوافق والترحيل؛ لا يجوز أن يصبحا مصدرًا موازيًا دائمًا ولا يجوز حذفهما حاليًا.
-- التكوين في هذه النسخة مربوط حاليًا بـ`restaurantId` بوصفه حد الكتالوج/tenant الفعلي في الكود. تصميم Business Catalog + Outlet Differential Layer يظل قرارًا أعلى يجب احترامه لاحقًا، لكن لم يُنفذ Outlet overlay في هذه المراحل.
-- لا روابط بين Restaurants/Markets. مصدر Linked Product يجب أن يكون ضمن نفس السياق الفعلي.
-- Product Configuration هي Package Capability. فقدان entitlement يحفظ البيانات ويجعل المنتجات المعتمدة عليها Action Required وغير قابلة للنشر/الطلب؛ لا fallback صامت إلى Base. لم يُوصل هذا gate بعد.
-- عملة السعر هي عملة Business المسموحة في Market؛ لا توجد عملة مستقلة اعتباطية لكل Product. لم تُعدّل بنية العملة القديمة في هذه المراحل.
+Required priority order:
 
-### 3.2 الأموال والأسعار
+1. `AUTHORITATIVE_RULES/LATEST_FOUNDER_DECISION_LEDGER_V2_CURRENT.md`
+2. `AUTHORITATIVE_RULES/CURRENT_SUPERSESSION_AND_CONFLICT_RULES.md`
+3. `02_IMPLEMENTATION_WORKFLOW_AR.md`
+4. `04_ACCEPTANCE_TEST_MATRIX.md`
+5. `03_CODEX_PROMPTS.md` as workflow guidance only, subordinate to the current ledgers and the user's current request.
 
-- التمثيل داخل المحرك هو decimal strings مع BigInt، دون JavaScript floating-point للأموال.
-- الحدود المعتمدة حاليًا: 18 رقمًا صحيحًا و6 منازل عشرية، والتخزين المقترح `DECIMAL(24,6)`.
-- `null` تعني لا يوجد Base Price/سعر مشتق، بينما `"0"` أو `0.000000` سعر صفري حقيقي. يجب عدم تحويل `null` إلى صفر.
-- إذا وُجد أي Size في أي مسار داخل التكوين، يُهمل Base Price بالكامل.
-- كل Size يحمل سعر بيع كاملًا وليس delta. لا يوجد Size group رئيسي مميز؛ يمكن لمجموعات Sizes مستقلة أن تسهم معًا.
-- السعر النهائي عند وجود Sizes = مساهمات Sizes المختارة + Options المدفوعة بعد Included Quantity.
-- عند عدم وجود Sizes يمكن للـBase المشاركة، ويمكن لخدمة Service Mode أن تستبدله لاحقًا. أسعار Options مستقلة عن Service Mode في V1.
-- Size-specific option override الفارغ/`null` يرجع للسعر الافتراضي؛ override بقيمة صفر يعني مجانيًا.
-- سعر Linked Product المستقل لا يدخل تلقائيًا في سعر الأب. التسعير داخل parent context محلي.
-- الحد الأدنى/`ابتداءً من` يجب أن ينتج من تكوينات صالحة في السياق الفعلي، بما يشمل المطلوب والـavailability والجدولة والروابط. Optional paid upsells وحدها لا تحول Base المتاح إلى `ابتداءً من`.
-- سياسة quantization/rounding حسب العملة **غير معتمدة بعد**. PostgreSQL أظهر سلوك التقريب المعتاد في probes، لكن لا يجوز اعتبار `ROUND_HALF_UP` قرارًا منتجيًا معتمدًا.
+Current overrides supersede historical rules. If these files are missing or the repository identity differs, stop and ask the user before programming.
 
-### 3.3 البنية والاختيارات
+## 3. Stage status
 
-- الأنواع canonical الحالية: `SIZE` و`OPTIONS`، مع nesting recursive.
-- Sizes terminal بالنسبة لمسار Sizes: لا Size بعد Size على المسار نفسه. يمكن أن تتبعها Options في النطاق المسموح.
-- Group `min=0` اختياري و`min>0` مطلوب. `max=null` يعني لا حد تاجر، مع safety cap داخلي 100.
-- Min/Max تحسب مجموع الوحدات وليس عدد أنواع الخيارات المختلفة.
-- لكل Option حدود كمية، والسعر per unit. Max الصريح للـOption لا يتجاوز Max الرقمي للأب.
-- الوحدات المتكررة تستخدم Selection Instances ذات `instanceId` ثابت وفريد، لأن كل وحدة قد تحمل children مختلفة.
-- Included Quantity يحسب مستقلًا لكل Options group: أعلى N وحدات أب سعرًا بعد السعر الفعال تصبح included/free. أسعار فروع الأطفال تظل مدفوعة ولا تدخل في اختيار الوحدات المجانية.
-- لا تخفيض صامت للـMin عند عدم التوفر. إذا تعذر إشباع فرع مطلوب يصبح الأصل غير قابل للطلب مؤقتًا.
-- Combo لا يحتاج نوع جدول خاص في التنفيذ الحالي: يُمثل Product عاديًا يحتوي مجموعات Options مطلوبة وخيارات Linked Products، مع إمكانية تكوين كل linked selection.
+### Stage 0 — Source audit
 
-### 3.4 Linked Products وDependency Graph
+Completed.
 
-- `ORIGINAL`: بنية وقواعد وترجمات المصدر live، مع بقاء تسعير parent-context المحلي.
-- `CUSTOM`: snapshot محلي لبنية/قواعد/تسعير subtree، مع إبقاء هوية المصدر وorderability متصلتين.
-- الانتقال من Custom إلى Original يعيد أحدث بنية للمصدر؛ يمكن إبقاء overrides المحلية للعُقد ذات Stable IDs المطابقة حيث يسمح العقد.
-- self-link والدورات المباشرة والعميقة ممنوعة كـbackend graph invariant، وليس UI validation فقط.
-- Hard delete للمصدر ممنوع عند وجود dependents. حذف Category يجب لاحقًا فحص كل Products ومنع العملية كاملة إن وجدت dependency؛ لا partial delete ولا silent detach.
-- Hide التشغيلي ليس Exclude/Removed البنيوي. Hide وحده لا يمنع دائمًا استخدام المنتج كمكوّن linked.
-- Linked availability يجب أن يحل إلى effective same-Outlet representation في المستقبل، ويأخذ التعطيل والتوقف والجدولة وعدم قابلية الإشباع recursive بالحسبان.
+- Inspected the real monorepo rather than creating a standalone project.
+- Confirmed workspaces: `packages/shared`, `apps/api`, and `apps/web`.
+- Identified existing legacy `ProductOptionGroup`/`ProductOption`, product CRUD, imports, public menu, cart/order paths, feature flags, tenant guard, and Prisma history gap.
+- Established the verified Git baseline and branch.
+- No product-network code was written during Stage 0.
 
-### 3.5 السلة والتحقق وSnapshot
+### Stage 1 — Shared contracts and engine
 
-- هوية سطر السلة المستقبلية يجب أن تشمل Product + canonical configured selection؛ لا يجوز الدمج حسب slug فقط.
-- قبل checkout يجب أن يعيد الخادم validation/pricing من الكتالوج الحالي والسياق والتوفر، وألا يثق في سعر العميل أو labels النصية.
-- تغييرات جوهرية لا تُطبق بصمت؛ تتطلب انتباه/قبول العميل.
-- الطلب النهائي يحتفظ immutable snapshot يتضمن revision والاختيارات الدقيقة والأسعار والروابط اللازمة لإعادة العرض التاريخي.
-- المنفذ في Stage 1 هو pure snapshot/selection key فقط؛ ربط Cart/Quote/Order/WhatsApp لم يبدأ.
+Completed in commit `698e8e8`.
 
-## 4. ما أُنجز حسب المرحلة
+Primary location:
 
-### Stage 0 — فحص baseline
+`packages/shared/src/product-configuration/`
 
-الحالة: مكتملة دون تعديل وظيفي.
+Implemented:
 
-- فُحص monorepo الحقيقي: `packages/shared` + NestJS/Prisma/PostgreSQL API + Next.js Web.
-- فُحص schema وProduct CRUD وProduct Form وPublic Menu وCart وWhatsApp/Order flow.
-- تأكد أن النظام القديم flat ولا يدعم Sizes/Nesting/Linked/Selection Instances/trusted configured pricing.
-- اكتُشفت مخاطرة مهمة: مجلد migrations لا يحتوي Initial CREATE migration كاملًا؛ الموجود سلسلة تغييرات غير كافية لإنشاء schema من الصفر.
-- baseline بعد توليد Prisma وبناء shared: API tests 37/37، typecheck ناجح، build ناجح، Next.js بنت 27 route.
-- التقرير: `../outputs/NETWORK_BASELINE_AUDIT.md`.
+- Versioned `ProductConfigurationV1`, selection, snapshot, dependency, pricing, and minimum-price contracts.
+- `SIZE` and `OPTIONS` recursive groups.
+- Full size prices, nullable Base, nested groups, option/group quantity bounds, included quantity, linked products, and combos.
+- ORIGINAL and CUSTOM linked modes.
+- Stable per-unit selection instances.
+- Decimal-string/BigInt money implementation; no floating-point arithmetic in the engine.
+- Structure validation, dependency discovery and cycle validation, selection validation, linked resolution, pricing, minimum price, and immutable snapshot logic.
+- Engine safety limits for depth, node count, group choices, quantities, money digits/scale, selection instances, and minimum-price state search.
 
-### Stage 1 — Shared Contracts & Engine
+Stage 1 shared suite currently passes 21/21 tests.
 
-الحالة: مكتملة ومثبتة في commit `698e8e8`، ومقبولة مبدئيًا من المستخدم.
+### Stage 2A — Migration design
 
-- أُضيف `ProductConfigurationV1`, `ProductSelectionV1`, `ConfigurationSnapshot` بإصدارات ثابتة.
-- أُضيف money parser/arithmetic exact، validation، selection validation، pricing، minimum-price، linked resolution، dependency discovery/cycle validation، snapshot وsemantic selection key.
-- دُعمت Sizes full prices، Base nullable، nested groups، quantities/min/max، Included Count، Linked ORIGINAL/CUSTOM، repeated instances، cycle/cross-catalog checks.
-- حدود المحرك الافتراضية: depth 12، nodes 1000، group choices 100، group quantity 100، selection instances 500، minimum-price states 20000.
-- لا تغييرات Prisma/API/UI في هذه المرحلة.
-- التقرير: `../outputs/STAGE_1_PRODUCT_CONFIGURATION_ENGINE_REPORT_AR.md`.
+Completed as design/review work.
 
-### Stage 2A — Migration Preparation
+- Defined nullable `Product.basePrice` while preserving null versus zero.
+- Designed persisted JSON `configurationTree`, integer `configurationVersion`, and dependency index.
+- Designed idempotent/resumable/quarantine backfill from legacy option tables.
+- Identified the missing initial migration/history risk.
+- Produced migration, rollback, history-audit, and validation planning without touching a real database.
 
-الحالة: مكتملة كمقترحات وتقارير فقط؛ لم يُعدّل source حينها ولم تُنفذ Migration.
+### Stage 2B — Disposable PostgreSQL validation
 
-- صُمم `configurationTree`, `configurationVersion`, nullable `basePrice`, dependency index و`DECIMAL(24,6)`.
-- صُممت baseline disposable، preflight، migration، optional order money alignment، backfill preview، verification وguarded rollback.
-- تقرر أن Backfill منفصل عن schema migration، وأن legacy groups تتحول إلى `OPTIONS` فقط بلا تخمين Sizes.
-- تقرر quarantine للحالات الغامضة، وidempotent conditional write.
-- المخرجات: `../outputs/stage2a/`.
+Completed on isolated PostgreSQL only.
 
-### Stage 2B — Disposable PostgreSQL Validation
+- Applied a current baseline and proposed migration to disposable PostgreSQL.
+- Validated null/zero/positive Base values, network JSON, linked FKs, tenant isolation, repeatable backfill, quarantine, rollback, and schema diff.
+- Adopted `DECIMAL(24,6)` for internal storage.
+- Currency-specific rounding policy remains unresolved and was not invented.
 
-الحالة: مكتملة على PostgreSQL 16.15 محلي مؤقت فقط.
+### Stage 2C — Migration implementation preparation
 
-- شُغل baseline ثم proposed migration ثم order-money alignment على قواعد disposable معزولة عند `127.0.0.1:55439` دون `.env` للمشروع.
-- Prisma diff كان فارغًا بعد تثبيت أسماء constraints/indexes واستعادة قيمة العملة Unicode.
-- اختُبرت قيم Base: `null`, `0`, موجب؛ وتخزين Sizes/Nesting/Modifiers/Linked Products.
-- اختُبرت FKs: cross-restaurant، self-link، owner version، duplicate path، وdelete source.
-- اختُبر Backfill أول مرة وإعادة التشغيل وquarantine، وبقيت أسعار legacy دون تغيير.
-- صُحح dependency path إلى الشكل canonical مثل `$configuration.groups[1].options[0]`.
-- صُحح rollback ليعيد أيضًا أعمدة Order/OrderItem.
-- قاعدة الاختبار أُوقفت؛ `pg_isready` أعطى no response. بقي runtime المحلي في `../work/stage2b-postgres-runtime` بسبب قيود حذف sandbox، ولا يمثل خدمة متصلة.
-- المخرجات: `../outputs/stage2b/`.
+Completed and committed in `6d92288`, with handoff commit `2c2f09d`.
 
-### Stage 2C — Migration Implementation Preparation
+Implemented/prepared:
 
-الحالة: منجزة ومثبتة في commit `6d92288`، ولم تُنفذ على أي قاعدة حقيقية أو موجودة.
-
-- عُدّل `schema.prisma` رسميًا حسب التصميم المجرب.
-- أُنشئ migration رسمي schema-only داخل transaction، دون Backfill أو حذف legacy.
-- أُنشئت أداة Backfill إنتاجية: dry-run افتراضي، batching 1..1000، keyset cursor، resume/checkpoint، counters تراكمية، idempotency، quarantine/conflicts JSONL، وتأكيد اسم قاعدة البيانات عند الكتابة.
-- أُنشئ helper transactional لحفظ tree/version/dependency index مع validation وtenant/source checks وcycle check وoptimistic concurrency في `Serializable` transaction.
-- helper غير موصول بأي Controller/Service route؛ لا API تشغيلية تغيرت.
-- أُنشئ read-only Migration History audit، guarded rollback، وrunbook.
-- migration الرسمي اختُبر فقط على قواعد disposable جديدة: `ordersawa_stage2c`, `ordersawa_stage2c_resume`, `ordersawa_stage2c_rollback`.
-- في اختبار الإغلاق النهائي أُنشئت أيضًا قاعدتا disposable فقط: `ordersawa_stage2c_finalize_20261012` و`ordersawa_stage2c_finalize_rollback_20261012`؛ حُذفتا بعد الاختبار وأُوقف PostgreSQL المحلي وتحقق `pg_isready` من `no response`.
-- لم يحدث `prisma migrate deploy` أو `prisma db push`.
-- التقرير والمراجعات: `../outputs/stage2c/`.
-
-### Stage 3 وما بعدها
-
-**لم تبدأ**. لا Admin API ولا Dashboard ولا Public Menu ولا Cart/Quote/Order behavior يستخدم `configurationTree` حاليًا.
-
-## 5. الملفات المتغيرة
-
-### Stage 1 — committed
-
-```text
-.gitignore
-package.json
-package-lock.json
-packages/shared/package.json
-packages/shared/tsconfig.json
-packages/shared/src/index.ts
-packages/shared/src/product-configuration/dependencies.ts
-packages/shared/src/product-configuration/index.ts
-packages/shared/src/product-configuration/minimum-price.ts
-packages/shared/src/product-configuration/money.ts
-packages/shared/src/product-configuration/pricing.ts
-packages/shared/src/product-configuration/product-configuration.test.ts
-packages/shared/src/product-configuration/resolution.ts
-packages/shared/src/product-configuration/selection.ts
-packages/shared/src/product-configuration/snapshot.ts
-packages/shared/src/product-configuration/types.ts
-packages/shared/src/product-configuration/validation.ts
-```
-
-### Stage 2C — committed in `6d92288`
-
-```text
-.gitignore
-apps/api/package.json
-apps/api/prisma/schema.prisma
-apps/api/prisma/backfill-product-configurations.ts
-apps/api/prisma/migrations/20261012000000_product_configuration_network/migration.sql
-apps/api/prisma/product-configuration-backfill.spec.ts
-apps/api/prisma/product-configuration-backfill.ts
-apps/api/prisma/product-configuration-guarded-rollback.sql
-apps/api/prisma/product-configuration-history-audit.sql
-apps/api/prisma/tsconfig.product-configuration.json
-apps/api/src/modules/products/product-configuration.persistence.spec.ts
-apps/api/src/modules/products/product-configuration.persistence.ts
-docs/product-configuration-stage2c-runbook.md
-```
-
-### Handoff — commit مستقل بعد Stage 2C
-
-```text
-CODEX_HANDOFF.md
-```
-
-### مخرجات المراجعة خارج المستودع
-
-- `../outputs/NETWORK_BASELINE_AUDIT.md`
-- `../outputs/STAGE_1_PRODUCT_CONFIGURATION_ENGINE_REPORT_AR.md`
-- `../outputs/stage2a/`
-- `../outputs/stage2b/`
-- `../outputs/stage2c/`
-
-## 6. تصميم قاعدة البيانات الحالي في Stage 2C
-
+- Official Prisma schema changes (not deployed to any existing database).
+- Official migration file:
+  `apps/api/prisma/migrations/20261012000000_product_configuration_network/migration.sql`.
 - `Product.basePrice Decimal? @db.Decimal(24,6)`.
-- `Product.configurationTree Json?`.
-- `Product.configurationVersion Int @default(0)`.
-- حالة legacy المسموحة: tree null + version 0 + Base non-null.
-- حالة configured: tree non-null + version >= 1؛ Base يمكن null أو صفرًا أو موجبًا ويجب أن يطابق `configurationTree.basePrice`.
-- `ProductConfigurationDependency` يخزن owner/source/option/path/mode/version.
-- composite FKs تمنع cross-restaurant source وتربط edges بنسخة owner نفسها.
-- source delete = `RESTRICT`؛ owner delete = `CASCADE` للـedges فقط.
-- Order totals وOrderItem unit/total أصبحت مقترحة `DECIMAL(24,6)` لتجنب قطع precision بين quote وsnapshot.
-- checks داخل DB تتحقق من envelope/revision/base mirror وبعض invariants فقط. التحقق العميق يبقى في shared engine قبل الكتابة.
-- migration schema-only؛ لا يغير أي legacy option rows ولا ينشئ tree تلقائيًا.
+- `configurationTree Json?` and `configurationVersion Int`.
+- `ProductConfigurationDependency` with composite tenant-safe FKs.
+- Owner deletion cascades its edges; source deletion is restricted.
+- DB checks for configuration envelope/version/base mirror and dependency edge invariants.
+- Production-oriented backfill with batching, dry-run, execute confirmation, checkpoint/resume, idempotency, and quarantine.
+- Serializable atomic persistence helper:
+  `apps/api/src/modules/products/product-configuration.persistence.ts`.
+- Guarded rollback SQL and read-only migration history audit SQL.
+- Stage 2C runbook under `docs/`.
 
-## 7. Backfill وPersistence — السلوك الفعلي
+No Stage 2 migration or backfill has been run on an OrderSawa database.
 
-### Backfill
+### Stage 3 — Admin API and integration
 
-- يفحص فقط Products غير المحذوفة ذات `tree IS NULL`, `version=0` ولديها legacy groups.
-- يرتب بالـProduct ID ويستخدم keyset pagination.
-- يحول كل legacy group إلى `OPTIONS`، ويحفظ `priceDelta` كسعر Option محلي؛ لا يخمن Size أو Linked Product.
-- يعين revision 1، ويثبت Base إلى 6 منازل، ثم يشغل `validateConfiguration` و`calculateMinimumPrice`.
-- الحالات الغامضة/غير الصالحة لا تُكتب وتذهب إلى quarantine.
-- الكتابة تستخدم `persistProductConfiguration(... expectedVersion: 0)`؛ إعادة التشغيل لا تعيد معالجة ما صار version 1.
-- وضع الكتابة يتطلب `--execute`, `--confirm-database <exact current_database>`, checkpoint وquarantine paths.
-- checkpoint يكتب atomically عبر temp+rename وبصلاحية `0600` حيث يدعم النظام؛ dry-run وexecute لا يتشاركان mode checkpoint.
+Completed and committed in `5fe7b82`.
 
-### Persistence helper
+Full report:
 
-- يرفض productId غير المطابق وrevision غير المتقدمة.
-- يشغل shared validation ويجمع dependency edges.
-- داخل transaction واحدة: يتحقق من owner/version، يتحقق من linked sources ضمن نفس Restaurant وغير محذوفة، يدمج graph الحالي ويمنع cycle، يحدث Product optimistic، يحذف edges القديمة ويكتب الجديدة.
-- isolation level هو `Serializable`.
-- لا توجد retry policy للـserialization failures بعد؛ Stage 3 يجب أن يحدد ترجمة conflict/retry في service boundary.
-- غير موصول بمسار API، ولذلك لا يغير السلوك التشغيلي الحالي.
+`STAGE_3_ADMIN_API_IMPLEMENTATION_REPORT_AR.md`
 
-## 8. نتائج الاختبارات المثبتة
+Implemented:
 
-بيئة القياس: Node.js `v24.19.0`، npm `11.17.0`، Prisma `5.22.0`، PostgreSQL disposable `16.15`.
+- Admin GET/PUT product-configuration endpoints.
+- DTO aligned with the Stage 1 contract.
+- Shared-engine validation before persistence.
+- Exact next revision rule (`revision === expectedVersion + 1`).
+- Optimistic conflict mapping to HTTP 409.
+- Prisma Serializable retry handling for `P2034` and safe `P2002` conflict mapping.
+- Tenant-scoped owner and linked-source validation.
+- Missing source, cross-restaurant source, self-link, direct/deep cycle protection.
+- ORIGINAL requires a live persisted source configuration; CUSTOM retains a live dependency but carries its snapshot.
+- Atomic tree/version/base/dependency-index update through the Stage 2C helper.
+- Capability recheck inside the same transaction.
+- Structural management permission.
+- Soft/hard delete dependency protection and category dependency review.
+- Legacy serialization/import/export/quick-price compatibility fixes.
+- Public rollout safety without editing Public Menu: saving a Network product atomically sets `isAvailable=false`, and the legacy availability endpoint cannot re-enable it before public integration.
 
-أُعيد تشغيل هذه البوابات أثناء إغلاق Stage 2C مباشرة قبل الـcommits. استُخدمت قيمتا `DATABASE_URL` و`DIRECT_URL` وهميتان على `127.0.0.1:1` في `prisma validate/generate` لمنع أي اتصال؛ المحاولة الأولى بدون `DIRECT_URL` فشلت بإعداد `P1012` ثم نجحت بعد توفير القيمتين الوهميتين.
+No Dashboard UI, Public Menu, Cart, Checkout, migration history, schema migration, deployment, or production data was changed in Stage 3.
 
-| الفحص | النتيجة الأخيرة |
-|---|---|
-| `npm run test -w @menu/shared` ضمن full test | 21/21 نجحت |
-| API Vitest | 42/42 نجحت في 10 ملفات |
-| الاختبارات الجديدة المباشرة | 3 Backfill + 2 graph persistence نجحت ضمن API total |
-| `npm test` | 63/63 إجمالًا (21 shared + 42 API) |
-| `npm run typecheck` | Shared/API/Web نجحت |
-| `npm run typecheck:product-configuration-tools -w @menu/api` | نجح |
-| `npm run build` | Shared/API/Web نجحت؛ Next.js بنى 27 route |
-| `prisma validate` | نجح |
-| baseline + official migration عبر `psql` على disposable | نجح |
-| Prisma schema diff بعد migration | فارغ؛ لا drift غير مقصود |
-| Backfill dry-run | scanned=2, eligible=1, quarantined=1, migrated=0 |
-| Backfill execute/resume/idempotency | migrated=1؛ resume أكمل counters؛ إعادة لاحقة no-op |
-| write guards | غياب الملفات، اسم DB الخطأ، وmode mismatch رُفضت |
-| persistence integration | revision 1→2 وedge version 2 atomically؛ cross-tenant/stale version رُفضا بلا تغيير حالة |
-| post-migration assertions | 8 anomaly counts = 0؛ legacy tables بقيت |
-| guarded rollback على DB نظيفة | نجح وعاد Prisma diff إلى baseline |
-| guarded rollback بعد configured data | رُفض كما هو مقصود وبقي schema |
+## 4. Current architectural decisions
 
-تفاصيل إعادة التحقق النهائية من PostgreSQL disposable:
+### Canonical model
 
-- baseline الحالي ثم migration الرسمي ثم fixtures/constraints: نجحت.
-- Base `null` و`0` والموجب، تخزين Sizes/Nested Options/Linked، cross-tenant/self/version/path/delete-source guards: نجحت.
-- Backfill dry-run: `scanned=2`, `eligible=1`, `quarantined=1`, `migrated=0`.
-- Backfill execute على batch واحدة ثم resume: `migrated=1` ثم quarantine واحدة؛ التشغيل الثالث no-op مع counters نفسها.
-- غياب checkpoint/quarantine واسم DB غير المطابق رُفضا قبل الكتابة.
-- أسعار `legacy-good`, `legacy-quarantine`, `legacy-zero` بقيت `100.120000`, `50.000000`, `0.000000` دون تغيير.
-- post-migration verification: كل anomaly counts الثمانية = 0، والجداول القديمة بقيت.
-- Prisma diff بعد إزالة جدول fixture المساعد: `This is an empty migration.`
-- rollback على configured DB رُفض؛ rollback على DB نظيفة أعاد Product/Order/OrderItem إلى `DECIMAL(10,2)` وحذف أعمدة/جدول Stage 2C.
-- قاعدتا الاختبار النهائيتان حُذفتا، والخادم المحلي أُوقف وأصبح `127.0.0.1:55439 - no response`.
+- `configurationTree` is the only canonical runtime configuration for Network products.
+- Legacy `ProductOptionGroup` and `ProductOption` remain for compatibility/migration only; do not make them a parallel pricing source for Network products.
+- A product is treated as `NETWORK` when it has a non-null tree and `configurationVersion > 0`; otherwise it is `LEGACY`.
+- Do not delete legacy tables until a separately approved retirement stage.
 
-ملاحظة بيئية: wrapper الخاص بـ`tsx` فشل داخل sandbox بـ`uv_os_get_passwd/ENOMEM` قبل الاتصال. الكود اجتاز typecheck، ثم جرى compile إلى CommonJS وتشغيل نفس الأداة المجمعة فعليًا ضد PostgreSQL disposable بنجاح. يجب عمل smoke test لأمر npm/tsx في بيئة النشر المعتمدة قبل أي استخدام حقيقي. استخدمت Vitest قيمة TEMP داخل `../work` بسبب قيود Windows sandbox.
+### Money and pricing
 
-## 9. المشاكل والمخاطر المتبقية
+- Money in shared contracts is canonical non-negative decimal text.
+- Internal DB precision is `DECIMAL(24,6)`.
+- `null` Base means no Base; explicit `"0"` means a real zero price.
+- Any Size on a selected path replaces/ignores Base for that path.
+- Size prices are full prices, never deltas.
+- Included Quantity makes the highest-priced N parent option units free; child branch prices remain payable.
+- Linked-product price is local to the parent configuration. Standalone source selling price is never inherited automatically.
+- Currency-specific scale and rounding are still pending explicit approval.
 
-1. **Migration History غير مدققة على أي قاعدة قائمة.** لا يوجد Initial CREATE migration موثوق في repository.
-2. لا يجوز تشغيل `migrate deploy` إن كانت `_prisma_migrations` غائبة مع وجود tables. يلزم baseline مطابق تمامًا ثم موافقة مستقلة قبل أي `prisma migrate resolve --applied`.
-3. أي unfinished/rolled-back migration أو checksum mismatch أو drift غير مفهوم يوقف التنفيذ؛ لا تعدل migration rows أو الملفات القديمة.
-4. `ALTER COLUMN`, بناء indexes و`VALIDATE CONSTRAINT` قد يأخذ locks أو scans على جداول كبيرة؛ لم تُقاس أحجام حقيقية.
-5. guarded rollback آمن فقط قبل وجود tree/dependency/null Base أو أموال لا تلائم `(10,2)`. بعد ذلك الاتجاه الآمن app rollback + forward fix، لا حذف بيانات أو تقريب تاريخ الطلبات.
-6. JSONB لا يفرض كل recursive invariants؛ جميع writers المستقبلية يجب أن تمر بالمحرك والـtransaction helper. الكتابة المباشرة يمكن أن تسبب drift بين tree والdependency index.
-7. Backfill cursor حسب ID مع concurrent writes يتطلب maintenance gate/final rescan وخطة تشغيل مراقبة.
-8. quarantine تحتاج مراجعة بشرية؛ لا توجد معالجة تلقائية للحالات الغامضة.
-9. API القديم وDTO/import/public menu ما زالت تفترض Base non-null/Number في مواضع؛ schema غير مفعل تشغيليًا قبل Stage 3، ويجب تعديل هذه المسارات قبل السماح بمنتجات configured ذات Base null.
-10. Order persistence لا يزال قد يستخدم JavaScript Number في المسارات القديمة؛ تغيير column precision وحده لا يجعل الحساب end-to-end آمنًا.
-11. Currency-specific scale/rounding قرار مفتوح ومانع لتفعيل التسعير النهائي المنتج عند currencies المختلفة.
-12. Service Mode/Outlet effective resolver/schedules/entitlement gate ليست منفذة في shared persistence الحالي.
-13. Category delete dependency scan وsoft-delete semantics لم تُوصل بعد.
-14. لا UI/E2E/Playwright لهذه المراحل لأن Stage 3+ لم تبدأ.
+### Structure and selection
 
-## 10. Migration History decision tree المعتمد
+- Node types are `SIZE` and `OPTIONS`.
+- Options may nest recursively.
+- A path cannot enter another Size group after a Size has been selected.
+- `max=null` means no merchant max, but the platform safety cap still applies.
+- Group counts are selected units, not distinct option IDs.
+- Repeated units require distinct stable `instanceId` values.
+- Minimums are never silently reduced when availability changes.
 
-- History موجودة وكل الأسماء/checksums مطابقة: شغل audit/diff read-only، ولا تتقدم إلا إذا كان diff هو Stage 2C المراجع فقط.
-- History غائبة مع schema قائم: لا deploy. حضّر baseline يمثل schema المنشور السابق حرفيًا، راجعه، ثم اطلب موافقة مستقلة قبل `resolve --applied`.
-- History جزئية أو مختلفة: freeze، احتفظ بالنسختين، وصمم reconciliation؛ لا rewrite.
-- قاعدة فارغة: disposable baseline للاختبار فقط، ولا يُسمى production history دون مراجعة baseline مستقلة.
+### Linked products
 
-ملف التدقيق: `apps/api/prisma/product-configuration-history-audit.sql`. هو read-only ويجب ألا يُشغل على قاعدة موجودة إلا بعد موافقة منفصلة تحدد host/database/credential المسموح.
+- Same-restaurant/catalog only in the current architecture.
+- No Business Catalog + Outlet Differential layer has been implemented yet.
+- ORIGINAL uses the latest live source structure/rules, with parent-local price overrides.
+- CUSTOM stores a local subtree snapshot while source identity and orderability remain live.
+- Source products in ORIGINAL mode must already have a persisted configuration.
+- Self-links and all direct/deep graph cycles are forbidden by the backend.
+- Source deletion is blocked if any owner depends on it. Never silently detach or mutate the parent tree.
+- Hide/availability is operational and is not structural removal.
 
-## 11. خطوات المتابعة المسموحة بعد مراجعة المستخدم فقط
+### Capability and permissions
 
-### الإجراء الفوري
+- Feature key: `PRODUCT_CONFIGURATION`.
+- Permission: `product.configuration.manage`.
+- OWNER, MANAGER, and EDITOR have the structural permission; EMPLOYEE does not.
+- Authenticated reads are tenant-scoped and remain available after capability loss so data is not hidden/deleted.
+- Writes and first activation require the assigned capability.
+- Capability is checked before save and again inside the Serializable transaction.
+- The current adapter reads the enabled feature from the restaurant's assigned plan and intentionally ignores subscription billing status.
+- `PRODUCT_CONFIGURATION` was not automatically assigned to BASIC, PRO, or PREMIUM. Default commercial mapping requires an explicit product decision.
+- Current schema does not model package versions, entitlement snapshots, market scope, or explicit entitlement exceptions. Do not pretend it does; extend only after approval.
 
-1. ابدأ بقراءة هذا الملف ثم سجل القرارات الأصلي و`docs/product-configuration-stage2c-runbook.md`.
-2. تحقق من `git status` و`git log --oneline -5`؛ الحالة المتوقعة working tree نظيفة والـHEAD هو commit التسليم التالي مباشرة لـ`6d92288`.
-3. لا تبدأ Stage 3 تلقائيًا، ولا تتصل بأي قاعدة بيانات لمجرد بدء محادثة جديدة.
+### Public-ordering safety before Stage 5
 
-### إذا منح المستخدم موافقة مستقلة لتدقيق قاعدة بعينها
+- Every Admin API network save sets `Product.isAvailable=false` atomically.
+- Legacy toggle availability refuses to re-enable configured products.
+- Quick price updates refuse configured products.
+- Metadata updates cannot alter configured pricing outside the configuration endpoint.
+- This is a temporary rollout safety gate. Stage 5 must replace it with the approved public resolver/configurator behavior.
 
-1. ثبت هوية host/database والصلاحيات read-only ولا تطبع secrets.
-2. شغل history audit فقط واحفظ ناتجه المنقح.
-3. قارن migration names/checksums والـschema diff.
-4. توقف وقدم تقريرًا؛ موافقة التدقيق لا تعني موافقة migration أو backfill.
+## 5. Stage 3 API contract
 
-### إذا مُنحت لاحقًا موافقة منفصلة على التطبيق
+Controller base:
 
-اتبع `docs/product-configuration-stage2c-runbook.md`: backup قابل للاستعادة، maintenance/feature gate، schema migration، diff/verification، Backfill dry-run، مراجعة quarantine، batches صغيرة مؤكدة باسم DB، final rescan، وإبقاء legacy tables/read paths. هذه الخطوات غير مصرح بها الآن.
+`/dashboard/products`
 
-### المرحلة التالية في roadmap فقط
+Guards:
 
-Stage 3 هي Admin/API persistence integration: DTOs، service/controller routes، permissions/capability gate، tenant scoping، optimistic conflict mapping، delete guards، والاختبارات. لا تبدأها دون طلب جديد صريح.
+- `JwtAuthGuard`
+- `RestaurantContextGuard`
 
-## 12. محظورات مستمرة
+Endpoints:
 
-- لا Production ولا أي قاعدة موجودة دون موافقة مستقلة محددة.
-- لا `prisma migrate deploy` أو `prisma db push` أو `migrate resolve` الآن.
-- لا Backfill على بيانات حقيقية.
-- لا تعديل/حذف Migration History القديم.
-- لا حذف legacy tables أو legacy data/read paths.
-- لا تفعيل `configurationTree` في Backend API أو Dashboard أو Public Menu قبل مرحلتها.
-- لا Stage 3 أو Dashboard أو Cart/Checkout تلقائيًا.
-- لا commit لملفات secrets أو connection strings أو checkpoint/quarantine operational records.
+1. `GET /dashboard/products/:id/configuration`
+2. `PUT /dashboard/products/:id/configuration`
 
-## 13. مراجع المراجعة النهائية
+PUT body:
 
-- تقرير Stage 2C: `../outputs/stage2c/STAGE_2C_MIGRATION_IMPLEMENTATION_PREPARATION_AR.md`
-- SQL النهائي: `../outputs/stage2c/STAGE_2C_FINAL_MIGRATION.sql`
-- rollback: `../outputs/stage2c/STAGE_2C_GUARDED_ROLLBACK.sql`
-- history audit: `../outputs/stage2c/STAGE_2C_MIGRATION_HISTORY_AUDIT.sql`
-- runbook: `../outputs/stage2c/STAGE_2C_RUNBOOK.md`
-- hashes: `../outputs/stage2c/STAGE_2C_FILES_SHA256.txt`
+```json
+{
+  "expectedVersion": 0,
+  "configuration": {
+    "schemaVersion": 1,
+    "productId": "product-id",
+    "revision": 1,
+    "basePrice": null,
+    "groups": []
+  }
+}
+```
 
-الخلاصة التشغيلية: Stage 1 مثبتة في `698e8e8`، Stage 2A/2B موثقتان، وStage 2C مثبتة في `6d92288` مع commit مستقل لهذا التسليم. لا توجد قاعدة حقيقية تغيرت، ولا API/UI تستخدم الشبكة بعد، ولا توجد صلاحية ضمنية للانتقال إلى Stage 3.
+GET and successful PUT include:
+
+- `productId`
+- `mode`
+- `configurationVersion`
+- `configurationTree`
+- exact `basePrice` string or null
+- `isAvailable`
+- capability state
+- `orderabilityState`
+
+Error codes include:
+
+- `PRODUCT_CONFIGURATION_VALIDATION_FAILED` — 400 with structured issues.
+- `PRODUCT_CONFIGURATION_PERMISSION_DENIED` — 403.
+- `FEATURE_LOCKED` — 403.
+- `PRODUCT_CONFIGURATION_CONFLICT` — 409.
+- `PRODUCT_CONFIGURATION_CONCURRENT_UPDATE` — 409.
+- `PRODUCT_CONFIGURATION_DEPENDENCY_EXISTS` — 409.
+- `PRODUCT_CONFIGURATION_PRICE_MANAGED` — 409.
+- `PRODUCT_CONFIGURATION_PUBLIC_INTEGRATION_PENDING` — 409.
+
+## 6. Important implementation files
+
+### Shared engine
+
+- `packages/shared/src/product-configuration/index.ts`
+- `packages/shared/src/product-configuration/types.ts`
+- `packages/shared/src/product-configuration/money.ts`
+- `packages/shared/src/product-configuration/validation.ts`
+- `packages/shared/src/product-configuration/dependencies.ts`
+- `packages/shared/src/product-configuration/resolution.ts`
+- `packages/shared/src/product-configuration/selection.ts`
+- `packages/shared/src/product-configuration/pricing.ts`
+- `packages/shared/src/product-configuration/minimum-price.ts`
+- `packages/shared/src/product-configuration/snapshot.ts`
+- `packages/shared/src/product-configuration/product-configuration.test.ts`
+
+### Database and migration preparation
+
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/migrations/20261012000000_product_configuration_network/migration.sql`
+- `apps/api/prisma/product-configuration-backfill.ts`
+- `apps/api/prisma/backfill-product-configurations.ts`
+- `apps/api/prisma/product-configuration-guarded-rollback.sql`
+- `apps/api/prisma/product-configuration-history-audit.sql`
+- `docs/product-configuration-stage2c-runbook.md`
+
+### Stage 3 API
+
+- `apps/api/src/modules/products/dto/update-product-configuration.dto.ts`
+- `apps/api/src/modules/products/product-configuration.service.ts`
+- `apps/api/src/modules/products/product-configuration.persistence.ts`
+- `apps/api/src/modules/products/products.controller.ts`
+- `apps/api/src/modules/products/products.service.ts`
+- `apps/api/src/modules/products/products-import.service.ts`
+- `apps/api/src/modules/feature-flags/feature-flags.service.ts`
+- `apps/api/src/modules/dashboard/dashboard.service.ts`
+- `packages/shared/src/feature-keys.ts`
+- `packages/shared/src/roles.ts`
+
+### Stage 3 tests
+
+- `apps/api/src/modules/products/product-configuration.integration.spec.ts`
+- `apps/api/src/modules/products/product-configuration.service.spec.ts`
+- `apps/api/src/modules/products/product-configuration.persistence.spec.ts`
+- `apps/api/src/modules/products/products.controller.spec.ts`
+- `apps/api/src/modules/products/products.service.spec.ts`
+- `apps/api/src/modules/feature-flags/feature-flags.service.spec.ts`
+- `apps/api/src/modules/dashboard/dashboard.service.spec.ts`
+
+## 7. Final verified test state
+
+All final runs used the repository source and a workspace-local TEMP directory because the Windows sandbox denies Vitest access to the normal user Temp path.
+
+- Shared Vitest: 21/21 passed.
+- API unit + disposable integration: 72/72 passed in 15 files.
+- Total: 93/93 passed.
+- Disposable PostgreSQL integration subset: 8/8 passed.
+- Prisma validate: passed.
+- Prisma schema diff against disposable Stage 2C schema: `This is an empty migration.`
+- Product-configuration tools typecheck: passed.
+- Root typecheck (Shared/API/Web): passed.
+- Root build (Shared/API/Web): passed; Next.js generated 27 pages/routes successfully.
+
+Disposable DB details from the test run:
+
+- PostgreSQL 16 runtime inherited from Stage 2B tooling.
+- New cluster directory: `../work/stage3-postgres-data`.
+- Bound only to `127.0.0.1:55440`.
+- Database: `ordersawa_stage3_integration`.
+- Full schema generated with Prisma diff from empty and applied as SQL with `psql`.
+- No `db push`, `migrate deploy`, real `.env`, existing database, or existing volume was used.
+- The disposable server was stopped after testing.
+
+## 8. Unresolved risks and required decisions
+
+1. **Migration history is still unaudited on any real OrderSawa database.** Do not deploy the Stage 2C migration until the read-only history audit is separately approved and completed.
+2. **No initial migration exists in the repository.** Follow the Stage 2C runbook; never rewrite or guess production history.
+3. **Backfill rollout safety:** the Stage 2C backfill does not currently force `isAvailable=false`. Do not run it on real data before an approved rollout order prevents Network products from entering legacy public ordering.
+4. **Public integration is not implemented.** Network products saved through Stage 3 are intentionally unavailable to public legacy paths.
+5. **Capability model is an adapter.** Package version/snapshot/exception/market semantics need a future schema decision.
+6. **Default package assignment is unresolved.** The capability exists but is not automatically mapped to BASIC/PRO/PREMIUM.
+7. **Currency rounding policy is unresolved.** Keep decimal strings/`DECIMAL(24,6)`; do not introduce ad hoc rounding.
+8. **External writers:** DB constraints enforce envelope/FK invariants, but semantic validation depends on the shared engine and atomic helper. New writers must use them.
+9. **No HTTP socket E2E harness exists.** Stage 3 coverage is controller/service/unit plus real PostgreSQL integration.
+10. **Business/Outlet differential architecture is not implemented.** Do not hard-code assumptions that make it impossible, but do not build it without approval.
+
+## 9. Mandatory database safety rules
+
+- Never connect to Production or any existing database without separate explicit authorization.
+- Never use the project's real `.env` for tests.
+- Never run `prisma migrate deploy`, `prisma db push`, backfill, rollback, or `migrate resolve` on a real database without a new approval.
+- Never rewrite old migration history.
+- Never delete legacy option tables or real restaurant data.
+- Never commit credentials, connection strings, logs, checkpoints, quarantine output, or operational data.
+- Disposable DB names must be explicit and isolated; Stage 3 integration tests additionally reject non-loopback URLs, ports other than `55440`, and database names not beginning with `ordersawa_stage3_`.
+
+## 10. How to continue in a new conversation
+
+1. Read this file fully.
+2. Read the authoritative source files listed in section 2 fully.
+3. Verify branch, status, and commits.
+4. Confirm Stage 1, Stage 2C, and Stage 3 files actually exist.
+5. Read the Stage 3 Arabic implementation report.
+6. Re-run the baseline tests before a new stage if practical.
+7. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
+8. Ask for explicit approval if the requested work would change an unresolved decision above.
+
+Useful commands (with a workspace-local TEMP directory):
+
+```powershell
+npm run test:shared
+npm run test:api
+npm run typecheck
+npm run build
+npm run typecheck:product-configuration-tools -w @menu/api
+npx prisma validate --schema apps/api/prisma/schema.prisma
+```
+
+The integration test command requires an explicitly created disposable database and environment variables supplied only for that command:
+
+```powershell
+npm run test:product-configuration:integration -w @menu/api
+```
+
+## 11. Next stage
+
+The next proposed stage is **Stage 4 — Dashboard Product Configuration Editor**, only after explicit user approval.
+
+Likely Stage 4 scope from the approved workflow:
+
+- Extend the real product editor in `apps/web/src/components/dashboard/product-form.tsx`.
+- Build an RTL vertical tree editor for Sizes, Options, nesting, quantities, included count, price overrides, linked ORIGINAL/CUSTOM, and validation.
+- Use the Stage 3 GET/PUT API and optimistic revision contract.
+- Preserve all current product fields and legacy behavior.
+- Provide explicitly marked test/demo configurations only in test/seed data.
+
+Do not begin Stage 4, Stage 5, deployment, or any real migration automatically. Stop and wait for explicit approval.
