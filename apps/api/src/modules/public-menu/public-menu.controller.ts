@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Inject, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import { Request } from "express";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
 import { PublicMenuService } from "./public-menu.service";
@@ -32,6 +32,17 @@ export class PublicMenuController {
     @Param("productId") productId: string
   ) {
     return this.publicMenuService.productConfiguration(restaurantSlug, productId);
+  }
+
+  @Post(":restaurantSlug/products/:productId/quote")
+  @HttpCode(200)
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+  productQuote(
+    @Param("restaurantSlug") restaurantSlug: string,
+    @Param("productId") productId: string,
+    @Body() body: unknown
+  ) {
+    return this.publicMenuService.productQuote(restaurantSlug, productId, body);
   }
 
   @Get(":restaurantSlug/theme")

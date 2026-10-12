@@ -87,6 +87,59 @@ function linkedConfiguration(
   };
 }
 
+function quotePizzaConfiguration(): ProductConfigurationV1 {
+  return {
+    schemaVersion: 1, productId: "quote-pizza", revision: 1, basePrice: null,
+    groups: [
+      { type: "SIZE", id: "quote-sizes", label: "Sizes", sizes: [
+        { id: "quote-small", label: "Small", price: "100" },
+        { id: "quote-medium", label: "Medium", price: "200.000001" }
+      ] },
+      { type: "OPTIONS", id: "quote-toppings", label: "Toppings", min: 0, max: 3, includedQuantity: 1, options: [{
+        id: "quote-cheese", label: "Cheese", price: "30.000001", maxQuantity: 3,
+        children: [{ type: "OPTIONS", id: "quote-sauces", label: "Sauces", min: 0, max: 1, includedQuantity: 0, options: [{ id: "quote-bbq", label: "BBQ", price: "5.000001", maxQuantity: 1 }] }]
+      }] }
+    ]
+  };
+}
+
+function quotePizzaSelection(revision = 1) {
+  return {
+    schemaVersion: 1, productId: "quote-pizza", configurationRevision: revision,
+    groups: [
+      { type: "SIZE", groupId: "quote-sizes", sizeChoiceId: "quote-medium" },
+      { type: "OPTIONS", groupId: "quote-toppings", instances: [
+        { instanceId: "cheese-1", optionId: "quote-cheese", children: [{ type: "OPTIONS", groupId: "quote-sauces", instances: [{ instanceId: "sauce-1", optionId: "quote-bbq" }] }] },
+        { instanceId: "cheese-2", optionId: "quote-cheese" },
+        { instanceId: "cheese-3", optionId: "quote-cheese" }
+      ] }
+    ]
+  };
+}
+
+function quoteComboConfiguration(): ProductConfigurationV1 {
+  const custom: ProductConfigurationV1 = { schemaVersion: 1, productId: "quote-source", revision: 1, basePrice: null, groups: [{
+    type: "SIZE", id: "custom-sizes", label: "Custom sizes", sizes: [{ id: "custom-one", label: "One", price: "7" }]
+  }] };
+  return { schemaVersion: 1, productId: "quote-combo", revision: 1, basePrice: "0", groups: [{
+    type: "OPTIONS", id: "quote-slots", label: "Slots", min: 3, max: 3, includedQuantity: 0,
+    options: [
+      { id: "quote-original", label: "Original", price: "10", maxQuantity: 2, linkedProduct: { sourceProductId: "quote-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
+      { id: "quote-custom", label: "Custom", price: "3", maxQuantity: 1, linkedProduct: { sourceProductId: "quote-source", mode: "CUSTOM", customConfiguration: custom } }
+    ]
+  }] };
+}
+
+function quoteComboSelection() {
+  return { schemaVersion: 1, productId: "quote-combo", configurationRevision: 1, groups: [{
+    type: "OPTIONS", groupId: "quote-slots", instances: [
+      { instanceId: "original-1", optionId: "quote-original", linkedSelection: { schemaVersion: 1, productId: "quote-source", configurationRevision: 1, groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: "source-small" }] } },
+      { instanceId: "original-2", optionId: "quote-original", linkedSelection: { schemaVersion: 1, productId: "quote-source", configurationRevision: 1, groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: "source-large" }] } },
+      { instanceId: "custom-1", optionId: "quote-custom", linkedSelection: { schemaVersion: 1, productId: "quote-source", configurationRevision: 1, groups: [{ type: "SIZE", groupId: "custom-sizes", sizeChoiceId: "custom-one" }] } }
+    ]
+  }] };
+}
+
 integration("Product Configuration Stage 3 disposable PostgreSQL integration", () => {
   const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
   const featureFlags = new FeatureFlagsService(prisma as any);
@@ -107,6 +160,14 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
   let httpOrigin: string;
   let ownerToken: string;
   let employeeToken: string;
+
+  function postQuote(restaurantSlug: string, productId: string, body: unknown) {
+    return fetch(`${httpOrigin}/public/menus/${restaurantSlug}/products/${productId}/quote`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
 
   beforeAll(async () => {
     await prisma.$connect();
@@ -168,7 +229,10 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       "owner-cycle",
       "owner-http",
       "legacy-null-zero",
-      "legacy-null-price"
+      "legacy-null-price",
+      "quote-pizza",
+      "quote-source",
+      "quote-combo"
     ];
     await prisma.product.createMany({
       data: productIds.map((id) => ({
@@ -199,6 +263,20 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         isAvailable: false
       }
     });
+    await prisma.product.update({ where: { id: "quote-pizza" }, data: {
+      configurationTree: quotePizzaConfiguration(), configurationVersion: 1, basePrice: null
+    } });
+    await prisma.product.update({ where: { id: "quote-source" }, data: {
+      configurationTree: { schemaVersion: 1, productId: "quote-source", revision: 1, basePrice: null, groups: [{
+        type: "SIZE", id: "source-sizes", label: "Source sizes", sizes: [
+          { id: "source-small", label: "Small", price: "100" },
+          { id: "source-large", label: "Large", price: "200" }
+        ]
+      }] }, configurationVersion: 1, basePrice: null
+    } });
+    await prisma.product.update({ where: { id: "quote-combo" }, data: {
+      configurationTree: quoteComboConfiguration(), configurationVersion: 1, basePrice: "0"
+    } });
 
     await prisma.user.createMany({
       data: [
@@ -561,5 +639,119 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     const legacy = await productsService.findOne("stage3-r1", "legacy-null-zero");
     expect(legacy).toMatchObject({ basePrice: 0, configurationMode: "LEGACY", configurationVersion: 0 });
     await expect(service.get("stage3-r2", "owner-atomic")).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("quotes a current size, nested sauce, and highest-unit inclusion through real HTTP", async () => {
+    const response = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection() });
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({ data: {
+      productId: "quote-pizza", trustedTotal: "265.000004", currency: "EGP", baseIgnored: true,
+      configurationOrderable: true, previewOnly: true, orderingEnabled: false, orderAction: "STAGE_6_REQUIRED"
+    } });
+    expect(payload.data.priceBreakdown.filter((line: { included: boolean }) => line.included)).toHaveLength(1);
+  });
+
+  it("rejects client totals at any depth, invalid quantities, and stale revisions over HTTP", async () => {
+    const tampered = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection(), total: "1" });
+    expect(tampered.status).toBe(400);
+    expect(await tampered.json()).toMatchObject({ error: "INVALID_QUOTE_REQUEST" });
+
+    const nestedTamper = quotePizzaSelection() as any;
+    nestedTamper.groups[0].price = "1";
+    const nestedResponse = await postQuote("stage3-r1", "quote-pizza", { selection: nestedTamper });
+    expect(nestedResponse.status).toBe(400);
+    expect(await nestedResponse.json()).toMatchObject({ error: "INVALID_QUOTE_SELECTION", issues: expect.arrayContaining([expect.objectContaining({ code: "UNEXPECTED_SELECTION_FIELD" })]) });
+
+    const wrongSize = quotePizzaSelection();
+    wrongSize.groups[0] = { type: "SIZE", groupId: "quote-sizes", sizeChoiceId: "unknown" } as any;
+    const invalidResponse = await postQuote("stage3-r1", "quote-pizza", { selection: wrongSize });
+    expect(invalidResponse.status).toBe(400);
+    expect(await invalidResponse.json()).toMatchObject({ error: "INVALID_QUOTE_SELECTION", issues: expect.arrayContaining([expect.objectContaining({ code: "UNKNOWN_SIZE_SELECTION" })]) });
+
+    const excessive = quotePizzaSelection() as any;
+    excessive.groups[1].instances.push({ instanceId: "cheese-4", optionId: "quote-cheese" });
+    const excessiveResponse = await postQuote("stage3-r1", "quote-pizza", { selection: excessive });
+    expect(excessiveResponse.status).toBe(400);
+    expect(await excessiveResponse.json()).toMatchObject({ issues: expect.arrayContaining([expect.objectContaining({ code: "GROUP_MAX_EXCEEDED" })]) });
+
+    const stale = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection(0) });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: "CONFIGURATION_REVISION_CHANGED", currentRevision: 1 });
+  });
+
+  it("quotes repeated ORIGINAL and CUSTOM linked instances without inheriting standalone sale prices", async () => {
+    const response = await postQuote("stage3-r1", "quote-combo", { selection: quoteComboSelection() });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { trustedTotal: "43", configurationOrderable: true } });
+
+    await prisma.product.update({ where: { id: "quote-source" }, data: { isAvailable: false } });
+    const unavailable = await postQuote("stage3-r1", "quote-combo", { selection: quoteComboSelection() });
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toMatchObject({ error: "CONFIGURATION_NOT_ORDERABLE", issues: expect.arrayContaining([expect.objectContaining({ code: "LINKED_PRODUCT_UNAVAILABLE" })]) });
+    await prisma.product.update({ where: { id: "quote-source" }, data: { isAvailable: true } });
+
+    const changedSource = await prisma.product.findUniqueOrThrow({ where: { id: "quote-source" } });
+    await prisma.product.update({ where: { id: "quote-source" }, data: {
+      configurationVersion: 2,
+      configurationTree: { ...(changedSource.configurationTree as object), revision: 2 }
+    } });
+    const staleSource = await postQuote("stage3-r1", "quote-combo", { selection: quoteComboSelection() });
+    expect(staleSource.status).toBe(409);
+    expect(await staleSource.json()).toMatchObject({ error: "LINKED_CONFIGURATION_REVISION_CHANGED" });
+  });
+
+  it("enforces capability, owner availability, legacy exclusion, and tenant scoping over HTTP", async () => {
+    const crossTenant = await postQuote("stage3-r1", "foreign-source", { selection: quotePizzaSelection() });
+    expect(crossTenant.status).toBe(404);
+    const legacy = await postQuote("stage3-r1", "legacy-null-zero", { selection: quotePizzaSelection() });
+    expect(legacy.status).toBe(404);
+
+    await prisma.subscriptionFeature.update({ where: { id: "stage3-feature" }, data: { enabled: false } });
+    const disabled = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection() });
+    expect(disabled.status).toBe(403);
+    expect(await disabled.json()).toMatchObject({ error: "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE" });
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: "quote-pizza" } })).configurationVersion).toBe(1);
+    await prisma.subscriptionFeature.update({ where: { id: "stage3-feature" }, data: { enabled: true } });
+
+    await prisma.product.update({ where: { id: "quote-pizza" }, data: { isAvailable: false } });
+    const unavailable = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection() });
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toMatchObject({ error: "PRODUCT_UNAVAILABLE" });
+    await prisma.product.update({ where: { id: "quote-pizza" }, data: { isAvailable: true } });
+  });
+
+  it("detects unsatisfiable required groups and hides cross-restaurant linked sources", async () => {
+    const impossible = quoteComboConfiguration();
+    impossible.groups[0] = {
+      type: "OPTIONS", id: "quote-slots", label: "Slots", min: 1, max: 1, includedQuantity: 0,
+      options: [{ id: "foreign", label: "Foreign", price: "1", minQuantity: 1, maxQuantity: 1,
+        linkedProduct: { sourceProductId: "foreign-source", mode: "CUSTOM", customConfiguration: { schemaVersion: 1, productId: "foreign-source", revision: 1, basePrice: "0", groups: [] } }
+      }]
+    };
+    await prisma.product.update({ where: { id: "quote-combo" }, data: { configurationTree: impossible } });
+    const response = await postQuote("stage3-r1", "quote-combo", { selection: quoteComboSelection() });
+    expect(response.status).toBe(409);
+    const payload = await response.json();
+    expect(payload).toMatchObject({ error: "CONFIGURATION_NOT_ORDERABLE", issues: expect.arrayContaining([expect.objectContaining({ code: "LINK_TARGET_NOT_FOUND" })]) });
+    expect(JSON.stringify(payload)).not.toContain("stage3-r2");
+  });
+
+  it("reloads current stored prices and revision instead of accepting an old displayed total", async () => {
+    const updated = quotePizzaConfiguration();
+    updated.revision = 2;
+    if (updated.groups[0].type !== "SIZE") throw new Error("Fixture Size group missing");
+    updated.groups[0].sizes[1].price = "210.000001";
+    await prisma.product.update({ where: { id: "quote-pizza" }, data: {
+      configurationTree: updated, configurationVersion: 2, basePrice: null
+    } });
+
+    const stale = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection() });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: "CONFIGURATION_REVISION_CHANGED", currentRevision: 2 });
+
+    const current = await postQuote("stage3-r1", "quote-pizza", { selection: quotePizzaSelection(2) });
+    expect(current.status).toBe(200);
+    expect(await current.json()).toMatchObject({ data: { trustedTotal: "275.000004", configurationRevision: 2 } });
   });
 });

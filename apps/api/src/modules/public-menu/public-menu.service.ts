@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
@@ -9,6 +9,7 @@ import {
   type PublicConfigurationProductRecord,
   type PublicProductConfigurationResponse
 } from "./public-product-configuration";
+import { quotePublicProductConfiguration } from "./public-product-quote";
 
 // Network activation must not overwrite the merchant-controlled availability flag.
 // The legacy order path requires both legacy persistence markers; the Network
@@ -176,6 +177,59 @@ export class PublicMenuService {
     });
     if (!resolved) throw new NotFoundException("Product configuration is unavailable");
     return resolved;
+  }
+
+  async productQuote(restaurantSlug: string, productId: string, body: unknown) {
+    if (!body || typeof body !== "object" || Array.isArray(body)
+      || Object.keys(body).length !== 1 || !Object.prototype.hasOwnProperty.call(body, "selection")) {
+      throw new BadRequestException({
+        error: "INVALID_QUOTE_REQUEST",
+        message: "Quote request must contain only selection; client prices and totals are not accepted.",
+        issues: [{ code: "UNEXPECTED_QUOTE_FIELD", path: "$request", message: "Only selection is accepted." }]
+      });
+    }
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
+      select: { id: true, currency: true }
+    });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+
+    const catalogProducts = await this.configurationCatalogProducts(restaurant.id);
+    const owner = catalogProducts.find((product) => product.id === productId || product.slug === productId);
+    if (!owner) throw new NotFoundException("Product configuration is unavailable");
+    if (!owner.isActive || !owner.isAvailable || owner.deletedAt !== null) {
+      throw new ConflictException({
+        error: "PRODUCT_UNAVAILABLE",
+        message: "Product is not currently available.",
+        issues: [{ code: "PRODUCT_UNAVAILABLE", path: "$configuration", message: "Product is not currently available." }]
+      });
+    }
+    if (owner.configurationVersion <= 0 || owner.configurationTree === null) {
+      throw new NotFoundException("Network configuration is unavailable");
+    }
+    const capabilityEnabled = await this.featureFlags.canUseAssignedFeature(restaurant.id, "PRODUCT_CONFIGURATION");
+    if (!capabilityEnabled) {
+      throw new ForbiddenException({
+        error: "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE",
+        message: "Product Configuration capability is not assigned to this restaurant.",
+        issues: [{ code: "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE", path: "$configuration", message: "Product Configuration capability is unavailable." }]
+      });
+    }
+
+    const result = quotePublicProductConfiguration({
+      restaurantId: restaurant.id,
+      owner,
+      catalogProducts,
+      capabilityEnabled,
+      currency: restaurant.currency,
+      selection: (body as { selection: unknown }).selection
+    });
+    if (!result.ok) {
+      const payload = { error: result.error.code, message: result.error.message, issues: result.error.issues, currentRevision: result.error.currentRevision };
+      if (result.error.status === 409) throw new ConflictException(payload);
+      throw new BadRequestException(payload);
+    }
+    return result.quote;
   }
 
   async theme(restaurantSlug: string) {
