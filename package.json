@@ -15,7 +15,10 @@
     "prisma:generate": "npm run prisma:generate -w @menu/api",
     "seed": "npm run seed -w @menu/api",
     "seed:demo": "npm run seed:demo -w @menu/api",
-    "typecheck": "npm run build -w @menu/shared && npm run typecheck -w @menu/api && npm run typecheck -w @menu/web"
+    "typecheck": "npm run build -w @menu/shared && npm run typecheck -w @menu/api && npm run typecheck -w @menu/web",
+    "test:shared": "npm run test -w @menu/shared",
+    "test:api": "npm run build -w @menu/shared && npm run test -w @menu/api",
+    "test": "npm run test:shared && npm run test:api"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

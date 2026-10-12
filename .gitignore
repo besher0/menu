@@ -4,8 +4,15 @@ dist/
 coverage/
 .env
 .env.local
+.env.*
+!.env.example
 .env.*.local
+*.log
 npm-debug.log*
 .dev.restart*.log
+.codex/
+.npm-cache/
+uploads/
+apps/api/uploads/
 prisma/migrations/
 *.tsbuildinfo
