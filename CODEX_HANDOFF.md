@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-12
 
-Current state: **Stage 4 Dashboard Product Configuration Editor is complete and tested. The Stage 4 implementation, report, and this handoff are saved together in the commit titled `feat(web): add Stage 4 product configuration editor`. Stop until the user explicitly approves Stage 5.**
+Current state: **Stage 4.1 Dashboard Functional Verification is complete. The real Dashboard/API were exercised against isolated PostgreSQL, the skipped API suite now passes 79/79, one Combo Demo source-selection defect was fixed, and the Stage 4.1 report/handoff are saved under the commit titled `test(web): verify Stage 4 dashboard editor`. Stop until the user explicitly approves Stage 5.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -22,6 +22,7 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 3.1 implementation/report commit: `2507720 fix(api): stabilize Stage 3 product configuration backend`.
 - The commit titled `docs: update Codex handoff after Stage 3.1` contains this handoff revision.
 - Stage 4 implementation/report/handoff commit: `feat(web): add Stage 4 product configuration editor` (use `git log -1 --oneline` for its hash).
+- Stage 4.1 verification/fix/report/handoff commit: `test(web): verify Stage 4 dashboard editor` (use `git log -1 --oneline` for its hash after completion).
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -193,6 +194,30 @@ Implemented:
 
 No Backend, Prisma, Migration, Public Menu, Cart, Checkout, deployment, Production data, package billing, or Business/Outlet architecture was changed in Stage 4.
 
+### Stage 4.1 - Dashboard Functional Verification
+
+Completed under the commit titled `test(web): verify Stage 4 dashboard editor`.
+
+Full report:
+
+`STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`
+
+Verified:
+
+- Started the real NestJS API and Next.js Dashboard against new isolated PostgreSQL 16 databases on loopback port `55440` without using project `.env` files.
+- Re-ran the previously skipped disposable-PostgreSQL/API suite: 79/79 passed with zero skips.
+- Used Browser Automation for login, Product list/edit navigation, Legacy form regression, persisted Network reload, RTL, a 390x844 viewport, recursive tree inspection, preview pricing, and screenshots displayed in the Codex session.
+- Saved/reloaded a Pizza Network through the real GET/PUT API, updated revision 1 to 2, verified HTTP 409 for stale revision, full Size prices, null Base, nested options, size override pricing, and Included Quantity.
+- Saved/reloaded a required Combo with repeated ORIGINAL source plus explicit Legacy CUSTOM snapshot.
+- Verified real HTTP 403 for an EMPLOYEE write and for capability loss; stored tree/version remained intact and readable.
+- Verified generic metadata updates do not remove Network configuration and generic Base mutation cannot bypass the configuration path.
+
+Fixed one Stage 4 defect:
+
+- Combo Demo source selection now prefers a Legacy product for CUSTOM even when a Network product appears first, while ORIGINAL still requires a saved Network tree. No source is auto-converted.
+
+Stage 4.1 changed only Dashboard demo selection/tests and documentation. It did not change Backend, Prisma, migrations, Public Menu, Cart, Checkout, deployment, Production data, package billing, or Business/Outlet architecture.
+
 ## 4. Current architectural decisions
 
 ### Canonical model
@@ -355,6 +380,7 @@ Error codes include:
 - `STAGE_3_ADMIN_API_IMPLEMENTATION_REPORT_AR.md`
 - `STAGE_3_1_BACKEND_STABILIZATION_REPORT_AR.md`
 - `STAGE_4_DASHBOARD_EDITOR_REPORT_AR.md`
+- `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`
 
 ### Stage 3 and 3.1 tests
 
@@ -408,6 +434,19 @@ Stage 4 final verification added:
 - Root Build: passed; Next.js generated 27 routes/pages.
 - Web visual coverage: recursive SSR component render plus responsive/RTL CSS and production build. No runtime screenshot was taken because no authenticated disposable Dashboard/API fixture was available, and Production/real `.env` use remained prohibited.
 
+Stage 4.1 final verification supersedes the Stage 4-only skipped-test note above:
+
+- Web Stage 4/4.1 Vitest: 14/14 passed in 3 files.
+- Shared Vitest: 21/21 passed.
+- API unit + disposable PostgreSQL + HTTP E2E: 79/79 passed in 15 files, including the former 14 skipped integration tests.
+- Final total: 114/114 passed; 0 skipped.
+- Root Typecheck: passed.
+- Root Build: passed; Next.js generated 27/27 pages/routes.
+- Prisma validate: passed.
+- Prisma schema diff against the disposable schema: `This is an empty migration.`
+- Browser verification: real login/navigation, Legacy form, persisted Network revision 2 reload, recursive Pizza tree, Shared-engine preview, RTL, 390x844 single-column layout, and inline screenshots.
+- Functional API verification: Pizza create/update/reload, price 125 for Medium + Extra Cheese, Included Quantity total 115, required Combo with ORIGINAL/CUSTOM/repeated source, 409, 403, and capability-loss preservation.
+
 Disposable DB details from the test run:
 
 - PostgreSQL 16 runtime inherited from Stage 2B tooling.
@@ -451,9 +490,10 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 3. Verify branch, status, and commits.
 4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, and Stage 4 files actually exist.
 5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
-6. Re-run the baseline tests before a new stage if practical.
-7. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
-8. Ask for explicit approval if the requested work would change an unresolved decision above.
+6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md` before considering Stage 5.
+7. Re-run the baseline tests before a new stage if practical.
+8. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
+9. Ask for explicit approval if the requested work would change an unresolved decision above.
 
 Useful commands (with a workspace-local TEMP directory):
 

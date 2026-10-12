@@ -6,7 +6,14 @@ import { validateConfiguration, type ConfigurationGroup, type ConfigurationIssue
 import { ConfigurationPreview } from "./configuration-preview";
 import { ConfigurationWorkspace } from "./configuration-workspace";
 import { loadProductConfiguration, saveProductConfiguration, searchRestaurantProducts } from "./api";
-import { comboDemo, includedQuantityDemo, pizzaMargheritaDemo, sizeSpecificPricingDemo } from "./demos";
+import {
+  comboDemo,
+  includedQuantityDemo,
+  pizzaMargheritaDemo,
+  selectComboDemoSources,
+  sizeSpecificPricingDemo,
+  type DemoLinkedSource
+} from "./demos";
 import {
   configurationsEqual,
   draftStorageKey,
@@ -214,14 +221,14 @@ export function ProductConfigurationEditor(props: EditorProps) {
     setSaveState("saving");
     setMessage("جارٍ البحث عن مصدر Network داخل المطعم...");
     try {
-      let original: { product: ProductCandidate; envelope: ProductConfigurationEnvelope } | null = null;
-      let custom: { product: ProductCandidate; envelope: ProductConfigurationEnvelope } | null = null;
+      const sources: DemoLinkedSource[] = [];
       for (const product of candidates.slice(0, 30)) {
         const source = await ensureSource(product.id);
-        custom ??= { product, envelope: source };
-        if (!original && source.mode === "NETWORK" && source.configurationTree) original = { product, envelope: source };
-        if (original && custom) break;
+        sources.push({ product, envelope: source });
+        const selected = selectComboDemoSources(sources);
+        if (selected.original && selected.custom?.envelope.mode === "LEGACY") break;
       }
+      const { original, custom } = selectComboDemoSources(sources);
       if (!original || !custom) throw new Error("لا يوجد مصدر Network مناسب لبناء مثال ORIGINAL في بيانات الاختبار الحالية.");
       changeConfiguration(comboDemo(props.productId, draft.expectedVersion + 1, original, custom));
       setMessage("تم تحميل مثال Combo في المسودة فقط. يتضمن ORIGINAL وCUSTOM وتكرار المصدر.");

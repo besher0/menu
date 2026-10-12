@@ -7,6 +7,15 @@ export type DemoLinkedSource = {
   envelope: ProductConfigurationEnvelope;
 };
 
+export function selectComboDemoSources(sources: DemoLinkedSource[]) {
+  const original = sources.find(({ envelope }) => envelope.mode === "NETWORK" && Boolean(envelope.configurationTree)) ?? null;
+  const custom = sources.find(({ envelope }) => envelope.mode === "LEGACY")
+    ?? sources.find(({ product }) => product.id !== original?.product.id)
+    ?? sources[0]
+    ?? null;
+  return { original, custom };
+}
+
 export function pizzaMargheritaDemo(productId: string, revision: number): ProductConfigurationV1 {
   return {
     schemaVersion: 1,

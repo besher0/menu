@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculatePrice, validateConfiguration, type ProductSelectionV1 } from "@menu/shared";
 import { buildSelection } from "./configuration-preview";
-import { comboDemo, includedQuantityDemo, pizzaMargheritaDemo } from "./demos";
+import { comboDemo, includedQuantityDemo, pizzaMargheritaDemo, selectComboDemoSources } from "./demos";
 import {
   appendChildGroup,
   appendRootGroup,
@@ -143,5 +143,32 @@ describe("Stage 4 demo fixtures", () => {
       ["source-legacy", { productId: "source-legacy", catalogId: "restaurant-a", configuration: legacyEnvelope.configurationTree ?? { schemaVersion: 1 as const, productId: "source-legacy", revision: 0, basePrice: "25", groups: [] }, available: true, orderable: true }]
     ]);
     expect(calculatePrice(demo, selection, { catalogId: "restaurant-a", linkedProducts })).toMatchObject({ valid: true, total: "240" });
+  });
+
+  it("prefers an explicit Legacy source for the CUSTOM demo even when Network is listed first", () => {
+    const sourceConfiguration = pizzaMargheritaDemo("source-network", 3);
+    const networkEnvelope: ProductConfigurationEnvelope = {
+      ...envelope,
+      productId: "source-network",
+      mode: "NETWORK",
+      configurationVersion: 3,
+      configurationTree: sourceConfiguration,
+      basePrice: null,
+      orderabilityState: "PUBLIC_INTEGRATION_PENDING"
+    };
+    const legacyEnvelope: ProductConfigurationEnvelope = { ...envelope, productId: "source-legacy", basePrice: "25" };
+    const selected = selectComboDemoSources([
+      {
+        product: { id: "source-network", name: "Network", basePrice: null, currency: "EGP", isAvailable: true, configurationMode: "NETWORK", configurationVersion: 3 },
+        envelope: networkEnvelope
+      },
+      {
+        product: { id: "source-legacy", name: "Legacy", basePrice: 25, currency: "EGP", isAvailable: true, configurationMode: "LEGACY", configurationVersion: 0 },
+        envelope: legacyEnvelope
+      }
+    ]);
+    expect(selected.original?.product.id).toBe("source-network");
+    expect(selected.custom?.product.id).toBe("source-legacy");
+    expect(selected.custom?.envelope.mode).toBe("LEGACY");
   });
 });
