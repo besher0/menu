@@ -21,6 +21,7 @@ describe("ProductConfigurator", () => {
     expect(css).toContain("grid-template-columns: repeat(2");
     expect(source).toContain('role="radiogroup"');
     expect(source).toContain('role={radioMode ? "radiogroup"');
-    expect(source).toContain("هذه معاينة وليست Quote");
+    expect(source).toContain("الإضافة تستخدم Quote من الخادم");
+    expect(source).toContain("getPublicProductQuote");
   });
 });

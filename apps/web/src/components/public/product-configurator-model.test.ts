@@ -7,6 +7,7 @@ import {
   buildOptionInstance,
   canAddOptionInstance,
   calculatePublicPreview,
+  LatestQuoteGate,
   updateOptionGroup
 } from "./product-configurator-model";
 
@@ -29,6 +30,26 @@ describe("canAddOptionInstance", () => {
       groupMax: 1,
       radioMode: false
     })).toBe(false);
+  });
+});
+
+describe("LatestQuoteGate", () => {
+  it("ignores an older Quote response after the selection changes or another request starts", async () => {
+    const gate = new LatestQuoteGate();
+    const applied: string[] = [];
+    let resolveOld!: (value: string) => void;
+    let resolveNew!: (value: string) => void;
+    const old = new Promise<string>((resolve) => { resolveOld = resolve; });
+    const newest = new Promise<string>((resolve) => { resolveNew = resolve; });
+    const oldToken = gate.next();
+    const oldWork = old.then((value) => { if (gate.isCurrent(oldToken)) applied.push(value); });
+    gate.invalidate();
+    const newToken = gate.next();
+    const newWork = newest.then((value) => { if (gate.isCurrent(newToken)) applied.push(value); });
+    resolveNew("latest");
+    resolveOld("stale");
+    await Promise.all([oldWork, newWork]);
+    expect(applied).toEqual(["latest"]);
   });
 });
 

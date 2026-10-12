@@ -5,18 +5,24 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
+import { getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
+import { multiplyMoney } from "@menu/shared";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator } from "./product-configurator";
-
-type CartItem = {
-  slug: string;
-  name: string;
-  quantity: number;
-  price: number;
-  currency: string;
-  imageUrl?: string | null;
-  description?: string | null;
-};
+import {
+  acceptNetworkRecheck,
+  addOrEditNetworkCartItem,
+  applyNetworkRecheck,
+  cartNeedsPreviewGate,
+  networkCartItemFromQuote,
+  putLegacyCartItem,
+  restoreCartStorage,
+  serializeCartStorage,
+  updateCartLineQuantity,
+  type CartItem,
+  type LegacyCartItem,
+  type NetworkCartItem
+} from "./cart-model";
 
 type PublicLanguage = "ar" | "en";
 type CategoryProductListLayout = "single" | "double";
@@ -635,6 +641,15 @@ export function PublicMenuClient({
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartLoaded, setCartLoaded] = useState(false);
+  const cartRef = useRef<CartItem[]>([]);
+  cartRef.current = cart;
+  const cartRecheckGeneration = useRef(0);
+  const lineQuoteRequests = useRef(new Map<string, number>());
+  function nextLineQuoteRequest(lineId: string) {
+    const next = (lineQuoteRequests.current.get(lineId) ?? 0) + 1;
+    lineQuoteRequests.current.set(lineId, next);
+    return next;
+  }
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
@@ -672,9 +687,7 @@ export function PublicMenuClient({
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
   );
   const requestedView = view === "home" && !hasHomeSections ? "menu" : view;
-  const activeView = !whatsappOrderingEnabled && requestedView === "cart"
-    ? hasHomeSections ? "home" : "menu"
-    : requestedView;
+  const activeView = requestedView;
   const showMenuNavItem = Boolean(data.products.length || data.categories.length);
   const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
   const isSingleMenuPage = activeView === "menu" && showMenuNavItem && !hasHomeSections;
@@ -693,35 +706,10 @@ export function PublicMenuClient({
 
   useEffect(() => {
     setCartLoaded(false);
-
-    if (!whatsappOrderingEnabled) {
-      setCart([]);
-      window.localStorage.removeItem(storageKey);
-      setCartLoaded(true);
-      return;
-    }
-
     const stored = window.localStorage.getItem(storageKey);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as CartItem[];
-        setCart(parsed.map((item) => ({
-          ...item,
-          name: item.name || item.slug,
-          quantity: Math.max(1, Number(item.quantity) || 1),
-          price: Number(item.price) || 0,
-          currency: item.currency || data.restaurant.currency || "ل.س",
-          imageUrl: item.imageUrl ?? null,
-          description: item.description ?? null
-        })));
-      } catch {
-        setCart([]);
-      }
-    } else {
-      setCart([]);
-    }
+    setCart(restoreCartStorage(stored, data.restaurant.slug, data.restaurant.currency ?? "ل.س"));
     setCartLoaded(true);
-  }, [data.restaurant.currency, storageKey, whatsappOrderingEnabled]);
+  }, [data.restaurant.currency, data.restaurant.slug, storageKey]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(languageStorageKey);
@@ -731,11 +719,42 @@ export function PublicMenuClient({
   }, [languageStorageKey]);
 
   useEffect(() => {
-    if (!cartLoaded || !whatsappOrderingEnabled) {
+    if (!cartLoaded) {
       return;
     }
-    window.localStorage.setItem(storageKey, JSON.stringify(cart));
-  }, [cart, cartLoaded, storageKey, whatsappOrderingEnabled]);
+    try {
+      window.localStorage.setItem(storageKey, serializeCartStorage(cart, data.restaurant.slug));
+    } catch {
+      // Storage can be unavailable or full; the in-memory cart remains usable.
+    }
+  }, [cart, cartLoaded, data.restaurant.slug, storageKey]);
+
+  useEffect(() => {
+    if (!cartLoaded || activeView !== "cart") return;
+    const generation = ++cartRecheckGeneration.current;
+    const lines = cartRef.current.filter((item): item is NetworkCartItem => item.mode === "NETWORK");
+    if (!lines.length) return;
+    setCart((current) => current.map((item) => item.mode === "NETWORK" ? { ...item, status: "CHECKING" } : item));
+    for (const line of lines) {
+      const requestId = nextLineQuoteRequest(line.lineId);
+      void getPublicProductQuote(line.restaurantSlug, line.productId, line.selection)
+        .then((quote) => {
+          if (cartRecheckGeneration.current !== generation || lineQuoteRequests.current.get(line.lineId) !== requestId) return;
+          setCart((current) => current.map((item) => item.mode === "NETWORK" && item.lineId === line.lineId && item.identity === line.identity
+            ? applyNetworkRecheck(item, quote) : item));
+        })
+        .catch((error: unknown) => {
+          if (cartRecheckGeneration.current !== generation || lineQuoteRequests.current.get(line.lineId) !== requestId) return;
+          const known = error instanceof PublicProductQuoteError ? error : null;
+          setCart((current) => current.map((item) => item.mode === "NETWORK" && item.lineId === line.lineId && item.identity === line.identity
+            ? { ...item, status: known?.status && known.status < 500 ? "INVALID" : "OFFLINE",
+              proposedQuote: undefined,
+              issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] }
+            : item));
+        });
+    }
+    return () => { cartRecheckGeneration.current += 1; };
+  }, [activeView, cartLoaded, data.restaurant.slug]);
 
   useEffect(() => {
     window.localStorage.setItem(languageStorageKey, language);
@@ -820,8 +839,20 @@ export function PublicMenuClient({
     return () => window.cancelAnimationFrame(frame);
   }, [activeView, productSlug]);
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const legacyCart = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY");
+  const cartTotal = legacyCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string) {
+    const lineId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `network-${Date.now()}-${Math.random()}`;
+    const incoming = networkCartItemFromQuote({ product, restaurantSlug: data.restaurant.slug, quote, lineId });
+    if (!incoming) return false;
+    if (editingLineId) nextLineQuoteRequest(editingLineId);
+    const matched = cartRef.current.find((item) => item.mode === "NETWORK" && item.identity === incoming.identity);
+    if (matched) nextLineQuoteRequest(matched.lineId);
+    setCart((current) => addOrEditNetworkCartItem(current, incoming, editingLineId));
+    return true;
+  }
 
   function addToCart(product: PublicProduct) {
     if (!whatsappOrderingEnabled || isNetworkProduct(product)) {
@@ -831,25 +862,8 @@ export function PublicMenuClient({
     if (price === null) return;
 
     setCart((current) => {
-      const existing = current.find((item) => item.slug === product.slug);
-      if (existing) {
-        return current.map((item) =>
-          item.slug === product.slug ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-
-      return [
-        ...current,
-        {
-          slug: product.slug,
-          name: product.name,
-          quantity: 1,
-          price,
-          currency: product.currency,
-          imageUrl: productImage(product),
-          description: product.description
-        }
-      ];
+      const existing = current.find((item) => item.mode === "LEGACY" && item.slug === product.slug);
+      return putLegacyCartItem(current, product, price, productImage(product), (existing?.quantity ?? 0) + 1);
     });
   }
 
@@ -860,58 +874,59 @@ export function PublicMenuClient({
     const price = legacyProductPrice(product);
     if (price === null) return;
 
-    setCart((current) => {
-      const nextQuantity = Math.max(0, quantity);
-      const existing = current.find((item) => item.slug === product.slug);
-
-      if (nextQuantity <= 0) {
-        return current.filter((item) => item.slug !== product.slug);
-      }
-
-      if (existing) {
-        return current.map((item) =>
-          item.slug === product.slug
-            ? {
-              ...item,
-              quantity: nextQuantity,
-              price,
-              currency: product.currency,
-              imageUrl: productImage(product),
-              description: product.description
-            }
-            : item
-        );
-      }
-
-      return [
-        ...current,
-        {
-          slug: product.slug,
-          name: product.name,
-          quantity: nextQuantity,
-          price,
-          currency: product.currency,
-          imageUrl: productImage(product),
-          description: product.description
-        }
-      ];
-    });
+    setCart((current) => putLegacyCartItem(current, product, price, productImage(product), Math.max(0, quantity)));
   }
 
-  function updateCartItem(slug: string, quantity: number) {
-    setCart((current) =>
-      current
-        .map((item) => (item.slug === slug ? { ...item, quantity } : item))
-        .filter((item) => item.quantity > 0)
-    );
+  function updateCartItem(lineId: string, quantity: number) {
+    setCart((current) => updateCartLineQuantity(current, lineId, quantity));
   }
 
-  function removeCartItem(slug: string) {
-    setCart((current) => current.filter((item) => item.slug !== slug));
+  function removeCartItem(lineId: string) {
+    nextLineQuoteRequest(lineId);
+    setCart((current) => current.filter((item) => item.lineId !== lineId));
   }
 
   function getCartQuantity(slug: string) {
-    return cart.find((item) => item.slug === slug)?.quantity ?? 0;
+    return cart.find((item) => item.mode === "LEGACY" && item.slug === slug)?.quantity ?? 0;
+  }
+
+  async function acceptNetworkPrice(lineId: string) {
+    const item = cartRef.current.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
+    if (!item || item.status !== "CHANGED") return;
+    const requestId = nextLineQuoteRequest(lineId);
+    try {
+      const quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.selection);
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
+        ? acceptNetworkRecheck(candidate, quote) : candidate));
+    } catch (error) {
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      const known = error instanceof PublicProductQuoteError ? error : null;
+      setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
+        ? { ...candidate, status: known?.status && known.status < 500 ? "INVALID" : "OFFLINE", proposedQuote: undefined,
+          issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] }
+        : candidate));
+    }
+  }
+
+  async function retryNetworkLine(lineId: string) {
+    const item = cartRef.current.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
+    if (!item) return;
+    const requestId = nextLineQuoteRequest(lineId);
+    setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId ? { ...candidate, status: "CHECKING" } : candidate));
+    try {
+      const quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.selection);
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
+        ? applyNetworkRecheck(candidate, quote) : candidate));
+    } catch (error) {
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      const known = error instanceof PublicProductQuoteError ? error : null;
+      setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
+        ? { ...candidate, status: known?.status && known.status < 500 ? "INVALID" : "OFFLINE", proposedQuote: undefined,
+          issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] }
+        : candidate));
+    }
   }
 
   function requestMenuBack() {
@@ -962,7 +977,7 @@ export function PublicMenuClient({
         `${t.newOrderFrom} ${data.restaurant.name}`,
         "",
         t.items,
-        ...cart.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name}`),
+        ...legacyCart.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name}`),
         `${t.time}: ${new Date().toLocaleString(language === "ar" ? "ar-SY" : "en-US")}`
       ].join("\n");
     }
@@ -971,13 +986,13 @@ export function PublicMenuClient({
       `${t.newOrderFrom} ${data.restaurant.name}`,
       "",
       t.items,
-      ...cart.map((item, index) => showPrices ? `${index + 1}. ${item.quantity}x ${item.name} - ${item.price * item.quantity} ${item.currency}` : `${index + 1}. ${item.quantity}x ${item.name}`),
+      ...legacyCart.map((item, index) => showPrices ? `${index + 1}. ${item.quantity}x ${item.name} - ${item.price * item.quantity} ${item.currency}` : `${index + 1}. ${item.quantity}x ${item.name}`),
       "",
       `${t.total}: ${cartTotal} ${currency}`,
       `${t.time}: ${new Date().toLocaleString(language === "ar" ? "ar-SY" : "en-US")}`
     ];
     return lines.join("\n");
-  }, [cart, cartTotal, currency, data.restaurant.name, language, showPrices, t]);
+  }, [legacyCart, cartTotal, currency, data.restaurant.name, language, showPrices, t]);
 
   const socialLinks = [
     { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com") },
@@ -1015,7 +1030,7 @@ export function PublicMenuClient({
   }
 
   async function sendWhatsappOrder(details?: CheckoutDetails) {
-    if (!whatsappOrderingEnabled || !cart.length || orderSubmitting) {
+    if (!whatsappOrderingEnabled || !cart.length || cartNeedsPreviewGate(cart, products) || orderSubmitting) {
       return;
     }
 
@@ -1034,7 +1049,7 @@ export function PublicMenuClient({
           deliveryBeside: checkoutDetails?.deliveryBeside,
           orderNote: checkoutDetails?.orderNote,
           pickupTime: checkoutDetails?.pickupTime,
-          items: cart.map((item) => ({
+          items: legacyCart.map((item) => ({
             productSlug: item.slug,
             quantity: item.quantity
           }))
@@ -1157,6 +1172,8 @@ export function PublicMenuClient({
           setProductQuantity={setProductQuantity}
           getCartQuantity={getCartQuantity}
           cartCount={cartCount}
+          cart={cart}
+          onNetworkQuote={(quote, editingLineId) => addNetworkQuote(activeProduct, quote, editingLineId)}
           t={t}
           showPrices={showPrices}
           whatsappOrderingEnabled={whatsappOrderingEnabled}
@@ -1179,13 +1196,23 @@ export function PublicMenuClient({
           sendWhatsappOrder={sendWhatsappOrder}
           orderSubmitting={orderSubmitting}
           orderMessage={orderMessage}
+          whatsappOrderingEnabled={whatsappOrderingEnabled}
+          language={language}
+          acceptNetworkPrice={(lineId) => void acceptNetworkPrice(lineId)}
+          retryNetworkLine={(lineId) => void retryNetworkLine(lineId)}
+          editNetworkItem={(item) => {
+            const product = products.find((candidate) => candidate.id === item.productId);
+            if (!product) return;
+            const href = productHref(data.restaurant.slug, product, publicPath("/cart"), useSubdomainRoutes);
+            navigateTo(`${href}${href.includes("?") ? "&" : "?"}editCart=${encodeURIComponent(item.lineId)}`);
+          }}
           t={t}
           showPrices={showPrices}
           useSubdomainRoutes={useSubdomainRoutes}
         />
       )}
 
-      {whatsappOrderingEnabled && cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
+      {(whatsappOrderingEnabled || cart.some((item) => item.mode === "NETWORK")) && cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
         <Link href={publicPath("/cart")} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
           <ShoppingCart size={20} />
           <span>{t.viewCart}</span>
@@ -2379,6 +2406,11 @@ function CartView({
   sendWhatsappOrder,
   orderSubmitting,
   orderMessage,
+  whatsappOrderingEnabled,
+  language,
+  acceptNetworkPrice,
+  retryNetworkLine,
+  editNetworkItem,
   t,
   showPrices,
   useSubdomainRoutes
@@ -2391,6 +2423,11 @@ function CartView({
   sendWhatsappOrder: (details?: CheckoutDetails) => void;
   orderSubmitting: boolean;
   orderMessage: string | null;
+  whatsappOrderingEnabled: boolean;
+  language: PublicLanguage;
+  acceptNetworkPrice: (lineId: string) => void;
+  retryNetworkLine: (lineId: string) => void;
+  editNetworkItem: (item: NetworkCartItem) => void;
   t: PublicTranslations;
   showPrices: boolean;
   useSubdomainRoutes: boolean;
@@ -2406,14 +2443,21 @@ function CartView({
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
   const related = data.products.filter((product) => !cartSlugs.has(product.slug)).slice(0, 8);
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const networkItems = cart.filter((item): item is NetworkCartItem => item.mode === "NETWORK");
+  const staleLegacyNetwork = cart.some((item) => {
+    const product = productBySlug.get(item.slug);
+    return item.mode === "LEGACY" && Boolean(product && isNetworkProduct(product));
+  });
+  const hasNetwork = cartNeedsPreviewGate(cart, data.products);
+  const subtotal = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY")
+    .reduce((sum, item) => sum + item.price * item.quantity, 0);
   const deliveryFee = fulfillment === "delivery" ? 0 : 0;
   const total = subtotal + deliveryFee;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const [orderNumber, setOrderNumber] = useState("001");
 
   useEffect(() => {
-    if (!cart.length) {
+    if (!cart.length || hasNetwork || !whatsappOrderingEnabled) {
       setOrderNumber("001");
       return;
     }
@@ -2442,7 +2486,7 @@ function CartView({
     return () => {
       cancelled = true;
     };
-  }, [cart.length, data.restaurant.slug]);
+  }, [cart.length, data.restaurant.slug, hasNetwork, whatsappOrderingEnabled]);
 
   useEffect(() => {
     function restoreReviewStep() {
@@ -2453,12 +2497,21 @@ function CartView({
     return () => window.removeEventListener("popstate", restoreReviewStep);
   }, []);
 
+  useEffect(() => {
+    if (hasNetwork) setCartStep("review");
+  }, [hasNetwork]);
+
   function goToConfirmStep() {
+    if (hasNetwork || !whatsappOrderingEnabled) return;
     window.history.pushState({ cartStep: "confirm" }, "", window.location.href);
     setCartStep("confirm");
   }
 
   function handleCheckoutAction() {
+    if (hasNetwork || !whatsappOrderingEnabled) {
+      setCheckoutError(language === "ar" ? "طلب منتجات الشبكة غير مفعل بعد. السلة للمعاينة فقط." : "Network ordering is not enabled yet. This cart is preview-only.");
+      return;
+    }
     if (cartStep === "review") {
       goToConfirmStep();
       return;
@@ -2491,9 +2544,9 @@ function CartView({
 
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
-      <CheckoutSteps active={cartStep} />
+      {!hasNetwork ? <CheckoutSteps active={cartStep} /> : null}
 
-      {cartStep === "review" ? (
+      {cartStep === "review" || hasNetwork ? (
         <>
           {cart.length ? (
             <section className="cart-page-list">
@@ -2505,7 +2558,7 @@ function CartView({
                   : "";
 
                 return (
-                  <article key={item.slug} className="cart-page-item">
+                  <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""}`}>
                     {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
                       <span className="product-image-placeholder" role="img" aria-label={item.name}>
                         <ImageIcon size={24} />
@@ -2513,22 +2566,32 @@ function CartView({
                     )}
                     <div className="cart-page-copy">
                       <b>{item.name}</b>
-                      {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
-                      {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
+                      {item.mode === "NETWORK" ? <NetworkCartDetails
+                        item={item}
+                        language={language}
+                        showPrices={showPrices}
+                        onAccept={() => acceptNetworkPrice(item.lineId)}
+                        onRetry={() => retryNetworkLine(item.lineId)}
+                        onEdit={() => editNetworkItem(item)}
+                        canEdit={data.products.some((candidate) => candidate.id === item.productId)}
+                      /> : <>
+                        {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
+                        {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
+                      </>}
                     </div>
                     <div className="cart-page-stepper" aria-label={item.name}>
-                      <button type="button" onClick={() => updateCartItem(item.slug, item.quantity + 1)} aria-label={`+ ${item.name}`}>
+                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity + 1)} aria-label={`+ ${item.name}`}>
                         <Plus size={14} />
                       </button>
                       <strong>{item.quantity}</strong>
-                      <button type="button" onClick={() => updateCartItem(item.slug, item.quantity - 1)} disabled={item.quantity <= 0} aria-label={`- ${item.name}`}>
+                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity - 1)} aria-label={`- ${item.name}`}>
                         <Minus size={14} />
                       </button>
                     </div>
                     <button
                       type="button"
                       className="cart-page-remove"
-                      onClick={() => removeCartItem(item.slug)}
+                      onClick={() => removeCartItem(item.lineId)}
                       aria-label={`${t.removeItem} ${item.name}`}
                     >
                       <Trash2 size={15} />
@@ -2604,7 +2667,14 @@ function CartView({
         </section>
       )}
 
-      <section className="cart-checkout-card">
+      {hasNetwork ? <section className="network-cart-gate" role="status">
+        <b>{language === "ar" ? "سلة الشبكة للمعاينة فقط" : "Network cart is preview-only"}</b>
+        {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
+        <p>{language === "ar"
+          ? "السعر Quote حالي قابل للتغير. إرسال طلب أو واتساب لمنتجات الشبكة غير مفعل حتى اكتمال إعادة التحقق قبل الطلب."
+          : "Quotes are current estimates. Network checkout and WhatsApp orders remain disabled until order revalidation is complete."}</p>
+        {networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
+      </section> : whatsappOrderingEnabled ? <section className="cart-checkout-card">
         <div className="cart-checkout-meta">
           <span>{t.selectedItems} <b>{cartCount}</b></span>
           <span>{t.orderNumber}: {orderNumber}</span>
@@ -2636,9 +2706,58 @@ function CartView({
           {orderSubmitting ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
           {orderSubmitting ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
         </button>
-      </section>
+      </section> : <section className="network-cart-gate" role="status">{language === "ar" ? "إرسال الطلب غير متاح لهذه القائمة حاليًا." : "Ordering is unavailable for this menu."}</section>}
     </main>
   );
+}
+
+function NetworkCartDetails({
+  item, language, showPrices, onAccept, onRetry, onEdit, canEdit
+}: {
+  item: NetworkCartItem;
+  language: PublicLanguage;
+  showPrices: boolean;
+  onAccept: () => void;
+  onRetry: () => void;
+  onEdit: () => void;
+  canEdit: boolean;
+}) {
+  const ar = language === "ar";
+  const statusText = {
+    CHECKING: ar ? "جارٍ إعادة التحقق من السعر والتكوين..." : "Rechecking price and configuration...",
+    CURRENT: ar ? "سعر Quote حالي، غير مضمون حتى إرسال الطلب" : "Current quote; not guaranteed until checkout",
+    CHANGED: ar ? "تغير السعر أو مصدر مرتبط. اختياراتك لم تتغير." : "Price or linked source changed. Your selections are unchanged.",
+    INVALID: ar ? "لم يعد هذا التكوين صالحًا؛ راجع اختياراتك." : "This configuration is no longer valid; review your choices.",
+    OFFLINE: ar ? "تعذر الاتصال للتحقق؛ السعر المحفوظ غير موثوق." : "Cannot verify online; the saved price is not trusted."
+  }[item.status];
+  const lines = item.acceptedQuote.priceBreakdown;
+  return <div className="network-cart-details" dir={ar ? "rtl" : "ltr"}>
+    <span className="network-cart-badge">{ar ? "تكوين شبكة" : "Network configuration"} · r{item.configurationRevision}</span>
+    <ul className="network-cart-selections">
+      {lines.filter((line) => line.kind !== "BASE").map((line, index) => <li key={`${line.path}-${index}`}>
+        <span>{line.kind === "SIZE" ? (ar ? "الحجم: " : "Size: ") : line.sourceProductId ? (ar ? "مرتبط: " : "Linked: ") : ""}{line.label}</span>
+        {line.included ? <small>{ar ? "مشمول" : "Included"}</small> : null}
+        {line.path.includes(".children") || line.path.includes(".linked") ? <small>{ar ? "خيار متداخل" : "Nested"}</small> : null}
+        {line.instanceId ? <small>{ar ? "وحدة مستقلة" : "Independent unit"}</small> : null}
+      </li>)}
+    </ul>
+    <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p>
+    {showPrices ? <div className="network-cart-price">
+      <span>{item.status === "CURRENT" ? (ar ? "السعر الحالي" : "Current quote") : (ar ? "آخر سعر وافقت عليه" : "Last accepted quote")}</span>
+      <b>{multiplyMoney(item.acceptedQuote.total, item.quantity)} {item.currency}</b>
+    </div> : null}
+    {item.status === "CHANGED" && item.proposedQuote && showPrices ? <div className="network-cart-price changed">
+      <span>{ar ? "السعر الجديد المقترح" : "New proposed quote"}</span>
+      <b>{multiplyMoney(item.proposedQuote.total, item.quantity)} {item.currency}</b>
+    </div> : null}
+    {item.issues.length ? <ul className="network-cart-issues">{item.issues.slice(0, 4).map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.code}{ar ? " — يتطلب مراجعة" : " — needs review"}</li>)}</ul> : null}
+    <div className="network-cart-actions">
+      {canEdit ? <button type="button" onClick={onEdit}>{ar ? "تعديل التكوين" : "Edit configuration"}</button>
+        : <span>{ar ? "الصنف غير متاح في القائمة الحالية؛ يمكنك حذفه من السلة." : "Product unavailable in this menu; you can remove it from the cart."}</span>}
+      {item.status === "CHANGED" && item.proposedQuote ? <button type="button" onClick={onAccept}>{ar ? "أوافق على السعر الحالي" : "Accept current quote"}</button> : null}
+      {(item.status === "OFFLINE" || item.status === "INVALID") ? <button type="button" onClick={onRetry}>{ar ? "إعادة التحقق" : "Retry quote"}</button> : null}
+    </div>
+  </div>;
 }
 
 function CheckoutSteps({ active }: { active: "review" | "confirm" }) {
@@ -2668,6 +2787,8 @@ function ProductView({
   setProductQuantity,
   getCartQuantity,
   cartCount,
+  cart,
+  onNetworkQuote,
   t,
   showPrices,
   whatsappOrderingEnabled,
@@ -2680,6 +2801,8 @@ function ProductView({
   setProductQuantity: (product: PublicProduct, quantity: number) => void;
   getCartQuantity: (slug: string) => number;
   cartCount: number;
+  cart: CartItem[];
+  onNetworkQuote: (quote: PublicProductQuoteResponse, editingLineId?: string) => boolean;
   t: PublicTranslations;
   showPrices: boolean;
   whatsappOrderingEnabled: boolean;
@@ -2687,6 +2810,10 @@ function ProductView({
   useSubdomainRoutes: boolean;
 }) {
   const searchParams = useSearchParams();
+  const editingLineId = searchParams.get("editCart") ?? undefined;
+  const editingItem = editingLineId
+    ? cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingLineId && item.productId === product.id)
+    : undefined;
   const related = getRelatedProducts(data.products, product);
   const isVertigo = publicTemplate(data) === "vertigo";
   const ingredients = productIngredients(product);
@@ -2911,6 +3038,10 @@ function ProductView({
             restaurantSlug={data.restaurant.slug}
             productId={product.id}
             currency={product.currency}
+            cartHref={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)}
+            initialSelection={editingItem?.selection}
+            editingLineId={editingItem?.lineId}
+            onNetworkQuote={onNetworkQuote}
           />
         ) : null}
 

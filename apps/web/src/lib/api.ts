@@ -2,7 +2,9 @@ import {
   ABO_MALEK_THEME,
   themeToCssVariables,
   type ConfigurationIssue,
+  type PriceLine,
   type ProductConfigurationV1,
+  type ProductSelectionV1,
   type ThemeSettings
 } from "@menu/shared";
 
@@ -119,6 +121,37 @@ export type PublicProductConfigurationResponse = {
     productScheduleApplied: false;
   };
 };
+
+export type PublicProductQuoteResponse = {
+  schemaVersion: 1;
+  productId: string;
+  configurationRevision: number;
+  selectionKey: string;
+  canonicalSelection: ProductSelectionV1;
+  currency: string;
+  trustedTotal: string;
+  baseIgnored: boolean;
+  priceBreakdown: PriceLine[];
+  linkedSourceRevisions: { sourceProductId: string; mode: "NETWORK" | "LEGACY"; configurationRevision: number }[];
+  configurationOrderable: true;
+  previewOnly: true;
+  orderAction: "STAGE_6_REQUIRED";
+  orderingEnabled: false;
+  runtimeContext: PublicProductConfigurationResponse["runtimeContext"];
+};
+
+export class PublicProductQuoteError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly code: string,
+    readonly issues: ConfigurationIssue[] = [],
+    readonly currentRevision?: number
+  ) {
+    super(message);
+    this.name = "PublicProductQuoteError";
+  }
+}
 
 export type PublicMenuData = {
   restaurant: {
@@ -266,6 +299,42 @@ export async function getPublicProductConfiguration(
   return apiGet<PublicProductConfigurationResponse>(
     `/public/menus/${encodeURIComponent(restaurantSlug)}/products/${encodeURIComponent(productId)}/configuration`
   );
+}
+
+export async function getPublicProductQuote(
+  restaurantSlug: string,
+  productId: string,
+  selection: ProductSelectionV1,
+  signal?: AbortSignal
+): Promise<PublicProductQuoteResponse> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_URL}/public/menus/${encodeURIComponent(restaurantSlug)}/products/${encodeURIComponent(productId)}/quote`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selection }), cache: "no-store", signal }
+    );
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new PublicProductQuoteError("تعذر الاتصال بخدمة التحقق من السعر.", null, "QUOTE_NETWORK_FAILURE");
+  }
+  const payload = await response.json().catch(() => null) as {
+    data?: PublicProductQuoteResponse;
+    error?: string;
+    message?: string;
+    issues?: ConfigurationIssue[];
+    currentRevision?: number;
+  } | null;
+  if (!response.ok) {
+    throw new PublicProductQuoteError(
+      payload?.message ?? "تعذر التحقق من التكوين الحالي.",
+      response.status,
+      payload?.error ?? "QUOTE_HTTP_FAILURE",
+      Array.isArray(payload?.issues) ? payload.issues : [],
+      payload?.currentRevision
+    );
+  }
+  if (!payload?.data) throw new PublicProductQuoteError("استجابة Quote غير صالحة.", response.status, "QUOTE_RESPONSE_INVALID");
+  return payload.data;
 }
 
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {

@@ -21,6 +21,15 @@ import type {
 
 export type InstanceIdFactory = (prefix: string) => string;
 
+/** Prevents an older async quote from acting on a newer selection or route. */
+export class LatestQuoteGate {
+  private generation = 0;
+
+  next() { this.generation += 1; return this.generation; }
+  invalidate() { this.generation += 1; }
+  isCurrent(generation: number) { return generation === this.generation; }
+}
+
 export function publicConfigurationContext(
   restaurantSlug: string,
   sources: readonly PublicLinkedConfigurationSource[]

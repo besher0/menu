@@ -13,8 +13,11 @@ import type {
 } from "@menu/shared";
 import {
   getPublicProductConfiguration,
+  getPublicProductQuote,
+  PublicProductQuoteError,
   type PublicLinkedConfigurationSource,
-  type PublicProductConfigurationResponse
+  type PublicProductConfigurationResponse,
+  type PublicProductQuoteResponse
 } from "@/lib/api";
 import {
   buildInitialSelection,
@@ -22,6 +25,7 @@ import {
   canAddOptionInstance,
   calculatePublicPreview,
   linkedConfiguration,
+  LatestQuoteGate,
   updateOptionGroup
 } from "./product-configurator-model";
 import styles from "./product-configurator.module.css";
@@ -30,6 +34,10 @@ type Props = {
   restaurantSlug: string;
   productId: string;
   currency: string;
+  cartHref?: string;
+  initialSelection?: ProductSelectionV1 | null;
+  editingLineId?: string;
+  onNetworkQuote?: (quote: PublicProductQuoteResponse, editingLineId?: string) => boolean;
 };
 
 function issueText(code: string, fallback: string) {
@@ -267,11 +275,15 @@ function OptionGroup({
   </section>;
 }
 
-export function ProductConfigurator({ restaurantSlug, productId, currency }: Props) {
+export function ProductConfigurator({ restaurantSlug, productId, currency, cartHref, initialSelection, editingLineId, onNetworkQuote }: Props) {
   const [envelope, setEnvelope] = useState<PublicProductConfigurationResponse | null>(null);
   const [selection, setSelection] = useState<ProductSelectionV1 | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [continueMessage, setContinueMessage] = useState<string | null>(null);
+  const [quoteAdded, setQuoteAdded] = useState(false);
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [staleEdit, setStaleEdit] = useState(false);
+  const quoteGate = useRef(new LatestQuoteGate());
   const idCounter = useRef(0);
   const createId = (prefix: string) => {
     idCounter.current += 1;
@@ -281,9 +293,12 @@ export function ProductConfigurator({ restaurantSlug, productId, currency }: Pro
 
   useEffect(() => {
     let cancelled = false;
+    quoteGate.current.invalidate();
     setEnvelope(null);
     setSelection(null);
     setError(null);
+    setQuoteAdded(false);
+    setStaleEdit(false);
     void getPublicProductConfiguration(restaurantSlug, productId)
       .then((value) => {
         if (cancelled) return;
@@ -300,13 +315,20 @@ export function ProductConfigurator({ restaurantSlug, productId, currency }: Pro
           // Invalid local preview drafts are ignored without affecting server data.
         }
         setEnvelope(value);
-        setSelection(initial ?? buildInitialSelection(value.configuration, sources, createId));
+        if (editingLineId && initialSelection) {
+          const compatible = initialSelection.productId === value.productId
+            && initialSelection.configurationRevision === value.configurationRevision;
+          setStaleEdit(!compatible);
+          setSelection(compatible ? initialSelection : buildInitialSelection(value.configuration, sources, createId));
+        } else {
+          setSelection(initial ?? buildInitialSelection(value.configuration, sources, createId));
+        }
       })
       .catch(() => {
         if (!cancelled) setError("تعذر تحميل شبكة التكوين العامة لهذا الصنف.");
       });
-    return () => { cancelled = true; };
-  }, [productId, restaurantSlug]);
+    return () => { cancelled = true; quoteGate.current.invalidate(); };
+  }, [productId, restaurantSlug, editingLineId]);
 
   useEffect(() => {
     if (!envelope || !selection) return;
@@ -328,17 +350,48 @@ export function ProductConfigurator({ restaurantSlug, productId, currency }: Pro
   if (!envelope || !selection || !preview) return <section className={styles.state} dir="rtl"><Loader2 className={styles.spin} size={22} /><b>جارٍ تحميل خيارات الصنف...</b></section>;
 
   function reset() {
+    quoteGate.current.invalidate();
+    setQuoteBusy(false);
     idCounter.current = 0;
     setContinueMessage(null);
+    setQuoteAdded(false);
     setSelection(buildInitialSelection(envelope!.configuration, sources, createId));
   }
 
-  function continuePreview() {
+  async function continuePreview() {
     if (!preview?.valid || preview.total === null) {
       setContinueMessage("أكمل الاختيارات المطلوبة وصحّح الأخطاء أولًا.");
       return;
     }
-    setContinueMessage("اكتمل التكوين للمعاينة. الإضافة إلى السلة ستتاح بعد مسار التسعير الموثوق في Stage 6.");
+    if (!envelope?.orderable || !selection || !onNetworkQuote) {
+      setContinueMessage("لا يمكن حفظ هذا التكوين في السلة حاليًا.");
+      return;
+    }
+    const requestId = quoteGate.current.next();
+    setQuoteBusy(true);
+    setContinueMessage(null);
+    setQuoteAdded(false);
+    try {
+      const quote = await getPublicProductQuote(restaurantSlug, productId, selection);
+      if (!quoteGate.current.isCurrent(requestId)) return;
+      if (!onNetworkQuote(quote, editingLineId)) {
+        setContinueMessage("استجابة السعر غير متوافقة مع الصنف الحالي؛ لم تُعدَّل السلة.");
+        return;
+      }
+      setContinueMessage(editingLineId ? "حُفظ التكوين المعدّل في السلة. السعر الحالي قابل للتغير." : "أُضيف التكوين إلى السلة بسعر Quote حالي قابل للتغير.");
+      setQuoteAdded(true);
+      setStaleEdit(false);
+    } catch (error) {
+      if (!quoteGate.current.isCurrent(requestId)) return;
+      if (error instanceof PublicProductQuoteError) {
+        const firstIssue = error.issues[0];
+        setContinueMessage(firstIssue ? issueText(firstIssue.code, firstIssue.message) : error.message);
+      } else {
+        setContinueMessage("تعذر الاتصال بخدمة السعر؛ لم تُضف إلى السلة.");
+      }
+    } finally {
+      if (quoteGate.current.isCurrent(requestId)) setQuoteBusy(false);
+    }
   }
 
   return <section className={styles.configurator} dir="rtl" data-testid="public-product-configurator">
@@ -349,12 +402,14 @@ export function ProductConfigurator({ restaurantSlug, productId, currency }: Pro
 
     {!envelope.orderable ? <div className={styles.unavailable}><AlertTriangle size={18} /><div><b>التكوين غير قابل للطلب حاليًا</b><p>لن نخفّض المتطلبات أو نعرض سعرًا نهائيًا غير موثوق.</p></div></div> : null}
 
+    {staleEdit ? <div className={styles.unavailable}><AlertTriangle size={18} /><div><b>تغيّر إصدار التكوين منذ إضافته للسلة</b><p>اختيارات السلة القديمة محفوظة دون تعديل. راجع التكوين الحالي واحفظه صراحةً إذا رغبت.</p></div></div> : null}
+
     <SelectionGroups
       configuration={envelope.configuration}
       selection={selection}
       sources={sources}
       createId={createId}
-      onChange={(next) => { setContinueMessage(null); setSelection(next); }}
+      onChange={(next) => { quoteGate.current.invalidate(); setQuoteBusy(false); setContinueMessage(null); setQuoteAdded(false); setSelection(next); }}
     />
 
     <aside className={styles.summary} aria-live="polite">
@@ -373,9 +428,12 @@ export function ProductConfigurator({ restaurantSlug, productId, currency }: Pro
     </aside>
 
     <div className={styles.previewGate}>
-      <button type="button" onClick={continuePreview}>تحقق من التكوين</button>
-      <p>هذه معاينة وليست Quote أو ضمانًا للسعر، ولا يمكن إضافتها إلى السلة في هذه المرحلة.</p>
+      <button type="button" onClick={() => void continuePreview()} disabled={quoteBusy || !preview.valid || !envelope.orderable}>
+        {quoteBusy ? "جارٍ التحقق من السعر..." : editingLineId ? "حفظ التكوين في السلة" : "تحقق وأضف إلى السلة"}
+      </button>
+      <p>السعر الظاهر أعلاه معاينة محلية؛ الإضافة تستخدم Quote من الخادم. السلة للتجربة فقط ولا تتيح إرسال طلب Network الآن.</p>
       {continueMessage ? <strong>{continueMessage}</strong> : null}
+      {cartHref && quoteAdded ? <a href={cartHref}>عرض السلة</a> : null}
     </div>
   </section>;
 }

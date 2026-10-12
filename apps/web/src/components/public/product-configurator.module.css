@@ -341,6 +341,17 @@
   font-weight: 800;
 }
 
+.previewGate button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.previewGate a {
+  color: var(--pc-accent);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 .previewGate strong {
   padding: 10px;
   border-radius: 10px;
