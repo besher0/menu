@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-12
 
-Current state: **Stage 3.1 Backend Stabilization is complete, tested, and committed. Stop here until the user explicitly approves Stage 4.**
+Current state: **Stage 4 Dashboard Product Configuration Editor is complete and tested. The Stage 4 implementation, report, and this handoff are saved together in the commit titled `feat(web): add Stage 4 product configuration editor`. Stop until the user explicitly approves Stage 5.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -21,6 +21,7 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 3 handoff commit: `542f6e4 docs: update Codex handoff after Stage 3`.
 - Stage 3.1 implementation/report commit: `2507720 fix(api): stabilize Stage 3 product configuration backend`.
 - The commit titled `docs: update Codex handoff after Stage 3.1` contains this handoff revision.
+- Stage 4 implementation/report/handoff commit: `feat(web): add Stage 4 product configuration editor` (use `git log -1 --oneline` for its hash).
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -168,6 +169,29 @@ Implemented:
 - Revalidated capability loss: stored tree and dependency data remain readable, writes are denied, and no Base Price fallback occurs.
 
 Stage 3.1 deliberately did not change Prisma schema, migrations, the backfill algorithm, Dashboard UI, Cart, Checkout, Billing, or Business/Outlet architecture. Its limited `PublicMenuService` change is a deny-only legacy boundary, not a public configurator.
+
+### Stage 4 - Dashboard Product Configuration Editor
+
+Completed under the commit titled `feat(web): add Stage 4 product configuration editor`.
+
+Full report:
+
+`STAGE_4_DASHBOARD_EDITOR_REPORT_AR.md`
+
+Implemented:
+
+- Integrated the editor into the real existing Product edit form; new Product creation remains the current Legacy flow until a product ID exists.
+- Added an RTL responsive recursive tree editor in `apps/web/src/components/dashboard/product-configuration/`.
+- Supports independent SIZE groups with full prices, nullable Base, OPTIONS, group and option quantities, Included Quantity, size-specific overrides, nesting, availability, stable IDs, deletion confirmation, and sibling reordering.
+- Uses only the approved configuration GET/PUT API for tree persistence and the existing tenant-scoped Product list for linked-source search.
+- Handles exact next revision, structured 400 issues, 403 permission/capability loss, and 409 conflict while retaining the local draft.
+- Added local-only draft autosave, explicit Save/Cancel, before-unload/link navigation protection, and an unsaved state indicator. No server autosave exists.
+- Added Linked Product ORIGINAL/CUSTOM editing, live source structure display, local price overrides, explicit CUSTOM snapshot editing, Legacy-CUSTOM protection, unavailable-source warnings, and repeated source support.
+- Added an interactive preview that calls the Stage 1 `calculatePrice` engine directly and never performs floating-point money arithmetic.
+- Added local-only Demo fixtures for Pizza Margherita, Included Quantity, size-specific pricing, and Combo ORIGINAL/CUSTOM.
+- Protected the old Product form from converting blank Base to zero and from updating Network Base through the generic Product PATCH route.
+
+No Backend, Prisma, Migration, Public Menu, Cart, Checkout, deployment, Production data, package billing, or Business/Outlet architecture was changed in Stage 4.
 
 ## 4. Current architectural decisions
 
@@ -330,6 +354,7 @@ Error codes include:
 
 - `STAGE_3_ADMIN_API_IMPLEMENTATION_REPORT_AR.md`
 - `STAGE_3_1_BACKEND_STABILIZATION_REPORT_AR.md`
+- `STAGE_4_DASHBOARD_EDITOR_REPORT_AR.md`
 
 ### Stage 3 and 3.1 tests
 
@@ -340,6 +365,23 @@ Error codes include:
 - `apps/api/src/modules/products/products.service.spec.ts`
 - `apps/api/src/modules/feature-flags/feature-flags.service.spec.ts`
 - `apps/api/src/modules/dashboard/dashboard.service.spec.ts`
+
+### Stage 4 Dashboard editor
+
+- `apps/web/src/components/dashboard/product-configuration/product-configuration-editor.tsx`
+- `apps/web/src/components/dashboard/product-configuration/configuration-workspace.tsx`
+- `apps/web/src/components/dashboard/product-configuration/configuration-preview.tsx`
+- `apps/web/src/components/dashboard/product-configuration/editor-model.ts`
+- `apps/web/src/components/dashboard/product-configuration/api.ts`
+- `apps/web/src/components/dashboard/product-configuration/demos.ts`
+- `apps/web/src/components/dashboard/product-configuration/messages.ts`
+- `apps/web/src/components/dashboard/product-configuration/types.ts`
+- `apps/web/src/components/dashboard/product-configuration/editor-model.test.ts`
+- `apps/web/src/components/dashboard/product-configuration/api.test.ts`
+- `apps/web/src/components/dashboard/product-configuration/configuration-workspace.test.ts`
+- `apps/web/vitest.config.mts`
+- `apps/web/src/components/dashboard/product-form.tsx`
+- `apps/web/src/app/globals.css`
 
 ## 7. Final verified test state
 
@@ -354,6 +396,17 @@ All final runs used the repository source and a workspace-local TEMP directory b
 - Product-configuration tools typecheck: passed.
 - Root typecheck (Shared/API/Web): passed.
 - Root build (Shared/API/Web): passed; Next.js generated 27 pages/routes successfully.
+
+Stage 4 final verification added:
+
+- Web Stage 4 Vitest: 13/13 passed in 3 files.
+- Shared regression: 21/21 passed.
+- API regression: 65 passed; 14 disposable-PostgreSQL integration tests skipped in this Stage 4 run because no disposable DB was created and Stage 4 does not change DB/API. Their last approved Stage 3.1 run remains 14/14 passed.
+- Executed total in the Stage 4 final regression: 99 passed, 14 skipped.
+- Root Typecheck: passed.
+- Prisma validate: passed with local dummy validation-only URLs; no database connection was made.
+- Root Build: passed; Next.js generated 27 routes/pages.
+- Web visual coverage: recursive SSR component render plus responsive/RTL CSS and production build. No runtime screenshot was taken because no authenticated disposable Dashboard/API fixture was available, and Production/real `.env` use remained prohibited.
 
 Disposable DB details from the test run:
 
@@ -396,8 +449,8 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 1. Read this file fully.
 2. Read the authoritative source files listed in section 2 fully.
 3. Verify branch, status, and commits.
-4. Confirm Stage 1, Stage 2C, Stage 3, and Stage 3.1 files actually exist.
-5. Read both Stage 3 and Stage 3.1 Arabic implementation reports.
+4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, and Stage 4 files actually exist.
+5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
 6. Re-run the baseline tests before a new stage if practical.
 7. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 8. Ask for explicit approval if the requested work would change an unresolved decision above.
@@ -407,6 +460,7 @@ Useful commands (with a workspace-local TEMP directory):
 ```powershell
 npm run test:shared
 npm run test:api
+npm run test -w @menu/web
 npm run typecheck
 npm run build
 npm run typecheck:product-configuration-tools -w @menu/api
@@ -421,14 +475,8 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-The next proposed stage is **Stage 4 — Dashboard Product Configuration Editor**, only after explicit user approval.
+The next proposed stage is **Stage 5 - Public Product Configurator and ordering-path integration**, only after explicit user approval and a fresh review of its exact authorized scope.
 
-Likely Stage 4 scope from the approved workflow:
+Likely Stage 5 concerns include public rendering, selection persistence into Cart/Checkout, order snapshots, and safe rollout of Network Products. Do not infer or implement those details from this handoff alone; re-read the authoritative workflow and the user's new approval.
 
-- Extend the real product editor in `apps/web/src/components/dashboard/product-form.tsx`.
-- Build an RTL vertical tree editor for Sizes, Options, nesting, quantities, included count, price overrides, linked ORIGINAL/CUSTOM, and validation.
-- Use the Stage 3 GET/PUT API and optimistic revision contract.
-- Preserve all current product fields and legacy behavior.
-- Provide explicitly marked test/demo configurations only in test/seed data.
-
-Do not begin Stage 4, Stage 5, deployment, or any real migration automatically. Stop and wait for explicit approval.
+Do not begin Stage 5, deployment, or any real migration automatically. Do not expose Network Products through the Legacy ordering path. Stop and wait for explicit approval.

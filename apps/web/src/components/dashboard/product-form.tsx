@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
+import { ProductConfigurationEditor } from "./product-configuration/product-configuration-editor";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
@@ -117,7 +118,9 @@ type ProductDetails = {
   id: string;
   name: string;
   description?: string | null;
-  basePrice: number;
+  basePrice: number | null;
+  configurationMode?: "LEGACY" | "NETWORK";
+  configurationVersion?: number;
   currency: string;
   isNew?: boolean;
   isFeatured?: boolean;
@@ -266,6 +269,8 @@ export function ProductForm({ productId }: { productId?: string }) {
   const [mealDetailSearch, setMealDetailSearch] = useState("");
   const [mealDetailLibraryStatus, setMealDetailLibraryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailIconSearch, setDetailIconSearch] = useState("");
+  const [configurationMode, setConfigurationMode] = useState<"LEGACY" | "NETWORK">("LEGACY");
+  const [configurationDirty, setConfigurationDirty] = useState(false);
   const [form, setForm] = useState<FormState>(() => emptyProductForm());
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -672,6 +677,7 @@ export function ProductForm({ productId }: { productId?: string }) {
     setUploadStatus("idle");
     setModelUploadStatus("idle");
     setMessage("");
+    setConfigurationMode("LEGACY");
   }, [productId]);
 
   useEffect(() => {
@@ -710,6 +716,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           isNew: product.isNew ?? product.isFeatured ?? false,
           isPopular: product.isPopular ?? false
         });
+        setConfigurationMode(product.configurationMode ?? "LEGACY");
       } catch (error) {
         setStatus("error");
         setMessage(error instanceof Error ? error.message : "تعذر تحميل المنتج.");
@@ -737,7 +744,7 @@ export function ProductForm({ productId }: { productId?: string }) {
         body: JSON.stringify({
           name: form.name,
           description: form.description,
-          basePrice: Number(form.basePrice),
+          ...(configurationMode === "NETWORK" || form.basePrice.trim() === "" ? {} : { basePrice: Number(form.basePrice) }),
           currency: form.currency,
           categoryId: form.categoryId || undefined,
           moodKey: form.moodKeys[0] || undefined,
@@ -790,7 +797,7 @@ export function ProductForm({ productId }: { productId?: string }) {
 
       setStatus("success");
       setMessage("تم حفظ المنتج بنجاح.");
-      setTimeout(() => router.push("/dashboard/products"), 700);
+      if (!configurationDirty) setTimeout(() => router.push("/dashboard/products"), 700);
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "حدث خطأ أثناء الحفظ.");
@@ -1022,6 +1029,7 @@ export function ProductForm({ productId }: { productId?: string }) {
   }, [detailIconSearch]);
 
   return (
+    <>
     <form className={`product-form-page ${isSuperAdmin ? "" : "owner-product-form"}`} onSubmit={handleSubmit}>
       <section className="products-header">
         <div>
@@ -1198,8 +1206,10 @@ export function ProductForm({ productId }: { productId?: string }) {
               onChange={(event) => update("basePrice", event.target.value)}
               type="number"
               min="0"
-              required
+              required={!productId || configurationMode === "LEGACY"}
+              disabled={Boolean(productId && configurationMode === "NETWORK")}
             />
+            {productId && configurationMode === "NETWORK" ? <small className="field-hint">يُدار السعر الأساسي لمنتج Network من محرر الشبكة أدناه فقط.</small> : null}
           </label>
 
           <label>
@@ -1467,10 +1477,24 @@ export function ProductForm({ productId }: { productId?: string }) {
           <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
           {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}
           <b>
-            {form.basePrice || "0"} {form.currency}
+            {configurationMode === "NETWORK" ? "السعر من شبكة التكوين" : `${form.basePrice || "0"} ${form.currency}`}
           </b>
         </aside>
       </section>
     </form>
+    {productId && selectedRestaurantId ? (
+      <ProductConfigurationEditor
+        productId={productId}
+        productName={form.name}
+        currency={form.currency}
+        restaurantId={selectedRestaurantId}
+        onDirtyChange={setConfigurationDirty}
+        onSaved={(saved) => {
+          setConfigurationMode(saved.mode);
+          setForm((current) => ({ ...current, basePrice: saved.basePrice ?? "" }));
+        }}
+      />
+    ) : null}
+    </>
   );
 }

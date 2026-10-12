@@ -2,6 +2,8 @@ node_modules/
 .next/
 dist/
 coverage/
+.vitest-cache/
+.vitest-tmp/
 .env
 .env.local
 .env.*
