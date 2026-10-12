@@ -1,0 +1,11 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+.dev.restart*.log
+prisma/migrations/
+*.tsbuildinfo
