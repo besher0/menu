@@ -9,6 +9,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:backfill-product-configurations": "tsx prisma/backfill-product-configurations.ts",
+    "typecheck:product-configuration-tools": "tsc -p prisma/tsconfig.product-configuration.json",
     "prisma:backfill-libraries": "tsx prisma/backfill-product-libraries.ts",
     "prisma:reset-user-password": "tsx prisma/reset-user-password.ts",
     "seed": "tsx prisma/seed.ts",

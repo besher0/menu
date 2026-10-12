@@ -201,38 +201,62 @@ model Category {
 }
 
 model Product {
-  id           String               @id @default(cuid())
-  restaurantId String
-  categoryId   String?
-  name         String
-  slug         String
-  description  String?
-  basePrice    Decimal              @db.Decimal(10, 2)
-  currency     String               @default("ل.س")
-  isActive     Boolean              @default(true)
-  isAvailable  Boolean              @default(true)
-  isFeatured   Boolean              @default(false)
-  isNew        Boolean              @default(false)
-  isPopular    Boolean              @default(false)
-  moodKey      String?
-  ingredients  Json?
-  nutrition    Json?
-  sortOrder    Int                  @default(0)
-  deletedAt    DateTime?
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
-  orderItems   OrderItem[]
-  category     Category?            @relation(fields: [categoryId], references: [id])
-  restaurant   Restaurant           @relation(fields: [restaurantId], references: [id])
-  media3d      Product3DModel?
-  images       ProductImage[]
-  options      ProductOptionGroup[]
-  vrMedia      ProductVrMedia?
+  id                        String                           @id @default(cuid())
+  restaurantId              String
+  categoryId                String?
+  name                      String
+  slug                      String
+  description               String?
+  basePrice                 Decimal?                         @db.Decimal(24, 6)
+  configurationTree         Json?
+  configurationVersion      Int                              @default(0)
+  currency                  String                           @default("ل.س")
+  isActive                  Boolean                          @default(true)
+  isAvailable               Boolean                          @default(true)
+  isFeatured                Boolean                          @default(false)
+  isNew                     Boolean                          @default(false)
+  isPopular                 Boolean                          @default(false)
+  moodKey                   String?
+  ingredients               Json?
+  nutrition                 Json?
+  sortOrder                 Int                              @default(0)
+  deletedAt                 DateTime?
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  orderItems                OrderItem[]
+  category                  Category?                        @relation(fields: [categoryId], references: [id])
+  restaurant                Restaurant                       @relation(fields: [restaurantId], references: [id])
+  media3d                   Product3DModel?
+  images                    ProductImage[]
+  options                   ProductOptionGroup[]
+  vrMedia                   ProductVrMedia?
+  configurationDependencies ProductConfigurationDependency[] @relation("ConfigurationOwner")
+  configurationDependents   ProductConfigurationDependency[] @relation("ConfigurationSource")
 
+  @@unique([restaurantId, id], map: "Product_restaurantId_id_key")
+  @@unique([restaurantId, id, configurationVersion], map: "Product_restaurantId_id_configurationVersion_key")
   @@unique([restaurantId, slug])
   @@index([restaurantId])
   @@index([categoryId])
   @@index([restaurantId, moodKey])
+}
+
+model ProductConfigurationDependency {
+  id                   String            @id @default(cuid())
+  restaurantId         String
+  productId            String
+  sourceProductId      String
+  optionId             String
+  path                 String
+  mode                 LinkedProductMode
+  configurationVersion Int
+  createdAt            DateTime          @default(now())
+  owner                 Product           @relation("ConfigurationOwner", fields: [restaurantId, productId, configurationVersion], references: [restaurantId, id, configurationVersion], onDelete: Cascade, onUpdate: Cascade, map: "ProductConfigurationDependency_owner_fkey")
+  source                Product           @relation("ConfigurationSource", fields: [restaurantId, sourceProductId], references: [restaurantId, id], onDelete: Restrict, onUpdate: Cascade, map: "ProductConfigurationDependency_source_fkey")
+
+  @@unique([productId, path], map: "ProductConfigDependency_product_path_key")
+  @@index([restaurantId, sourceProductId], map: "ProductConfigDependency_restaurant_source_idx")
+  @@index([productId, configurationVersion], map: "ProductConfigDependency_product_version_idx")
 }
 
 model ProductImage {
@@ -454,7 +478,7 @@ model Order {
   branchId        String?
   customerName    String?
   customerPhone   String?
-  totalAmount     Decimal     @db.Decimal(10, 2)
+  totalAmount     Decimal     @db.Decimal(24, 6)
   currency        String
   status          OrderStatus
   source          String      @default("WHATSAPP")
@@ -475,8 +499,8 @@ model OrderItem {
   productId  String?
   name       String
   quantity   Int
-  unitPrice  Decimal  @db.Decimal(10, 2)
-  totalPrice Decimal  @db.Decimal(10, 2)
+  unitPrice  Decimal  @db.Decimal(24, 6)
+  totalPrice Decimal  @db.Decimal(24, 6)
   options    Json?
   note       String?
   order      Order    @relation(fields: [orderId], references: [id])
@@ -593,6 +617,11 @@ enum PublishStatus {
 enum OptionGroupType {
   SINGLE
   MULTIPLE
+}
+
+enum LinkedProductMode {
+  ORIGINAL
+  CUSTOM
 }
 
 enum CategoryBackgroundType {

@@ -16,3 +16,5 @@ uploads/
 apps/api/uploads/
 prisma/migrations/
 *.tsbuildinfo
+product-config*.checkpoint.json
+product-config*.quarantine.jsonl

@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": [
+    "backfill-product-configurations.ts",
+    "product-configuration-backfill.ts",
+    "../src/modules/products/product-configuration.persistence.ts"
+  ]
+}
