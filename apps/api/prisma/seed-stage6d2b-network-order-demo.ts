@@ -8,7 +8,7 @@ if (!connection || connection !== process.env.DIRECT_URL) throw new Error("Match
 const target = new URL(connection);
 if (process.env.NODE_ENV === "production" || process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS !== "1"
   || target.hostname !== "127.0.0.1" || target.port !== "55440"
-  || !/^\/ordersawa_stage3_stage6c_stage6d2b_[a-z0-9_]+$/.test(target.pathname)) {
+  || !/^\/ordersawa_stage3_stage6c_stage6d(?:2b|3a)_[a-z0-9_]+$/.test(target.pathname)) {
   throw new Error("Stage 6D.2B seed refuses any non-disposable target.");
 }
 
@@ -32,7 +32,7 @@ async function main() {
     update: {} });
   await db.subscriptionPlan.upsert({ where: { key: "S6D2B_DISPOSABLE_ONLY" },
     create: { id: planId, key: "S6D2B_DISPOSABLE_ONLY", name: "Isolated test plan" }, update: {} });
-  for (const key of ["PRODUCT_CONFIGURATION", "WHATSAPP_ORDERING"] as const) {
+  for (const key of ["PRODUCT_CONFIGURATION", "CART_ORDERING", "WHATSAPP_ORDERING"] as const) {
     await db.subscriptionFeature.upsert({ where: { planId_key: { planId, key } },
       create: { id: `s6d2b-${key}`, planId, key, enabled: true }, update: { enabled: true } });
   }
@@ -41,6 +41,9 @@ async function main() {
     update: { planId, status: "ACTIVE" } });
   await db.category.upsert({ where: { id: "s6d2b-category" },
     create: { id: "s6d2b-category", restaurantId, slug: "demo", name: "Demo Menu" }, update: {} });
+  if (!await db.category.findFirst({ where: { restaurantId, slug: "all", deletedAt: null } })) {
+    await db.category.create({ data: { id: "s6d2b-all-category", restaurantId, slug: "all", name: "الكل", sortOrder: 0 } });
+  }
   const products = [
     { id: pizzaId, slug: "pizza", name: "Pizza Margherita", basePrice: null },
     { id: comboId, slug: "combo", name: "Family Combo", basePrice: "0" },

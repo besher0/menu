@@ -61,13 +61,13 @@ function display(value: string, path: string, maxLength = 200): string {
 
 const words = {
   ar: { title: "🧾 طلب OrderSawa — معاينة", size: "الحجم", required: "مطلوب", optional: "اختياري",
-    linked: "صنف داخل المجموعة", included: "مشمول", free: "مجاني",
+    linked: "اختيارات المكوّن", linkedSizeNoExtra: "دون تكلفة إضافية للحجم", included: "مشمول", free: "مجاني",
     unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي",
     restaurant: "المطعم", customer: "اسم الزبون", phone: "هاتف الزبون", fulfillment: "طريقة الاستلام",
     pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "بالقرب من", beside: "بجانب",
     pickupTime: "موعد الاستلام", orderNote: "ملاحظات الطلب", itemNote: "ملاحظة الصنف" },
   en: { title: "🧾 OrderSawa order — preview", size: "Size", required: "required", optional: "optional",
-    linked: "Combo item", included: "included", free: "free",
+    linked: "Component choices", linkedSizeNoExtra: "no extra charge for this size", included: "included", free: "free",
     unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price",
     restaurant: "Restaurant", customer: "Customer", phone: "Customer phone", fulfillment: "Fulfillment",
     pickup: "Pickup", delivery: "Delivery", area: "Area", near: "Near", beside: "Beside",
@@ -79,7 +79,7 @@ type StoredSource = { productId: string; productName: string; mode: "NETWORK" | 
 class LineRenderer {
   readonly rendered: string[] = [];
   private readonly usedLines = new Set<number>();
-  private readonly sourceOccurrences = new Map<string, number>();
+  private linkedOrdinal = 0;
 
   constructor(
     private readonly locale: Locale,
@@ -110,10 +110,10 @@ class LineRenderer {
     return line;
   }
 
-  private priceSuffix(line: PriceLine): string {
+  private priceSuffix(line: PriceLine, linkedSize = false): string {
     const w = words[this.locale];
     if (line.included) return w.included;
-    if (compareMoney(line.chargedAmount, "0") === 0) return w.free;
+    if (compareMoney(line.chargedAmount, "0") === 0) return linkedSize ? w.linkedSizeNoExtra : w.free;
     return `${line.chargedAmount} ${this.currency} ${w.each}`;
   }
 
@@ -133,7 +133,7 @@ class LineRenderer {
     return this.rendered;
   }
 
-  private groups(groupsValue: unknown, selectionsValue: unknown, prefix: string, depth: number) {
+  private groups(groupsValue: unknown, selectionsValue: unknown, prefix: string, depth: number, linkedContext = false) {
     if (depth > 24) throw new NetworkOrderSnapshotFormatError("SNAPSHOT_DEPTH_LIMIT", prefix, "Nested selection is too deep.");
     const groups = array(groupsValue, `${prefix}.configuration`) as ConfigurationGroup[];
     const selections = array(selectionsValue, prefix) as GroupSelection[];
@@ -162,8 +162,8 @@ class LineRenderer {
         if (!size) throw new NetworkOrderSnapshotFormatError("UNKNOWN_SIZE", groupPath, "Selected size has no historical label.");
         const entry = this.price(groupPath, "SIZE", size.id);
         const sizeLabel = display(nonempty(size.label, `${groupPath}.${size.id}.label`), `${groupPath}.${size.id}.label`);
-        this.rendered.push(`${pad}📏 ${groupLabel} — ${words[this.locale].size}: ${sizeLabel} (${this.priceSuffix(entry)})`);
-        this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1);
+        this.rendered.push(`${pad}📏 ${groupLabel} — ${words[this.locale].size}: ${sizeLabel} (${this.priceSuffix(entry, linkedContext)})`);
+        this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1, linkedContext);
       } else if (groupNode.type === "OPTIONS") {
         if (groupSelection && groupSelection.type !== "OPTIONS") {
           throw new NetworkOrderSnapshotFormatError("GROUP_TYPE_MISMATCH", groupPath, "Selection type differs from historical group.");
@@ -218,7 +218,7 @@ class LineRenderer {
           }
           flushLeafUnits();
           this.rendered.push(`${pad}  • ${label} × 1 — ${suffix}`);
-          this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
+          this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2, linkedContext);
           if (option.linkedProduct) {
             const sourceId = option.linkedProduct.sourceProductId;
             const source = this.sources.find((candidate) => candidate.productId === sourceId);
@@ -235,11 +235,10 @@ class LineRenderer {
               || (mode === "ORIGINAL" && source.mode !== "NETWORK")) {
               throw new NetworkOrderSnapshotFormatError("LINKED_SNAPSHOT_IDENTITY_MISMATCH", instancePath, "Linked snapshot identity or revision differs.");
             }
-            const count = (this.sourceOccurrences.get(sourceId) ?? 0) + 1;
-            this.sourceOccurrences.set(sourceId, count);
+            const count = ++this.linkedOrdinal;
             const linkedName = display(nonempty(source.productName, `${instancePath}.linkedName`), `${instancePath}.linkedName`);
             this.rendered.push(`${pad}    ↳ ${words[this.locale].linked} ${count}: ${linkedName}`);
-            this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3);
+            this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3, true);
           } else if (record.linkedSelection) {
             throw new NetworkOrderSnapshotFormatError("UNEXPECTED_LINKED_SELECTION", instancePath, "Non-linked option has a linked selection.");
           }

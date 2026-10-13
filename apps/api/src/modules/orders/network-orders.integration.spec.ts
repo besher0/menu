@@ -198,9 +198,9 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     expect(result.status).toBe(201);
     const savedOrder = await prisma.order.findUniqueOrThrow({ where: { id: result.body.orderId } });
     const comboMessage = formatNetworkOrderWhatsappMessage(savedOrder.cartSnapshot);
-    expect(comboMessage).toContain("صنف داخل المجموعة 1");
-    expect(comboMessage).toContain("صنف داخل المجموعة 2");
-    expect(comboMessage).toContain("صنف داخل المجموعة 3");
+    expect(comboMessage).toContain("اختيارات المكوّن 1");
+    expect(comboMessage).toContain("اختيارات المكوّن 2");
+    expect(comboMessage).toContain("اختيارات المكوّن 3");
     expect(comboMessage).toContain("Source Pizza");
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: result.body.orderId } });
     expect((item.options as any).canonicalSelection.groups[0].instances.map((instance: any) => instance.instanceId)).toEqual(["custom-1", "original-1", "original-2"]);
@@ -267,7 +267,7 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     const message = formatNetworkOrderWhatsappMessage(saved.cartSnapshot);
     expect(message).toContain("Demo Guest");
     expect(message).toContain("6 PM");
-    expect(message).toContain("صنف داخل المجموعة 3");
+    expect(message).toContain("اختيارات المكوّن 3");
     expect(message).not.toContain("CUSTOM");
     if (process.env.PRINT_NETWORK_ORDER_PREVIEW === "1") process.stdout.write(`\n--- STORED COMBO ---\n${message}\n`);
   });

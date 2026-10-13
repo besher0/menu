@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { multiplyMoney } from "@menu/shared";
+import { multiplyMoney, sumMoney } from "@menu/shared";
 import { buildNetworkWhatsappDemo } from "./network-order-whatsapp-demo";
 import { buildNetworkWhatsappPreviewUrl, formatNetworkOrderWhatsappMessage, NetworkOrderSnapshotFormatError } from "./network-order-whatsapp-formatter";
 
@@ -68,15 +68,31 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("combo", "ar"));
     expect(message).toContain("كومبو عائلي");
     expect(message).toContain("(مطلوب)");
-    expect(message).toContain("صنف داخل المجموعة 1");
-    expect(message).toContain("صنف داخل المجموعة 2");
-    expect(message).toContain("صنف داخل المجموعة 3");
+    expect(message).toContain("اختيارات المكوّن 1");
+    expect(message).toContain("اختيارات المكوّن 2");
+    expect(message).toContain("اختيارات المكوّن 3");
     expect(message).not.toContain("ORIGINAL");
     expect(message).not.toContain("CUSTOM");
     expect(message).toContain("كبير");
     expect(message).toContain("وسط");
     expect(message).toContain("43 EGP");
-    expect(message.indexOf("صنف داخل المجموعة 1")).toBeLessThan(message.indexOf("صنف داخل المجموعة 2"));
+    expect(message.indexOf("اختيارات المكوّن 1")).toBeLessThan(message.indexOf("اختيارات المكوّن 2"));
+  });
+
+  it("describes a zero-priced linked size as no extra size charge, without changing totals", () => {
+    const snapshot = copy(buildNetworkWhatsappDemo("combo", "ar")) as any;
+    const item = snapshot.items[0];
+    const size = item.priceBreakdown.find((line: any) => line.kind === "SIZE" && line.path.includes(".linked"));
+    expect(size).toBeDefined();
+    size.amount = "0";
+    size.chargedAmount = "0";
+    item.unitPrice = sumMoney(item.priceBreakdown.map((line: any) => line.chargedAmount));
+    item.lineTotal = item.unitPrice;
+    snapshot.totalAmount = item.unitPrice;
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message).toContain("دون تكلفة إضافية للحجم");
+    expect(message).not.toMatch(/الحجم:.*مجاني/);
+    expect(message).toContain(`إجمالي الطلب: ${item.unitPrice} EGP`);
   });
 
   it("formats historical source and option names without any current Product lookup", () => {
