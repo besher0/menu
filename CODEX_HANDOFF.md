@@ -543,7 +543,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 3. Verify branch, status, and commits.
 4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, Stage 4, Stage 4.1, and Stage 5 files actually exist.
 5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
-6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, `STAGE_6B_NETWORK_CART_REPORT_AR.md`, `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md`, `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md`, and `STAGE_6D_2A_ORDER_DETAILS_REPORT_AR.md` before considering any further stage.
+6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, `STAGE_6B_NETWORK_CART_REPORT_AR.md`, `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md`, `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md`, `STAGE_6D_2A_ORDER_DETAILS_REPORT_AR.md`, and `STAGE_6D_2B_NETWORK_ORDER_FLOW_REPORT_AR.md` before considering any further stage.
 7. Re-run the baseline tests before a new stage if practical.
 8. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 9. Ask for explicit approval if the requested work would change an unresolved decision above.
@@ -568,9 +568,9 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-The next proposed stage is **Stage 6D.2B**, only after a new explicit approval and review of its exact authorized scope plus Stage 6C/6D.1/6D.2A blockers. Stages 6A, 6B, test-only 6C, formatter-only 6D.1, and test-only 6D.2A are complete; real ordering, 6D.2B and 6D.3 are not. Do not infer a currency rounding policy from this handoff alone.
+Stage 6D.2B is complete in a **disposable local flow only**. Do not begin Stage 6D.3 or activate real ordering without a new explicit approval and review of all carried blockers. Do not infer a currency rounding policy from this handoff alone.
 
-Do not begin Stage 6D.2B/6D.3, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Do not begin Stage 6D.3, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
 ## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
@@ -617,3 +617,13 @@ The test-only Stage 6C prepare/create payload now accepts optional Legacy-compat
 Final Stage 6D.2A tests on a fresh disposable PostgreSQL 16 cluster `../work/stage6d2a-postgres-data`, port `127.0.0.1:55440`, with two new `ordersawa_stage3_stage6c_stage6d2a_*` databases: Shared 21/21, API 134/134 with all DB integration and 0 skipped, Web 35/35, total 190/190; Typecheck and Build passed, Next.js 27/27 pages. Baseline SQL and Stage 6C Migration were applied **only** to the disposable databases. Test fixture phone `0000000000` is fictitious; no actual message was sent. The temporary server was stopped after verification; do not use real `.env` or Production data.
 
 Carry-forward decisions: whether real orders must require name/phone and their market-specific validation; concurrency-safe commercial order number (do not reuse Legacy `count+1`); branch/Outlet assignment; Whole Translation-Record snapshot design for multilingual history; currency display/rounding; long WhatsApp URL UX; multi-instance acceptance signing key; production auth/rate limits; and real migration-history audit. `orderingEnabled:false` and the Legacy checkout gate remain. Await explicit Stage 6D.2B instructions; do not start it or Stage 6D.3 automatically.
+
+## 17. Stage 6D.2B — Isolated End-to-End Network Order Flow (latest)
+
+Read `STAGE_6D_2B_NETWORK_ORDER_FLOW_REPORT_AR.md` for the complete file list, safe local setup, test evidence, actual saved-order WhatsApp message, and gaps. Code commit `184adee` connects the existing Stage 6B Network Cart to Stage 6C test-only prepare/create and Stage 6D formatter. A new guarded Next.js route `/m/[slug]/network-order-test` shows the trusted server Draft, demands explicit acceptance, handles changed-price HTTP 409 with renewed consent, and reads a sealed saved Snapshot via the new guarded API `GET /public/menus/:restaurantSlug/orders/network-test/:orderId/preview`. It only copies/displays the WhatsApp message; it never sends or opens it. No pricing, Checkout, or Order Persistence was duplicated. The existing Legacy path remains unchanged and Network/mixed cart cannot use Legacy Checkout.
+
+The new route and cart entry are server-gated by non-Production mode, explicit flag, loopback Host, and loopback API URL. The API retains Stage 6C loopback, flag, NODE_ENV and **actual disposable PostgreSQL database** gates. The seed and repeatable Chrome CDP script additionally require the exact Stage 6D.2B disposable demo DB name on `127.0.0.1:55440`. Chrome Browser E2E passed an entire Pizza + repeated Linked Combo + cart persistence + trusted Draft + explicit acceptance + saved Snapshot + WhatsApp preview flow. It changed a Size price in the disposable DB between Draft and create, verified no Order was saved on the stale acceptance, accepted the new `423.5 EGP` Draft, verified exactly one saved Order, then restored the catalog price and confirmed the historical message was unchanged. RTL/mobile 390px checks passed. This was not a fixture-only formatter test.
+
+Fresh PostgreSQL 16 cluster `../work/stage6d2b-postgres-data` was used with three separate disposable databases (demo, orders, API regression) containing only test Baseline SQL plus Stage 6C Migration. Final tests: Shared **21/21**, API **134/134** with zero skipped, Web **39/39**, total **194/194**; root Typecheck and Build passed. An initial API run pointed two parallel integration suites at one database and failed from fixture contention; rerun with separate databases passed. No real `.env`, Production DB, real Migration, Backfill, deployment or WhatsApp send was used. Stop the temporary servers/cluster after testing.
+
+Browser coverage still lacks separate UI scenarios for Availability/Revision changes, invalid selections, duplicate submission, Delivery, mixed carts and guard-off behavior; underlying API/Web tests cover their core contracts. Full Browser Legacy Checkout regression and visual prototype comparison were not performed. The approved currency rounding/display policy, production security/rate limits, multi-instance HMAC signing, order number, Branch/Outlet, real Migration History, and WhatsApp activation are still unresolved. `orderingEnabled:false` stays mandatory. **Stop after Stage 6D.2B; Stage 6D.3 needs a new explicit authorization.**
