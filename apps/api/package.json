@@ -7,6 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run",
+    "preview:network-whatsapp": "npm run build && node dist/modules/orders/network-order-whatsapp-preview.js",
     "test:product-configuration:integration": "vitest run src/modules/products/product-configuration.integration.spec.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",

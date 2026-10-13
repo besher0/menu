@@ -8,6 +8,7 @@ import { NetworkOrdersService } from "./network-orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PublicMenuService } from "../public-menu/public-menu.service";
+import { formatNetworkOrderWhatsappMessage } from "./network-order-whatsapp-formatter";
 
 const databaseUrl = process.env.NETWORK_ORDER_TEST_DATABASE_URL;
 if (databaseUrl) {
@@ -168,6 +169,10 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     const historic = await prisma.orderItem.findUniqueOrThrow({ where: { id: stored.items[0].id } });
     expect(historic.name).toBe("Pizza Margherita");
     expect(historic.options).toEqual(stored.items[0].options);
+    const historicalMessage = formatNetworkOrderWhatsappMessage(stored.cartSnapshot);
+    expect(historicalMessage).toContain("Pizza Margherita");
+    expect(historicalMessage).toContain("Cheese");
+    expect(historicalMessage).not.toContain("Renamed Pizza");
     await expect(prisma.orderItem.update({ where: { id: historic.id }, data: { name: "tampered" } })).rejects.toThrow();
     await expect(prisma.orderItem.update({ where: { id: historic.id }, data: { productId: null } })).rejects.toThrow();
     await expect(prisma.order.update({ where: { id: stored.id }, data: { totalAmount: "1" } })).rejects.toThrow();
@@ -187,6 +192,12 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     expect(line.linkedSources).toEqual(expect.arrayContaining([expect.objectContaining({ productName: "Source Pizza" })]));
     const result = await create({ ...comboDraft(), idempotencyKey: randomUUID(), acceptanceToken: prepared.body.acceptanceToken });
     expect(result.status).toBe(201);
+    const savedOrder = await prisma.order.findUniqueOrThrow({ where: { id: result.body.orderId } });
+    const comboMessage = formatNetworkOrderWhatsappMessage(savedOrder.cartSnapshot);
+    expect(comboMessage).toContain("منتج مرتبط #1");
+    expect(comboMessage).toContain("منتج مرتبط #2");
+    expect(comboMessage).toContain("منتج مرتبط #3");
+    expect(comboMessage).toContain("Source Pizza");
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: result.body.orderId } });
     expect((item.options as any).canonicalSelection.groups[0].instances.map((instance: any) => instance.instanceId)).toEqual(["custom-1", "original-1", "original-2"]);
     expect((item.options as any).configurationTree.groups[0].options).toEqual(expect.arrayContaining([expect.objectContaining({ linkedProduct: expect.objectContaining({ mode: "CUSTOM" }) })]));
