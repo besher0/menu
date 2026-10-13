@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-13
 
-Current state: **Stage 6D.1 WhatsApp message formatting from Stage 6C immutable Network snapshots is complete in source, commit `3ec08c8`. It is a pure formatter and local preview only. The public Network Cart still cannot enter Checkout/WhatsApp or create real Orders; `orderingEnabled:false` remains. Final Stage 6D.1 regression: 182/182 tests, no skips; Typecheck and Build passed. Read `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md` before further work. Stage 6D.2/6D.3 or any real activation needs separate explicit approval.**
+Current state: **Stage 6D.2A order details and restaurant-facing WhatsApp preview are complete in source, implementation commit `ce0e192`. The test-only Stage 6C draft now signs optional Legacy-compatible customer/fulfillment/details and seals them in the immutable Network Snapshot; the formatter displays them without live catalog lookup. The public Network Cart still cannot enter Checkout/WhatsApp or create real Orders; `orderingEnabled:false` remains. Final regression: 190/190 tests, no skips; Typecheck and Build passed. Read `STAGE_6D_2A_ORDER_DETAILS_REPORT_AR.md` before further work. Stage 6D.2B/6D.3 or any real activation needs separate explicit approval.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -31,6 +31,8 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 6C report/handoff commit follows implementation; use `git log -2 --oneline` for its hash.
 - Stage 6D.1 formatter implementation commit: `3ec08c8 feat(api): format Stage 6C Network order snapshots for WhatsApp preview`.
 - Stage 6D.1 report/handoff commit follows implementation; check `git log -2 --oneline` for its hash.
+- Stage 6D.2A implementation commit: `ce0e192 feat(api): preserve network order details in sealed WhatsApp preview`.
+- Stage 6D.2A report/handoff commit follows implementation; check `git log -2 --oneline` for its hash.
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -541,7 +543,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 3. Verify branch, status, and commits.
 4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, Stage 4, Stage 4.1, and Stage 5 files actually exist.
 5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
-6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, `STAGE_6B_NETWORK_CART_REPORT_AR.md`, `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md`, and `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md` before considering any further stage.
+6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, `STAGE_6B_NETWORK_CART_REPORT_AR.md`, `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md`, `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md`, and `STAGE_6D_2A_ORDER_DETAILS_REPORT_AR.md` before considering any further stage.
 7. Re-run the baseline tests before a new stage if practical.
 8. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 9. Ask for explicit approval if the requested work would change an unresolved decision above.
@@ -566,9 +568,9 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-The next proposed stage is **Stage 6D.2**, only after a new explicit approval and review of its exact authorized scope plus Stage 6C/6D.1 blockers. Stages 6A, 6B, test-only 6C, and formatter-only 6D.1 are complete; real ordering, 6D.2 and 6D.3 are not. Do not infer a currency rounding policy from this handoff alone.
+The next proposed stage is **Stage 6D.2B**, only after a new explicit approval and review of its exact authorized scope plus Stage 6C/6D.1/6D.2A blockers. Stages 6A, 6B, test-only 6C, formatter-only 6D.1, and test-only 6D.2A are complete; real ordering, 6D.2B and 6D.3 are not. Do not infer a currency rounding policy from this handoff alone.
 
-Do not begin Stage 6D.2/6D.3, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Do not begin Stage 6D.2B/6D.3, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
 ## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
@@ -605,3 +607,13 @@ Read `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md` for the contract, examples, fi
 Stage 6D.1 final checks: Shared 21/21, API 126/126 including 11 formatter tests and real disposable-PostgreSQL persisted Pizza/Combo Snapshot integration, Web 35/35, total 182/182 with 0 skips; root Typecheck and Build passed, Next.js 27/27 routes. A new isolated cluster `../work/stage6d1-postgres-data` ran only on `127.0.0.1:55440` with two `ordersawa_stage3_stage6c_formatter*` test databases containing Baseline SQL plus Stage 6C Migration; it was stopped after tests. No Production DB, real `.env`, deployment, message send, new migration, or order-persistence change was used.
 
 Stage 6D.2 prerequisites: Stage 6C snapshot carries one historical label per node, not a full translation bundle; formatter cannot invent another language. It also lacks production order number/customer/fulfillment/address/note data. Long WhatsApp URL behavior needs UX decision; the local cap is not an external guarantee. The 6C currency rounding, multi-instance acceptance key, production endpoint security, migration-history audit, and Business/Outlet/Scheduling constraints remain. `orderingEnabled:false` is still mandatory. Do not start 6D.2/6D.3 or activate Network ordering without explicit approval.
+
+## 16. Stage 6D.2A - Order Details & WhatsApp Message UX (latest)
+
+Read `STAGE_6D_2A_ORDER_DETAILS_REPORT_AR.md` for the full field-reference table, Snapshot contract, actual persisted Pizza/Combo message examples, test evidence, and deferred decisions. Implementation commit `ce0e192` changes only `apps/api/src/modules/orders/`: `network-order-contract.ts`/spec, `network-orders.service.ts`/integration spec, `network-order-whatsapp-formatter.ts`/spec, and demo fixtures. The report and this handoff are in a separate documentation commit. No Schema or Migration was added.
+
+The test-only Stage 6C prepare/create payload now accepts optional Legacy-compatible `customerName`, `customerPhone`, `fulfillmentType`, delivery address parts, `pickupTime`, `orderNote`, and per-item `note`. The Legacy public UI requires all three address parts when delivery is selected, although the Legacy backend DTO is looser; this test-only contract follows the UI condition. The signed Draft includes canonical details, so changes after prepare require a new acceptance. The same Serializable transaction captures trusted `restaurantName`, saves `orderDetails` in the sealed `Order.cartSnapshot`, and populates existing Order customer and OrderItem note columns. The formatter reads only the Snapshot, keeps old Snapshots without `orderDetails` compatible, shows human-facing Combo instances without displaying the technical ORIGINAL/CUSTOM modes, and refuses malformed new details. Database immutability triggers remain active. All amounts remain exact Decimal strings; no rounding or ordering activation was introduced.
+
+Final Stage 6D.2A tests on a fresh disposable PostgreSQL 16 cluster `../work/stage6d2a-postgres-data`, port `127.0.0.1:55440`, with two new `ordersawa_stage3_stage6c_stage6d2a_*` databases: Shared 21/21, API 134/134 with all DB integration and 0 skipped, Web 35/35, total 190/190; Typecheck and Build passed, Next.js 27/27 pages. Baseline SQL and Stage 6C Migration were applied **only** to the disposable databases. Test fixture phone `0000000000` is fictitious; no actual message was sent. The temporary server was stopped after verification; do not use real `.env` or Production data.
+
+Carry-forward decisions: whether real orders must require name/phone and their market-specific validation; concurrency-safe commercial order number (do not reuse Legacy `count+1`); branch/Outlet assignment; Whole Translation-Record snapshot design for multilingual history; currency display/rounding; long WhatsApp URL UX; multi-instance acceptance signing key; production auth/rate limits; and real migration-history audit. `orderingEnabled:false` and the Legacy checkout gate remain. Await explicit Stage 6D.2B instructions; do not start it or Stage 6D.3 automatically.
