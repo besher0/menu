@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
+import Link from "next/link";
+import { networkOrderTestPageEnabled } from "@/lib/network-order-test-guard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -29,10 +31,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function PublicCartPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const data = await getPublicMenuOrNotFound(slug);
+  const testEnabled = await networkOrderTestPageEnabled();
 
   return (
     <div className="public-page">
       <PublicMenuClient data={data} view="cart" initialUseSubdomainRoutes />
+      {testEnabled ? <aside className="network-order-test-entry">
+        <Link href={`/m/${encodeURIComponent(slug)}/network-order-test`}>تجربة الطلب المعزولة — دون إرسال WhatsApp</Link>
+      </aside> : null}
     </div>
   );
 }

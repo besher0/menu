@@ -1,4 +1,4 @@
-import { Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Header, HttpCode, Inject, Injectable, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Header, HttpCode, Inject, Injectable, Param, Post, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { NetworkOrdersService } from "./network-orders.service";
 
@@ -32,5 +32,11 @@ export class NetworkOrdersController {
   @Header("Cache-Control", "no-store, no-cache, must-revalidate")
   create(@Param("restaurantSlug") restaurantSlug: string, @Body() body: unknown) {
     return this.orders.create(restaurantSlug, body);
+  }
+
+  @Get(":orderId/preview")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate")
+  preview(@Param("restaurantSlug") restaurantSlug: string, @Param("orderId") orderId: string) {
+    return this.orders.preview(restaurantSlug, orderId);
   }
 }

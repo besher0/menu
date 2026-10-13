@@ -11,6 +11,7 @@ import {
   type ProductSelectionV1
 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { formatNetworkOrderWhatsappMessage } from "./network-order-whatsapp-formatter";
 import { resolvePublicProductConfiguration, type PublicConfigurationProductRecord } from "../public-menu/public-product-configuration";
 import { quotePublicProductConfiguration } from "../public-menu/public-product-quote";
 import {
@@ -311,5 +312,23 @@ export class NetworkOrdersService {
       }
       throw error;
     }
+  }
+
+  async preview(restaurantSlug: string, orderId: string) {
+    await this.assertDisposableOnly();
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null }, select: { id: true }
+    });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, restaurantId: restaurant.id, source: "NETWORK_TEST", networkSnapshotSealedAt: { not: null } },
+      select: { id: true, cartSnapshot: true, totalAmount: true, currency: true }
+    });
+    if (!order) throw new NotFoundException("Saved test order not found");
+    return {
+      orderId: order.id, message: formatNetworkOrderWhatsappMessage(order.cartSnapshot),
+      totalAmount: order.totalAmount.toString(), currency: order.currency,
+      fromSealedSnapshot: true, orderingEnabled: false
+    };
   }
 }

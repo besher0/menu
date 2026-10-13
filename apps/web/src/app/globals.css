@@ -12271,3 +12271,5 @@ body {
     grid-column: 2;
   }
 }
+.network-order-test-entry { max-width: 880px; margin: 16px auto; padding: 12px 16px; border: 1px solid #d1ab42; border-radius: 12px; background: #fff7dc; text-align: center; }
+.network-order-test-entry a { color: #7a231a; font-weight: 700; }

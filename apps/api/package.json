@@ -17,7 +17,8 @@
     "prisma:reset-user-password": "tsx prisma/reset-user-password.ts",
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/seed.ts --demo",
-    "seed:stage5-public-demo": "tsx prisma/seed-stage5-public-demo.ts"
+    "seed:stage5-public-demo": "tsx prisma/seed-stage5-public-demo.ts",
+    "seed:stage6d2b-network-order-demo": "tsx prisma/seed-stage6d2b-network-order-demo.ts"
   },
   "dependencies": {
     "@menu/shared": "0.1.0",

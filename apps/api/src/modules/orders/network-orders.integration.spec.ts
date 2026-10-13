@@ -87,6 +87,10 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
   }
   const prepare = (body: unknown = pizzaDraft(), restaurant = "s6c-r1") => post(`${restaurant}/orders/network-test/prepare`, body);
   const create = (body: unknown, restaurant = "s6c-r1") => post(`${restaurant}/orders/network-test`, body);
+  async function preview(orderId: string, restaurant = "s6c-r1") {
+    const response = await fetch(`${origin}/public/menus/${restaurant}/orders/network-test/${encodeURIComponent(orderId)}/preview`);
+    return { status: response.status, body: await response.json() as Record<string, any> };
+  }
 
   beforeAll(async () => {
     process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS = "1";
@@ -238,6 +242,11 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
       fulfillmentType: "delivery", deliveryArea: "Demo district", orderNote: "Pack sauce separately" });
     await prisma.restaurant.update({ where: { id: "s6c-r1" }, data: { name: "New restaurant name" } });
     const message = formatNetworkOrderWhatsappMessage(saved.cartSnapshot);
+    const httpPreview = await preview(saved.id);
+    expect(httpPreview.status).toBe(200);
+    expect(httpPreview.body).toMatchObject({ message, totalAmount: "530.000008", fromSealedSnapshot: true, orderingEnabled: false });
+    expect((await preview(saved.id, "s6c-r2")).status).toBe(404);
+    expect((await preview("missing-order")).status).toBe(404);
     expect(message).toContain("Stage 6C Restaurant");
     expect(message).not.toContain("New restaurant name");
     expect(message).toContain("Demo Customer");
@@ -451,6 +460,7 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     delete process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS;
     try {
       expect((await prepare()).status).toBe(403);
+      expect((await preview("missing-order")).status).toBe(403);
     } finally {
       process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS = "1";
     }
