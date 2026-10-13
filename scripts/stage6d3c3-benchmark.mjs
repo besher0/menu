@@ -43,6 +43,7 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const limitMs = 45_000;
 const rssLimitMb = 1_200;
 const onlySize = process.env.STAGE6D3C3_ONLY_SIZE;
+const diagnosticMode = process.env.STAGE6D3C3_DIAG === "1";
 if (onlySize && !["10", "100", "1000", "10000"].includes(onlySize)) {
   throw new Error("STAGE6D3C3_ONLY_SIZE must be one approved bounded catalog size");
 }
@@ -138,10 +139,12 @@ prisma.$on("query", (event) => {
 const db = new Proxy(prisma, { get(target, key) {
   if (key === "$transaction") return async (work, options) => {
     const began = performance.now();
+    let callbackReturned = false;
     if (active) active.transactions += 1;
     try {
       return await target.$transaction(async (transaction) => {
         const value = await work(transaction);
+        callbackReturned = true;
         if (hold) {
           const latch = hold;
           latch.arrivals += 1;
@@ -151,6 +154,12 @@ const db = new Proxy(prisma, { get(target, key) {
         return value;
       }, options);
     } catch (error) {
+      if (active) {
+        const code = String(error?.code ?? "UNKNOWN");
+        const stage = callbackReturned ? "commit_or_after_callback" : "statement_or_callback";
+        active.errorCodes[code] = (active.errorCodes[code] ?? 0) + 1;
+        active.errorStages[stage] = (active.errorStages[stage] ?? 0) + 1;
+      }
       if (active && (error?.code === "P2034" || (error?.code === "P2010" && ["40001", "40P01"].includes(error.meta?.code)))) {
         active.serializationConflicts += 1;
       }
@@ -206,17 +215,17 @@ async function seedBase() {
   origin = await app.getUrl();
 }
 
-async function growCatalog(target) {
-  const current = await observer.product.count({ where: { restaurantId } });
+async function growCatalog(target, tenantId = restaurantId) {
+  const current = await observer.product.count({ where: { restaurantId: tenantId } });
   const started = performance.now();
   for (let index = current; index < target; index += 500) {
     const batch = Array.from({ length: Math.min(500, target - index) }, (_, offset) => {
-      const id = `s6d3c3-legacy-${index + offset}`;
-      return { id, restaurantId, slug: id, name: `Legacy ${index + offset}`, currency: "EGP", basePrice: "1" };
+      const id = `s6d3c3-legacy-${tenantId}-${index + offset}`;
+      return { id, restaurantId: tenantId, slug: id, name: `Legacy ${index + offset}`, currency: "EGP", basePrice: "1" };
     });
     await observer.product.createMany({ data: batch });
   }
-  const actual = await observer.product.count({ where: { restaurantId } });
+  const actual = await observer.product.count({ where: { restaurantId: tenantId } });
   if (actual !== target) throw new Error(`Fixture count ${actual} differs from target ${target}`);
   return +(performance.now() - started).toFixed(2);
 }
@@ -258,17 +267,18 @@ async function activitySampler(stop) {
   return peak;
 }
 
-async function wave(kind, scenario, count, label, measure = true) {
-  const requests = Array.from({ length: count }, (_, index) => payload(kind, scenario, index));
+async function wave(kind, scenario, count, label, measure = true, requestFactory = payload) {
+  const requests = Array.from({ length: count }, (_, index) => requestFactory(kind, scenario, index));
   if (kind === "create") {
     for (const request of requests) {
-      const prepared = await post(`/public/menus/${slug}/orders/network-test/prepare`, request.body);
+      const prepared = await post(`${request.path}prepare`, request.body);
       if (prepared.status !== 200) throw new Error(`Create setup Prepare failed: ${prepared.status} ${prepared.body.error}`);
       request.body = { ...request.body, acceptanceToken: prepared.body.acceptanceToken, idempotencyKey: randomUUID() };
     }
   }
-  const orderCountBefore = await observer.order.count({ where: { restaurantId, source: "NETWORK_TEST" } });
-  const metrics = { queries: 0, queryMs: 0, forShare: 0, transactions: 0, transactionMs: [], serializationConflicts: 0 };
+  const orderCountBefore = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  const metrics = { queries: 0, queryMs: 0, forShare: 0, transactions: 0, transactionMs: [],
+    serializationConflicts: 0, errorCodes: {}, errorStages: {} };
   const stop = { done: !measure };
   if (measure) active = metrics;
   const sample = measure ? activitySampler(stop) : Promise.resolve(null);
@@ -277,10 +287,10 @@ async function wave(kind, scenario, count, label, measure = true) {
   const peak = await sample;
   await pause(20); // Let Prisma query-log events from the completed wave flush.
   active = null;
-  const expected = requests[0].total;
   const accepted = [];
   const conflicts = [];
-  for (const response of responses) {
+  for (const [index, response] of responses.entries()) {
+    const expected = requests[index].total;
     const total = kind === "quote" ? response.body.trustedTotal
       : kind === "prepare" ? response.body.draft?.totalAmount : response.body.totalAmount;
     if (response.status === (kind === "create" ? 201 : 200)
@@ -294,18 +304,20 @@ async function wave(kind, scenario, count, label, measure = true) {
       throw new Error(`${label}: ${kind} unsafe or unexpected response: HTTP ${response.status}, total ${total}, error ${response.body.error}`);
     }
   }
-  const orderCountAfter = await observer.order.count({ where: { restaurantId, source: "NETWORK_TEST" } });
+  const orderCountAfter = await observer.order.count({ where: { source: "NETWORK_TEST" } });
   if (orderCountAfter - orderCountBefore !== (kind === "create" ? accepted.length : 0)) {
     throw new Error(`${label}: unexpected number of persisted Orders`);
   }
   if (kind === "create") {
     const ids = accepted.map((response) => response.body.orderId);
     if (new Set(ids).size !== accepted.length) throw new Error(`${label}: duplicate Order ID`);
-    const saved = await observer.order.findMany({ where: { id: { in: ids }, restaurantId, source: "NETWORK_TEST" },
+    const saved = await observer.order.findMany({ where: { id: { in: ids }, source: "NETWORK_TEST" },
       select: { id: true, totalAmount: true, cartSnapshot: true, networkSnapshotSealedAt: true, items: { select: { options: true } } } });
-    if (saved.length !== accepted.length || saved.some((order) => order.totalAmount.toString() !== expected
+    const expectedByOrder = new Map(responses.flatMap((response, index) => response.body.orderId
+      ? [[response.body.orderId, requests[index].total]] : []));
+    if (saved.length !== accepted.length || saved.some((order) => order.totalAmount.toString() !== expectedByOrder.get(order.id)
       || !order.networkSnapshotSealedAt || order.items.length !== (scenario === "fifty" ? 50 : 1)
-      || order.cartSnapshot?.totalAmount !== expected)) throw new Error(`${label}: saved Snapshot mismatch`);
+      || order.cartSnapshot?.totalAmount !== expectedByOrder.get(order.id))) throw new Error(`${label}: saved Snapshot mismatch`);
     if (scenario === "combo" && saved.some((order) => order.cartSnapshot?.items?.[0]?.canonicalSelection?.groups?.[0]?.instances?.length !== 3)) {
       throw new Error(`${label}: repeated Linked selections missing from saved Snapshot`);
     }
@@ -318,6 +330,7 @@ async function wave(kind, scenario, count, label, measure = true) {
     transactionAttempts: metrics.transactions, transactionMs: summary(metrics.transactionMs),
     transactionDurations: metrics.transactionMs,
     serializationConflicts: metrics.serializationConflicts, httpConflicts: conflicts.length,
+    errorCodes: metrics.errorCodes, errorStages: metrics.errorStages,
     peakConnections: peak.connections, peakLockWaiting: peak.lockWaiting,
     peakRssMb: +peak.rssMb.toFixed(1), peakHeapMb: +peak.heapMb.toFixed(1), latencies };
   if (row.peakRssMb > rssLimitMb || row.latencyMs.max > limitMs * 0.8) {
@@ -326,11 +339,11 @@ async function wave(kind, scenario, count, label, measure = true) {
   return row;
 }
 
-async function series(kind, scenario, catalog, concurrency, waves) {
-  await wave(kind, scenario, concurrency, `warmup-${catalog}-${kind}-${scenario}-${concurrency}`, false);
+async function series(kind, scenario, catalog, concurrency, waves, requestFactory = payload) {
+  await wave(kind, scenario, concurrency, `warmup-${catalog}-${kind}-${scenario}-${concurrency}`, false, requestFactory);
   const rows = [];
   for (let index = 0; index < waves && !result.stopped; index += 1) {
-    rows.push(await wave(kind, scenario, concurrency, `${catalog}-${kind}-${scenario}-${concurrency}-${index}`));
+    rows.push(await wave(kind, scenario, concurrency, `${catalog}-${kind}-${scenario}-${concurrency}-${index}`, true, requestFactory));
   }
   const all = rows.filter(Boolean);
   if (!all.length) return null;
@@ -338,6 +351,10 @@ async function series(kind, scenario, catalog, concurrency, waves) {
     success: all.reduce((sum, row) => sum + row.success, 0),
     httpConflicts: all.reduce((sum, row) => sum + row.httpConflicts, 0),
     serializationConflicts: all.reduce((sum, row) => sum + row.serializationConflicts, 0),
+    errorCodes: Object.fromEntries([...new Set(all.flatMap((row) => Object.keys(row.errorCodes)))].map((code) =>
+      [code, all.reduce((sum, row) => sum + (row.errorCodes[code] ?? 0), 0)])),
+    errorStages: Object.fromEntries([...new Set(all.flatMap((row) => Object.keys(row.errorStages)))].map((stage) =>
+      [stage, all.reduce((sum, row) => sum + (row.errorStages[stage] ?? 0), 0)])),
     latencyMs: summary(all.flatMap((row) => row.latencies)),
     avgQueriesPerRequest: +(all.reduce((sum, row) => sum + row.queryCount, 0) / all.reduce((sum, row) => sum + row.samples, 0)).toFixed(2),
     avgPrismaQueryMsPerRequest: +(all.reduce((sum, row) => sum + row.prismaQueryMsTotal, 0) / all.reduce((sum, row) => sum + row.samples, 0)).toFixed(2),
@@ -403,13 +420,219 @@ async function correctnessChecks() {
   result.correctness.push({ crossTenantQuote: foreign.status, stalePrepare: invalid.status, orderingEnabled: false });
 }
 
+const diagnosticTenants = [restaurantId, otherRestaurant, "s6d3c3-tenant-2", "s6d3c3-tenant-3", "s6d3c3-tenant-4"];
+function tenantSlug(tenantId) { return tenantId === restaurantId ? slug : tenantId === otherRestaurant ? "s6d3c3-other" : tenantId; }
+
+async function seedDiagnosticVariants() {
+  await observer.restaurant.createMany({ data: diagnosticTenants.slice(2).map((id) =>
+    ({ id, slug: id, name: `Diagnostic ${id}`, currency: "EGP" })) });
+  await observer.restaurantSubscription.createMany({ data: diagnosticTenants.slice(1).map((id) =>
+    ({ id: `${id}-sub`, restaurantId: id, planId: "s6d3c3-plan", status: "ACTIVE", startsAt: new Date("2026-01-01T00:00:00Z") })) });
+  await observer.product.createMany({ data: [
+    ...Array.from({ length: 25 }, (_, index) => {
+      const id = `s6d3c3-variant-${index}`;
+      return { id, restaurantId, slug: id, name: `Variant ${index}`, currency: "EGP", basePrice: null,
+        configurationVersion: 1, configurationTree: { ...pizza, productId: id } };
+    }),
+    ...diagnosticTenants.slice(1).map((tenantId) => {
+      const id = `${tenantId}-pizza`;
+      return { id, restaurantId: tenantId, slug: id, name: `Pizza ${tenantId}`, currency: "EGP", basePrice: null,
+        configurationVersion: 1, configurationTree: { ...pizza, productId: id } };
+    })
+  ] });
+}
+
+function diagnosticPayload(kind, scenario, index) {
+  const request = payload(kind, "pizza", index);
+  let ownerId = pizzaId;
+  let restaurantSlug = slug;
+  const selection = structuredClone(pizzaSelection);
+  if (scenario === "different_products") ownerId = `s6d3c3-variant-${index % 25}`;
+  if (scenario === "different_tenants") {
+    const tenantId = diagnosticTenants[index % diagnosticTenants.length];
+    restaurantSlug = tenantSlug(tenantId);
+    ownerId = tenantId === restaurantId ? pizzaId : `${tenantId}-pizza`;
+  }
+  if (scenario === "different_selections") {
+    const size = ["small", "medium", "large"][index % 3];
+    selection.groups[0].sizeChoiceId = size;
+    request.total = { small: "165.000003", medium: "265.000004", large: "365.000003" }[size];
+  }
+  selection.productId = ownerId;
+  request.path = `/public/menus/${restaurantSlug}/orders/network-test/${kind === "prepare" ? "prepare" : ""}`;
+  request.body.items[0] = { productId: ownerId, quantity: 1, selection };
+  return request;
+}
+
+async function idempotencyProbe() {
+  const draftBody = payload("prepare", "pizza", 0).body;
+  const prepared = await post(`/public/menus/${slug}/orders/network-test/prepare`, draftBody);
+  if (prepared.status !== 200) throw new Error(`Idempotency Prepare failed: ${prepared.status}`);
+  const body = { ...draftBody, acceptanceToken: prepared.body.acceptanceToken,
+    idempotencyKey: randomUUID() };
+  const before = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  const first = await post(`/public/menus/${slug}/orders/network-test/`, body);
+  const replay = await post(`/public/menus/${slug}/orders/network-test/`, body);
+  const after = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  if (first.status !== 201 || replay.status !== 201 || replay.body.replayed !== true
+    || first.body.orderId !== replay.body.orderId || after - before !== 1) {
+    throw new Error(`Idempotency replay did not preserve a single Order: ${first.status}/${replay.status}`);
+  }
+  const concurrentDraftBody = payload("prepare", "pizza", 1).body;
+  const concurrentPrepared = await post(`/public/menus/${slug}/orders/network-test/prepare`, concurrentDraftBody);
+  if (concurrentPrepared.status !== 200) throw new Error("Concurrent idempotency Prepare failed");
+  const concurrentBody = { ...concurrentDraftBody, acceptanceToken: concurrentPrepared.body.acceptanceToken,
+    idempotencyKey: randomUUID() };
+  const concurrentBefore = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  const attempts = await Promise.all([0, 1].map(() => post(`/public/menus/${slug}/orders/network-test/`, concurrentBody)));
+  const settled = await post(`/public/menus/${slug}/orders/network-test/`, concurrentBody);
+  const reusedToken = await post(`/public/menus/${slug}/orders/network-test/`, {
+    ...concurrentBody, idempotencyKey: randomUUID()
+  });
+  const concurrentAfter = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  if (attempts.some((response) => ![201, 409].includes(response.status)) || settled.status !== 201
+    || settled.body.replayed !== true || concurrentAfter - concurrentBefore !== 1
+    || attempts.some((response) => response.status === 201 && response.body.orderId !== settled.body.orderId)
+    || reusedToken.status !== 409 || reusedToken.body.error !== "ACCEPTANCE_TOKEN_ALREADY_USED") {
+    throw new Error(`Concurrent idempotency/token reuse contract failed: ${attempts.map((x) => x.status)}, ${settled.status}, ${reusedToken.status}`);
+  }
+  const row = { first: first.status, replay: replay.status, sameOrder: true, persisted: after - before,
+    concurrentStatuses: attempts.map((response) => response.status), settledReplay: settled.body.replayed,
+    concurrentPersisted: concurrentAfter - concurrentBefore, reusedToken: reusedToken.body.error };
+  process.stdout.write(`${JSON.stringify({ idempotencyProbe: row })}\n`);
+  return row;
+}
+
+async function staleAcceptanceProbe() {
+  const body = payload("prepare", "pizza", 2).body;
+  const prepared = await post(`/public/menus/${slug}/orders/network-test/prepare`, body);
+  if (prepared.status !== 200) throw new Error("Stale acceptance Prepare failed");
+  const before = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  const changed = structuredClone(pizza);
+  changed.revision = 2;
+  changed.groups[0].sizes[1].price = "201.000001";
+  await observer.product.update({ where: { id: pizzaId }, data: {
+    configurationTree: changed, configurationVersion: 2
+  } });
+  const response = await post(`/public/menus/${slug}/orders/network-test/`, {
+    ...body, acceptanceToken: prepared.body.acceptanceToken, idempotencyKey: randomUUID()
+  });
+  const after = await observer.order.count({ where: { source: "NETWORK_TEST" } });
+  if (response.status !== 409 || after !== before || response.body.orderId !== undefined) {
+    throw new Error(`Stale acceptance was not safely rejected: ${response.status}`);
+  }
+  const row = { status: response.status, error: response.body.error, persisted: after - before };
+  process.stdout.write(`${JSON.stringify({ staleAcceptanceProbe: row })}\n`);
+  return row;
+}
+
+async function storageProbe(kind, concurrency, tenantMode = "same") {
+  const label = `diagnostic-${kind}-${concurrency}-${randomUUID()}`;
+  const responses = await Promise.all(Array.from({ length: concurrency }, async (_, index) => {
+    const idempotencyKey = `${label}-${index}`;
+    const probeRestaurantId = tenantMode === "spread" ? diagnosticTenants[index % diagnosticTenants.length] : restaurantId;
+    try {
+      await observer.$transaction(async (transaction) => {
+        if (["read_misses", "read_then_order", "read_idempotency_then_order", "read_then_order_with_item"].includes(kind)) {
+          await transaction.order.findUnique({ where: { restaurantId_idempotencyKey: {
+            restaurantId: probeRestaurantId, idempotencyKey } } });
+        }
+        if (["read_misses", "read_then_order", "read_token_then_order", "read_then_order_with_item"].includes(kind)) {
+          await transaction.order.findUnique({ where: { restaurantId_acceptanceTokenHash: {
+            restaurantId: probeRestaurantId, acceptanceTokenHash: idempotencyKey } } });
+        }
+        if (kind !== "read_misses") {
+          await transaction.order.create({ data: { restaurantId: probeRestaurantId, totalAmount: "0", currency: "EGP",
+            status: "VALIDATED_TEST", source: "DIAGNOSTIC", idempotencyKey,
+            acceptanceTokenHash: idempotencyKey,
+            ...(["order_with_item", "read_then_order_with_item"].includes(kind) ? { items: { create: [{ name: "Diagnostic", quantity: 1,
+              unitPrice: "0", totalPrice: "0" }] } } : {}) } });
+        }
+      }, { isolationLevel: "Serializable", maxWait: 10_000, timeout: 20_000 });
+      return "ok";
+    } catch (error) { return String(error?.code ?? "UNKNOWN"); }
+  }));
+  const codes = Object.fromEntries([...new Set(responses)].map((code) => [code, responses.filter((item) => item === code).length]));
+  const row = { kind, concurrency, tenantMode, codes };
+  process.stdout.write(`${JSON.stringify({ storageProbe: row })}\n`);
+  return row;
+}
+
+async function predicateLockProbe() {
+  let reached;
+  let release;
+  const reachedPromise = new Promise((resolve) => { reached = resolve; });
+  const releasePromise = new Promise((resolve) => { release = resolve; });
+  const key = `predicate-${randomUUID()}`;
+  const reader = observer.$transaction(async (transaction) => {
+    const [backend] = await transaction.$queryRaw`SELECT pg_backend_pid()::int AS pid`;
+    await transaction.order.findUnique({ where: { restaurantId_idempotencyKey: { restaurantId, idempotencyKey: key } } });
+    await transaction.order.findUnique({ where: { restaurantId_acceptanceTokenHash: {
+      restaurantId, acceptanceTokenHash: key } } });
+    reached(backend.pid);
+    await releasePromise;
+  }, { isolationLevel: "Serializable", maxWait: 10_000, timeout: 20_000 });
+  try {
+    const pid = await withTimeout(reachedPromise, 10_000, "Predicate read");
+    const locks = await observer.$queryRaw`SELECT l.locktype, l.mode, c.relname AS relation,
+      count(*)::int AS count FROM pg_locks l LEFT JOIN pg_class c ON c.oid = l.relation
+      WHERE l.pid = ${pid} AND l.mode = 'SIReadLock'
+      GROUP BY l.locktype, l.mode, c.relname ORDER BY c.relname`;
+    const row = { locks };
+    process.stdout.write(`${JSON.stringify({ predicateLockProbe: row })}\n`);
+    return row;
+  } finally { release(); await reader; }
+}
+
+async function probeOnlyRun() {
+  await seedDiagnosticVariants();
+  for (const tenantId of diagnosticTenants) await growCatalog(100, tenantId);
+  await predicateLockProbe();
+  for (const kind of ["read_misses", "order_only", "read_idempotency_then_order",
+    "read_token_then_order", "read_then_order", "order_with_item", "read_then_order_with_item"]) {
+    await storageProbe(kind, 25);
+  }
+  await storageProbe("read_then_order", 5, "spread");
+  await storageProbe("read_then_order", 25, "spread");
+  await idempotencyProbe();
+  await staleAcceptanceProbe();
+}
+
+async function diagnosticRun() {
+  await seedDiagnosticVariants();
+  const diagnostics = { waves: [], storage: [], idempotency: null };
+  for (const size of [100, 1_000]) {
+    for (const tenantId of diagnosticTenants) await growCatalog(size, tenantId);
+    for (const scenario of ["pizza", "different_products", "different_selections", "different_tenants"]) {
+      for (const concurrency of [1, 5, 10, 25]) {
+        for (const kind of ["prepare", "create"]) {
+          const row = await series(kind, scenario, size, concurrency, 1,
+            scenario === "pizza" ? payload : diagnosticPayload);
+          diagnostics.waves.push(row);
+          if (result.stopped) throw new Error(result.stopped);
+        }
+      }
+    }
+    if (size === 100) {
+      for (const kind of ["read_misses", "order_only", "read_then_order", "order_with_item"]) {
+        for (const concurrency of [1, 5, 10, 25]) diagnostics.storage.push(await storageProbe(kind, concurrency));
+      }
+      diagnostics.idempotency = await idempotencyProbe();
+    }
+  }
+  diagnostics.staleAcceptance = await staleAcceptanceProbe();
+  process.stdout.write(`STAGE6D3C3B_DIAGNOSTIC=${JSON.stringify(diagnostics)}\n`);
+}
+
 try {
   await prisma.$connect();
   await observer.$connect();
   await verifyTarget();
   await seedBase();
   await correctnessChecks();
-  for (const size of (onlySize ? [Number(onlySize)] : [10, 100, 1_000, 10_000])) {
+  if (process.env.STAGE6D3C3_DIAG === "probe") await probeOnlyRun();
+  else if (diagnosticMode) await diagnosticRun();
+  else for (const size of (onlySize ? [Number(onlySize)] : [10, 100, 1_000, 10_000])) {
     const fixtureMs = await growCatalog(size);
     process.stdout.write(`${JSON.stringify({ catalogReady: size, fixtureMs })}\n`);
     for (const kind of ["quote", "prepare", "create"]) {
