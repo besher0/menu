@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-13
 
-Current state: **Stage 6D.3A Browser QA and limited Combo message presentation are complete in source, code commit `2f1b18b`. The isolated Stage 6D.2B browser runner now passes 15/15 named scenarios; Shared/API/Web pass 195/195 with zero skipped, and Typecheck/Build pass. The formatter distinguishes zero-cost linked Size contribution from a free product and numbers linked components consistently, without changing pricing or persistence. The public Network Cart still cannot enter real Checkout/WhatsApp; `orderingEnabled:false` remains. Read `STAGE_6D_3A_BROWSER_QA_REPORT_AR.md` before further work. Stage 6D.3B or any real activation needs separate explicit approval.**
+Current state: **Stage 6D.3B Security, Performance & Production Readiness Audit is complete as an audit only. Read `STAGE_6D_3B_SECURITY_READINESS_AUDIT_AR.md` before further work. A new disposable PostgreSQL suite proved the `ensureAllCategory` first-read/soft-delete failure and an unmapped exhausted Serializable retry in test-order Prepare; neither runtime defect was changed in this audit. Local 10/100/1000-product benchmarks were recorded. Directed Shared/API/Web and root Typecheck passed. Stage 6D.3A browser code remains at `2f1b18b`; the public Network Cart still cannot enter real Checkout/WhatsApp, and `orderingEnabled:false` remains. Any fix or activation needs separate explicit approval.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -568,9 +568,7 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-Stage 6D.3A is complete in a **disposable local flow only**. Do not begin Stage 6D.3B or activate real ordering without a new explicit approval and review of all carried blockers. Do not infer a currency rounding policy from this handoff alone.
-
-Do not begin Stage 6D.3B, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Stage 6D.3B is complete as a **disposable local audit only**. Read section 19 and the Stage 6D.3B report for evidence and small independent proposed fixes. Do not implement those fixes, activate real ordering, deploy, or run any real migration automatically. Do not infer a currency rounding policy from this handoff alone. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
 ## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
@@ -628,7 +626,7 @@ Fresh PostgreSQL 16 cluster `../work/stage6d2b-postgres-data` was used with thre
 
 Browser coverage still lacks separate UI scenarios for Availability/Revision changes, invalid selections, duplicate submission, Delivery, mixed carts and guard-off behavior; underlying API/Web tests cover their core contracts. Full Browser Legacy Checkout regression and visual prototype comparison were not performed. The approved currency rounding/display policy, production security/rate limits, multi-instance HMAC signing, order number, Branch/Outlet, real Migration History, and WhatsApp activation are still unresolved. `orderingEnabled:false` stays mandatory. **Stop after Stage 6D.2B; Stage 6D.3 needs a new explicit authorization.**
 
-## 18. Stage 6D.3A — Browser E2E Completion & Order Presentation QA (latest)
+## 18. Stage 6D.3A - Browser E2E Completion & Order Presentation QA (latest)
 
 Read `STAGE_6D_3A_BROWSER_QA_REPORT_AR.md` for the 15-scenario matrix, actual persisted Combo message, test commands, limitations and Production blockers. Code commit `2f1b18b` extends `scripts/stage6d2b-browser-e2e.mjs` rather than adding another framework. It runs independent/sequential Pizza, repeated Linked Combo, Cart reload, changed-price reacceptance, Configuration Revision, Availability, invalid selection, rapid duplicate click, idempotent retry, Delivery, Pickup, mixed Cart, flag-off API, Legacy Checkout UI, and RTL/mobile 390px cases. Final Chrome CDP result: **15 passed, 0 failed, 0 skipped**. The invalid-selection, retry, and flag-off checks issue HTTP requests from browser context; a separate flag-off Next page was not exercised in the browser, although its server gate remains covered by Web unit tests.
 
@@ -637,3 +635,15 @@ The only Product-code adjustment is to the pure WhatsApp Formatter: linked compo
 Verification used a **new** PostgreSQL 16 cluster `../work/stage6d3a-postgres-data` at `127.0.0.1:55440`, with distinct `ordersawa_stage3_stage6c_stage6d3a_demo`, `_orders`, and `_regression` databases. Baseline test SQL and the Stage 6C snapshot SQL were applied there only. Final Shared **21/21**, API **135/135**, Web **39/39**, total **195/195** with zero skipped; root Typecheck and Build passed. The browser read a sealed Order Snapshot actually saved in disposable PostgreSQL, displayed its full Combo message, and confirmed the message remained identical after restoring a changed catalog price. No real `.env`, Production DB, Migration, Backfill, deployment, or WhatsApp send was used.
 
 Still unresolved: a pre-existing first-read `ensureAllCategory` race outside the seeded fixture, a separate browser check of the Next flag-off page, currency rounding/display policy, Production auth/rate limits, multi-instance HMAC key, order number, Branch/Outlet, historical translation design, real Migration History, and actual WhatsApp activation. **Stop after Stage 6D.3A. Stage 6D.3B and any Production work require new explicit approval.**
+
+## 19. Stage 6D.3B - Security, Performance & Production Readiness Audit (latest)
+
+Full report: `STAGE_6D_3B_SECURITY_READINESS_AUDIT_AR.md`. This was **audit/verification only**, not a Product runtime change. New test file: `apps/api/src/modules/public-menu/network-readiness.audit.integration.spec.ts`; this handoff and the report are the only other changed files. Check `git log -1 --oneline` for the independent audit commit.
+
+Verified against a **new** isolated PostgreSQL 16 cluster at `../work/stage6d3b-postgres-data`, `127.0.0.1:55440`, with separate `ordersawa_stage3_stage6c_stage6d3b_tests` and `_audit` databases. Only test Baseline SQL and Stage 6C SQL were applied there. A deterministic two-reader race against real PostgreSQL proves one `P2002` on concurrent first `all` category creation; a soft-deleted `all` row also produces `P2002` on every attempted recreation. A fault-injection test proves exhausted `P2034` retries escape test-order `prepare` as an unmapped Prisma error, whereas `create` maps them to 409. The audit did **not** repair these defects; the report proposes small separate fixes.
+
+Local benchmark (one warm-up + five sequential measurements per size; not a Production SLA): 10/100/1000 products yielded median Quote **2.68/3.57/18.76 ms** and median Serializable Prepare **8.57/7.44/30.76 ms**. Whole-catalog fetch and whole-tenant Product row locks remain a demonstrated scalability concern; concurrent load and deep Linked worst-case have not been measured. Existing Stage 6C tests confirm trusted repricing, tenant scoping, token/idempotency constraints, rollback and immutable snapshots; no wrong-price order or cross-tenant snapshot access was demonstrated. Current endpoints remain test-only; Production auth, distributed rate controls, shared/rotatable HMAC key, migration-history audit, Business/Outlet context and founder financial decisions are unresolved blockers.
+
+Final directed checks: new audit suite **4/4**, API Quote/Contract/Formatter/Order HTTP+DB **44/44**, Shared **21/21**, Web **39/39**, total **108/108** non-overlapping tests with zero skips. Root Typecheck passed. A separate test-source `tsc` still fails at existing `network-orders.integration.spec.ts:316` and `product-import-parser.spec.ts:23`; no new test-file diagnostics. No independent Build, full API suite, Browser E2E or multi-client load test ran during this audit. No real `.env`, database, migration, backfill, deployment or WhatsApp send was used. `orderingEnabled:false` remains.
+
+Follow-up order **only after approval**: (1) atomic/system-category `all` fix and HTTP race regression; (2) map exhausted Prepare serialization to structured 409; (3) founder financial/operational decisions; (4) Production auth/privacy/HMAC/rate controls; (5) bounded catalog/lock performance work after concurrent benchmarks; (6) read-only Migration History audit with separate database-access authorization. Do not start any of these automatically.
