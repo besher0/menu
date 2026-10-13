@@ -223,13 +223,20 @@ export class NetworkOrdersService {
   async prepare(restaurantSlug: string, body: unknown) {
     await this.assertDisposableOnly();
     const request = parseNetworkOrderRequest(body, false);
-    return this.runSerializable(async (transaction) => {
-      const restaurant = await this.lockRestaurant(transaction, restaurantSlug);
-      const products = await this.lockCatalog(transaction, restaurant.id);
-      const draft = this.buildDraft(restaurant, products, request);
-      return { draft, acceptanceToken: issueAcceptanceToken(restaurant.id, sha256(draft)),
-        requiresExplicitAcceptance: true, orderingEnabled: false };
-    });
+    try {
+      return await this.runSerializable(async (transaction) => {
+        const restaurant = await this.lockRestaurant(transaction, restaurantSlug);
+        const products = await this.lockCatalog(transaction, restaurant.id);
+        const draft = this.buildDraft(restaurant, products, request);
+        return { draft, acceptanceToken: issueAcceptanceToken(restaurant.id, sha256(draft)),
+          requiresExplicitAcceptance: true, orderingEnabled: false };
+      });
+    } catch (error) {
+      if (isSerializationConflict(error)) {
+        throw new ConflictException({ error: "NETWORK_ORDER_CONCURRENT_UPDATE", message: "Catalog changed concurrently; retry with a new quote." });
+      }
+      throw error;
+    }
   }
 
   async create(restaurantSlug: string, body: unknown) {

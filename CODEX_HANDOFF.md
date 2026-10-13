@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-13
 
-Current state: **Stage 6D.3C1 Public Menu race fix is complete. Read `STAGE_6D_3C1_PUBLIC_MENU_RACE_FIX_REPORT_AR.md` and section 20 below before further work. `PublicMenuService.ensureAllCategory` now handles concurrent first requests and restores the tenant's soft-deleted `all` row in place, preserving Category ID and relationships. A new HTTP/PostgreSQL regression passed 8/8; full API passed 147/147, root Typecheck and Build passed. The separate Stage 6D.3B `P2034` Prepare finding remains unfixed. No Production data, migration, backfill, deployment, Stage 6D.3C2, or real Network Ordering was touched; `orderingEnabled:false` remains. Stop and await explicit approval for any next stage.**
+Current state: **Stage 6D.3C2 Prepare conflict handling fix is complete. Read `STAGE_6D_3C2_PREPARE_CONFLICT_FIX_REPORT_AR.md` and section 21 below before further work. Exhausted `P2034` and supported Prisma-wrapped PostgreSQL `40001`/`40P01` conflicts in test-only Network Order Prepare now return structured HTTP 409 after the existing three attempts; unrelated database errors propagate. New disposable-PostgreSQL HTTP tests passed 9/9; full API passed 156/156, root Typecheck and Build passed. Stage 6D.3C1 Public Menu fix remains intact. No Production data, real migration, backfill, deployment, Stage 6D.3C3, or real Network Ordering was touched; `orderingEnabled:false` remains. Stop and await explicit approval for any next stage.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -35,6 +35,7 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 6D.2A report/handoff commit follows implementation; check `git log -2 --oneline` for its hash.
 - Stage 6D.3B audit commit: `1bdc92d audit: document Stage 6D.3B network readiness findings`.
 - Stage 6D.3C1 implementation/report/handoff commit: `fix(api): stabilize Public Menu all category creation` (run `git log -1 --format=%H` for the final hash).
+- Stage 6D.3C2 implementation/report/handoff commit: `fix(api): map exhausted Network Prepare conflicts to 409` (run `git log -1 --format=%H` for its final hash).
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -570,7 +571,7 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-Stage 6D.3C1 is complete as a **limited Public Menu fix only**. Read section 20 and its report. Do not begin Stage 6D.3C2 or another Stage 6D.3B follow-up without explicit approval. Do not activate real ordering, deploy, or run any real migration automatically. Do not infer a currency rounding policy from this handoff alone. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Stage 6D.3C2 is complete as a **limited Prepare HTTP conflict fix only**. Read section 21 and its report. Do not begin Stage 6D.3C3 or another Stage 6D.3B follow-up without explicit approval. Do not activate real ordering, deploy, or run any real migration automatically. Do not infer a currency rounding policy from this handoff alone. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
 ## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
@@ -657,3 +658,13 @@ Read `STAGE_6D_3C1_PUBLIC_MENU_RACE_FIX_REPORT_AR.md` for root cause, exact file
 Final tests on a new cluster `../work/stage6d3c1-postgres-data`, loopback `127.0.0.1:55440`, with separate fresh databases for HTTP race, audit, Product Configuration/API regression, and Network Orders: HTTP race **8/8** (including two/eight concurrent requests, soft-delete ID/relation retention, tenant isolation, unrelated `P2002`/`P2003` propagation); full API **147/147 in 22 files, 0 skipped**; root Typecheck and Build passed (27/27 Next.js pages); `git diff --check` passed. Test Baseline SQL and, only where needed, Stage 6C SQL were applied to those disposable databases. The cluster was stopped after use. No real `.env`, database, migration, backfill or deployment was used. Shared/Web tests were not rerun independently, and Browser E2E was not run; neither runtime path was edited.
 
 Carry-forward: the separate Dashboard `ensureAllCategory` helper was not altered, nor was Stage 6D.3B's exhausted-`P2034` Prepare behavior. All Founder financial/operational decisions, Production auth/HMAC/rate policy, actual Migration History, and real ordering remain unresolved. `orderingEnabled:false` is still required. **Do not start Stage 6D.3C2 automatically.**
+
+## 21. Stage 6D.3C2 - Prepare Transaction Conflict Handling Fix (current)
+
+Read `STAGE_6D_3C2_PREPARE_CONFLICT_FIX_REPORT_AR.md` for the exact contract, files, test matrix, and unresolved blockers. Only `NetworkOrdersService.prepare` runtime behavior changed: after the existing `runSerializable` exhausts three attempts, the existing `isSerializationConflict` predicate maps `P2034` and `P2010` with PostgreSQL `40001`/`40P01` to HTTP 409 `{error:"NETWORK_ORDER_CONCURRENT_UPDATE", message:"Catalog changed concurrently; retry with a new quote."}`. Unrelated errors still propagate. `runSerializable`, `create`, Serializable/FOR SHARE locking, pricing, order persistence, acceptance, idempotency, frontend, and test-only gates were not modified. The Stage 6D.3B audit regression now expects the fixed response.
+
+New `apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts` runs actual Nest HTTP and Prisma/PostgreSQL transactions with fault injection **inside** each transaction after the real callback and a rollback marker. It covers successful Prepare, temporary retry, all three exhausted conflict variants, no Prisma detail leaks, unrelated DB error propagation, rollback/no Order, unchanged Create/idempotency, and disabled test flag. Tests require a dedicated new disposable database named `ordersawa_stage3_stage6c_stage6d3c2_conflict` on `127.0.0.1:55440` and verify its actual identity before writing fixtures.
+
+Final isolated PostgreSQL 16 run used new `../work/stage6d3c2-postgres-data` with separate fresh test databases. New HTTP suite **9/9**, full API **156/156 in 23 files, 0 skipped**, root Typecheck and Build passed (27/27 Next.js pages). Test Baseline and Stage 6C SQL were applied to disposable databases only; no real `.env`, Production database, migration, backfill, deployment, or WhatsApp send. Shared/Web tests were not run independently; Browser E2E was not run because this change is confined to Backend error handling. Extra test-source TypeScript compilation still reports only the existing `network-orders.integration.spec.ts:316` and `product-import-parser.spec.ts:23` issues.
+
+Carry-forward known issues: the separate Dashboard `ensureAllCategory` helper; full Restaurant Catalog loading per Quote; `FOR SHARE` locks on all tenant Product rows in Prepare/Create; missing concurrency/50-line/10k-product/deep Nested/Linked benchmarks; the two old test-source TypeScript errors; and **all** Stage 6D.3B Production blockers (financial policy, auth/privacy/rates, HMAC, order number/phone/delivery rules, multilingual snapshot, real Migration History, Business/Outlet/Service Mode/Scheduling, WhatsApp sending). None is resolved by this stage. `orderingEnabled:false` and test-only endpoint guards remain mandatory. **Do not start Stage 6D.3C3 automatically.**

@@ -100,7 +100,7 @@ integration("Stage 6D.3B disposable database audit", () => {
     await prisma.category.deleteMany({ where: { restaurantId, slug: "all" } });
   });
 
-  it("documents that exhausted Serializable retries in Prepare escape as an unmapped Prisma error", async () => {
+  it("maps exhausted Serializable retries in Prepare to a structured conflict", async () => {
     let attempts = 0;
     const exhausted = new Prisma.PrismaClientKnownRequestError("serialization failure", {
       code: "P2034", clientVersion: "5.22.0"
@@ -111,7 +111,9 @@ integration("Stage 6D.3B disposable database audit", () => {
     } as any);
     await expect(service.prepare("s6d3b-audit", { locale: "en", items: [
       { productId: ownerId, quantity: 1, selection }
-    ] })).rejects.toBe(exhausted);
+    ] })).rejects.toMatchObject({ status: 409, response: {
+      error: "NETWORK_ORDER_CONCURRENT_UPDATE", message: "Catalog changed concurrently; retry with a new quote."
+    } });
     expect(attempts).toBe(3);
   });
 
