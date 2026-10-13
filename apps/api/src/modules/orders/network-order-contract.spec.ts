@@ -8,6 +8,25 @@ const selection = { schemaVersion: 1, productId: "pizza", configurationRevision:
 const draft = { locale: "ar", items: [{ productId: "pizza", quantity: 2, selection }] };
 
 describe("Stage 6C test-only order contract", () => {
+  it("canonicalizes optional Legacy-compatible details and independent item notes", () => {
+    const parsed = parseNetworkOrderRequest({ ...draft, customerName: "  Demo customer  ",
+      customerPhone: "0000000000", fulfillmentType: "delivery", deliveryArea: "District",
+      deliveryNear: "Park", deliveryBeside: "Gate", orderNote: "Pack separately",
+      items: [{ ...draft.items[0], note: "  No onion  " }] }, false);
+    expect(parsed.customerName).toBe("Demo customer");
+    expect(parsed.items[0].note).toBe("No onion");
+    expect(parsed.deliveryArea).toBe("District");
+  });
+
+  it("matches current pickup and delivery field rules and rejects unsafe details", () => {
+    expect(parseNetworkOrderRequest({ ...draft, fulfillmentType: "pickup", pickupTime: "6 PM" }, false).pickupTime).toBe("6 PM");
+    expect(() => parseNetworkOrderRequest({ ...draft, fulfillmentType: "delivery", deliveryArea: "District" }, false)).toThrow();
+    expect(() => parseNetworkOrderRequest({ ...draft, fulfillmentType: "pickup", deliveryArea: "District" }, false)).toThrow();
+    expect(() => parseNetworkOrderRequest({ ...draft, pickupTime: "6 PM" }, false)).toThrow();
+    expect(() => parseNetworkOrderRequest({ ...draft, customerName: "A\nForged line" }, false)).toThrow();
+    expect(() => parseNetworkOrderRequest({ ...draft, customerPhone: 123 }, false)).toThrow();
+    expect(() => parseNetworkOrderRequest({ ...draft, items: [{ ...draft.items[0], note: "A".repeat(501) }] }, false)).toThrow();
+  });
   it("accepts selections and quantities, but rejects client prices at every depth", () => {
     expect(parseNetworkOrderRequest(draft, false)).toMatchObject(draft);
     expect(() => parseNetworkOrderRequest({ ...draft, totalAmount: "1" }, false)).toThrow();

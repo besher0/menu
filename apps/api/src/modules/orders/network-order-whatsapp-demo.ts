@@ -33,13 +33,13 @@ export function buildNetworkWhatsappDemo(kind: "pizza" | "combo", locale: Locale
     schemaVersion: 1, productId: "demo-combo", revision: 2, basePrice: "0",
     groups: [{ type: "OPTIONS", id: "slots", label: ar ? "اختيار البيتزا" : "Choose pizzas", min: 3, max: 3, includedQuantity: 0,
       options: [
-        { id: "original", label: ar ? "بيتزا أصلية" : "Original pizza", price: "10", maxQuantity: 2,
+        { id: "original", label: ar ? "بيتزا أولى" : "First pizza", price: "10", maxQuantity: 2,
           linkedProduct: { sourceProductId: "demo-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
-        { id: "custom", label: ar ? "بيتزا مخصصة" : "Custom pizza", price: "3", maxQuantity: 1,
+        { id: "custom", label: ar ? "بيتزا إضافية" : "Extra pizza", price: "3", maxQuantity: 1,
           linkedProduct: { sourceProductId: "demo-source", mode: "CUSTOM", customConfiguration: {
             schemaVersion: 1, productId: "demo-source", revision: 4, basePrice: null,
             groups: [{ type: "SIZE", id: "custom-sizes", label: ar ? "حجم الكومبو" : "Combo size", sizes: [
-              { id: "custom-one", label: ar ? "وسط مخصص" : "Custom medium", price: "7" }
+              { id: "custom-one", label: ar ? "حجم وسط" : "Medium", price: "7" }
             ] }]
           } } }
       ] }]
@@ -90,5 +90,16 @@ export function buildNetworkWhatsappDemo(kind: "pizza" | "combo", locale: Locale
     createdAt: "2026-10-13T00:00:00.000Z"
   };
   return { snapshotVersion: 1, mode: "NETWORK", locale, currency: "EGP", totalAmount: item.lineTotal,
+    orderDetails: kind === "pizza" ? {
+      restaurantName: ar ? "مطعم التجربة" : "Demo restaurant",
+      customerName: ar ? "زبون تجريبي" : "Demo customer", customerPhone: "0000000000",
+      fulfillmentType: "delivery", deliveryArea: ar ? "حي التجربة" : "Demo district",
+      deliveryNear: ar ? "الحديقة" : "Park", deliveryBeside: ar ? "البوابة" : "Gate",
+      orderNote: ar ? "يرجى فصل الصوص" : "Please pack sauce separately"
+    } : {
+      restaurantName: ar ? "مطعم التجربة" : "Demo restaurant",
+      customerName: ar ? "زبون تجريبي" : "Demo customer", fulfillmentType: "pickup",
+      pickupTime: ar ? "الساعة السادسة" : "6 PM"
+    },
     items: [item], createdAt: "2026-10-13T00:00:00.000Z" };
 }

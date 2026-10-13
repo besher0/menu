@@ -47,13 +47,13 @@ function quantity(value: unknown, path: string): number {
 }
 
 /** Keep historical text legible, but never let a name add a forged line or WhatsApp formatting. */
-function display(value: string, path: string): string {
+function display(value: string, path: string, maxLength = 200): string {
   const cleaned = value
     .replace(/[\r\n\u2028\u2029\t]+/g, " ")
     .replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/\*/g, "＊").replace(/_/g, "＿").replace(/~/g, "～").replace(/`/g, "ˋ")
     .replace(/\s+/g, " ").trim();
-  if (!cleaned || cleaned.length > 200) {
+  if (!cleaned || cleaned.length > maxLength) {
     throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_DISPLAY_TEXT", path, "Display text is empty or too long; it was not truncated.");
   }
   return `\u2068${cleaned}\u2069`;
@@ -61,11 +61,17 @@ function display(value: string, path: string): string {
 
 const words = {
   ar: { title: "🧾 طلب OrderSawa — معاينة", size: "الحجم", required: "مطلوب", optional: "اختياري",
-    linked: "منتج مرتبط", original: "أصلي", custom: "مخصص", included: "مشمول", free: "مجاني",
-    unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي" },
+    linked: "صنف داخل المجموعة", included: "مشمول", free: "مجاني",
+    unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي",
+    restaurant: "المطعم", customer: "اسم الزبون", phone: "هاتف الزبون", fulfillment: "طريقة الاستلام",
+    pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "بالقرب من", beside: "بجانب",
+    pickupTime: "موعد الاستلام", orderNote: "ملاحظات الطلب", itemNote: "ملاحظة الصنف" },
   en: { title: "🧾 OrderSawa order — preview", size: "Size", required: "required", optional: "optional",
-    linked: "Linked product", original: "Original", custom: "Custom", included: "included", free: "free",
-    unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price" }
+    linked: "Combo item", included: "included", free: "free",
+    unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price",
+    restaurant: "Restaurant", customer: "Customer", phone: "Customer phone", fulfillment: "Fulfillment",
+    pickup: "Pickup", delivery: "Delivery", area: "Area", near: "Near", beside: "Beside",
+    pickupTime: "Pickup time", orderNote: "Order note", itemNote: "Item note" }
 } as const;
 
 type StoredSource = { productId: string; productName: string; mode: "NETWORK" | "LEGACY"; configurationTree: ProductConfigurationV1 };
@@ -232,7 +238,7 @@ class LineRenderer {
             const count = (this.sourceOccurrences.get(sourceId) ?? 0) + 1;
             this.sourceOccurrences.set(sourceId, count);
             const linkedName = display(nonempty(source.productName, `${instancePath}.linkedName`), `${instancePath}.linkedName`);
-            this.rendered.push(`${pad}    ↳ ${words[this.locale].linked} #${count}: ${linkedName} (${mode === "ORIGINAL" ? words[this.locale].original : words[this.locale].custom})`);
+            this.rendered.push(`${pad}    ↳ ${words[this.locale].linked} ${count}: ${linkedName}`);
             this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3);
           } else if (record.linkedSelection) {
             throw new NetworkOrderSnapshotFormatError("UNEXPECTED_LINKED_SELECTION", instancePath, "Non-linked option has a linked selection.");
@@ -244,6 +250,59 @@ class LineRenderer {
       }
     }
   }
+}
+
+function optionalSnapshotText(details: JsonObject, key: string, path: string, maxLength = 200): string | undefined {
+  const value = details[key];
+  if (value === undefined || value === null) return undefined;
+  return display(nonempty(value, `${path}.${key}`), `${path}.${key}`, maxLength);
+}
+
+function renderOrderDetails(value: unknown, locale: Locale): { header: string[]; footer: string[] } {
+  if (value === undefined) return { header: [], footer: [] }; // Stage 6C snapshots predate these fields.
+  const path = "$snapshot.orderDetails";
+  const details = object(value, path);
+  const w = words[locale];
+  const header: string[] = [];
+  const footer: string[] = [];
+  if (details.restaurantName === undefined) {
+    throw new NetworkOrderSnapshotFormatError("MISSING_SNAPSHOT_TEXT", `${path}.restaurantName`, "Historical restaurant name is missing.");
+  }
+  const fields = [
+    ["restaurantName", w.restaurant], ["customerName", w.customer], ["customerPhone", w.phone]
+  ] as const;
+  for (const [key, label] of fields) {
+    const value = optionalSnapshotText(details, key, path);
+    if (value) header.push(`${label}: ${value}`);
+  }
+  const fulfillment = details.fulfillmentType;
+  if (fulfillment !== undefined) {
+    if (fulfillment !== "pickup" && fulfillment !== "delivery") {
+      throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_FULFILLMENT", `${path}.fulfillmentType`, "Expected pickup or delivery.");
+    }
+    header.push(`${w.fulfillment}: ${fulfillment === "pickup" ? w.pickup : w.delivery}`);
+  }
+  const addressFields = [
+    ["deliveryArea", w.area], ["deliveryNear", w.near], ["deliveryBeside", w.beside]
+  ] as const;
+  for (const [key, label] of addressFields) {
+    const value = optionalSnapshotText(details, key, path);
+    if (value) header.push(`${label}: ${value}`);
+  }
+  const pickupTime = optionalSnapshotText(details, "pickupTime", path);
+  if (fulfillment === "delivery" && (!details.deliveryArea || !details.deliveryNear || !details.deliveryBeside || pickupTime)) {
+    throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_FULFILLMENT", path, "Saved delivery address is incomplete.");
+  }
+  if (fulfillment !== "delivery" && (details.deliveryArea || details.deliveryNear || details.deliveryBeside)) {
+    throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_FULFILLMENT", path, "Saved address has no delivery mode.");
+  }
+  if (fulfillment !== "pickup" && pickupTime) {
+    throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_FULFILLMENT", path, "Saved pickup time has no pickup mode.");
+  }
+  if (pickupTime) header.push(`${w.pickupTime}: ${pickupTime}`);
+  const orderNote = optionalSnapshotText(details, "orderNote", path, 500);
+  if (orderNote) footer.push(`${w.orderNote}: ${orderNote}`);
+  return { header, footer };
 }
 
 export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): string {
@@ -258,7 +317,8 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
   const total = money(snapshot.totalAmount, "$snapshot.totalAmount");
   const items = array(snapshot.items, "$snapshot.items");
   if (!items.length || items.length > 50) throw new NetworkOrderSnapshotFormatError("INVALID_ITEM_COUNT", "$snapshot.items", "Expected 1–50 items.");
-  const output = [w.title, ""];
+  const details = renderOrderDetails(snapshot.orderDetails, locale);
+  const output = [w.title, ...details.header, ""];
   const lineTotals: string[] = [];
   for (const [index, rawItem] of items.entries()) {
     const path = `$snapshot.items[${index}]`;
@@ -286,6 +346,9 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
     const renderer = new LineRenderer(locale, currency, priceLines, sources);
     output.push(`${index + 1}. ${name} × ${count}`);
     output.push(...renderer.render(configuration, selection));
+    if (item.note !== undefined) {
+      output.push(`${w.itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}`);
+    }
     if (compareMoney(sumMoney(priceLines.map((entry) => money(entry.chargedAmount, `${path}.priceBreakdown.chargedAmount`))), unitPrice) !== 0) {
       throw new NetworkOrderSnapshotFormatError("UNIT_BREAKDOWN_MISMATCH", `${path}.priceBreakdown`, "Saved breakdown differs from the saved unit price.");
     }
@@ -298,6 +361,7 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
     throw new NetworkOrderSnapshotFormatError("ORDER_TOTAL_MISMATCH", "$snapshot.totalAmount", "Saved order total differs from line totals.");
   }
   output.push(`💵 ${w.total}: ${total} ${currency}`);
+  output.push(...details.footer);
   return output.join("\n");
 }
 

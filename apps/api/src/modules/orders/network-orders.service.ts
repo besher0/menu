@@ -18,15 +18,17 @@ import {
   parseNetworkOrderRequest,
   sha256,
   verifyAcceptanceToken,
+  type NetworkOrderSnapshotDetails,
   type NetworkOrderCreateRequest,
   type NetworkOrderDraftRequest
 } from "./network-order-contract";
 
-type LockedRestaurant = { id: string; slug: string; currency: string };
+type LockedRestaurant = { id: string; slug: string; name: string; currency: string };
 type DraftLine = {
   productId: string;
   productName: string;
   productSlug: string;
+  note?: string;
   quantity: number;
   configurationRevision: number;
   canonicalSelection: ProductSelectionV1;
@@ -46,6 +48,7 @@ type Draft = {
   restaurantSlug: string;
   currency: string;
   locale: "ar" | "en";
+  orderDetails: NetworkOrderSnapshotDetails;
   items: DraftLine[];
   totalAmount: string;
   orderingEnabled: false;
@@ -100,7 +103,7 @@ export class NetworkOrdersService {
 
   private async lockRestaurant(transaction: Prisma.TransactionClient, restaurantSlug: string): Promise<LockedRestaurant> {
     const restaurants = await transaction.$queryRaw<LockedRestaurant[]>`
-      SELECT "id", "slug", "currency" FROM "Restaurant"
+      SELECT "id", "slug", "name", "currency" FROM "Restaurant"
       WHERE "slug" = ${restaurantSlug} AND "isActive" = true AND "deletedAt" IS NULL
       FOR SHARE
     `;
@@ -183,6 +186,7 @@ export class NetworkOrdersService {
       moneyFitsDatabase(lineTotal, `$items[${index}].lineTotal`);
       return {
         productId: owner.id, productSlug: owner.slug, productName: owner.name,
+        ...(line.note ? { note: line.note } : {}),
         quantity: line.quantity, configurationRevision: result.quote.configurationRevision,
         canonicalSelection: result.quote.canonicalSelection, selectionKey: result.quote.selectionKey,
         linkedSourceRevisions: result.quote.linkedSourceRevisions,
@@ -200,6 +204,17 @@ export class NetworkOrdersService {
     return {
       schemaVersion: 1, restaurantId: restaurant.id, restaurantSlug: restaurant.slug,
       currency: restaurant.currency, locale: request.locale, items, totalAmount,
+      orderDetails: {
+        restaurantName: restaurant.name,
+        ...(request.customerName ? { customerName: request.customerName } : {}),
+        ...(request.customerPhone ? { customerPhone: request.customerPhone } : {}),
+        ...(request.fulfillmentType ? { fulfillmentType: request.fulfillmentType } : {}),
+        ...(request.deliveryArea ? { deliveryArea: request.deliveryArea } : {}),
+        ...(request.deliveryNear ? { deliveryNear: request.deliveryNear } : {}),
+        ...(request.deliveryBeside ? { deliveryBeside: request.deliveryBeside } : {}),
+        ...(request.pickupTime ? { pickupTime: request.pickupTime } : {}),
+        ...(request.orderNote ? { orderNote: request.orderNote } : {})
+      },
       orderingEnabled: false
     };
   }
@@ -258,13 +273,16 @@ export class NetworkOrdersService {
         const order = await transaction.order.create({
           data: {
             restaurantId: restaurant.id, totalAmount: new Prisma.Decimal(draft.totalAmount),
+            customerName: draft.orderDetails.customerName, customerPhone: draft.orderDetails.customerPhone,
             currency: restaurant.currency, status: "VALIDATED_TEST", source: "NETWORK_TEST",
             idempotencyKey: request.idempotencyKey, requestHash, acceptanceTokenHash,
             cartSnapshot: { snapshotVersion: 1, mode: "NETWORK", locale: draft.locale,
+              orderDetails: draft.orderDetails,
               totalAmount: draft.totalAmount, currency: draft.currency, items: snapshots,
               createdAt } as Prisma.InputJsonValue,
             items: { create: snapshots.map((item) => ({
               productId: item.productId, name: item.productName, quantity: item.quantity,
+              note: item.note,
               unitPrice: new Prisma.Decimal(item.unitPrice), totalPrice: new Prisma.Decimal(item.lineTotal),
               options: item as Prisma.InputJsonValue
             })) }

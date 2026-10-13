@@ -6,6 +6,37 @@ import { buildNetworkWhatsappPreviewUrl, formatNetworkOrderWhatsappMessage, Netw
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
+  it("renders customer, delivery, address and notes from the saved Arabic snapshot", () => {
+    const snapshot = copy(buildNetworkWhatsappDemo("pizza", "ar")) as any;
+    snapshot.items[0].note = "بدون بصل";
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message).toContain("زبون تجريبي");
+    expect(message).toContain("حي التجربة");
+    expect(message).toContain("يرجى فصل الصوص");
+    expect(message).toContain("بدون بصل");
+    expect(message).not.toContain("demo-pizza");
+  });
+
+  it("renders English pickup and accepts older snapshots with no orderDetails", () => {
+    const pickup = buildNetworkWhatsappDemo("combo", "en");
+    expect(formatNetworkOrderWhatsappMessage(pickup)).toContain("Pickup time: \u20686 PM\u2069");
+    const old = copy(pickup) as any;
+    delete old.orderDetails;
+    expect(formatNetworkOrderWhatsappMessage(old)).toContain("Order total:");
+    expect(formatNetworkOrderWhatsappMessage(old)).not.toContain("Customer:");
+  });
+
+  it("rejects malformed saved details rather than inventing or truncating them", () => {
+    const malformed = copy(buildNetworkWhatsappDemo("pizza", "en")) as any;
+    malformed.orderDetails.fulfillmentType = "drone";
+    expect(() => formatNetworkOrderWhatsappMessage(malformed)).toThrow(/INVALID_SNAPSHOT_FULFILLMENT/);
+    malformed.orderDetails.fulfillmentType = "delivery";
+    malformed.orderDetails.customerName = "A".repeat(201);
+    expect(() => formatNetworkOrderWhatsappMessage(malformed)).toThrow(/INVALID_SNAPSHOT_DISPLAY_TEXT/);
+    malformed.orderDetails.customerName = "Demo";
+    delete malformed.orderDetails.deliveryBeside;
+    expect(() => formatNetworkOrderWhatsappMessage(malformed)).toThrow(/INVALID_SNAPSHOT_FULFILLMENT/);
+  });
   it("renders Arabic Pizza size, nested sauce, included highest-priced cheese, quantity, free option and six decimals", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("pizza", "ar"));
     expect(message).toContain("بيتزا مارغريتا");
@@ -37,15 +68,15 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("combo", "ar"));
     expect(message).toContain("كومبو عائلي");
     expect(message).toContain("(مطلوب)");
-    expect(message).toContain("منتج مرتبط #1");
-    expect(message).toContain("منتج مرتبط #2");
-    expect(message).toContain("منتج مرتبط #3");
-    expect(message).toContain("(أصلي)");
-    expect(message).toContain("(مخصص)");
+    expect(message).toContain("صنف داخل المجموعة 1");
+    expect(message).toContain("صنف داخل المجموعة 2");
+    expect(message).toContain("صنف داخل المجموعة 3");
+    expect(message).not.toContain("ORIGINAL");
+    expect(message).not.toContain("CUSTOM");
     expect(message).toContain("كبير");
     expect(message).toContain("وسط");
     expect(message).toContain("43 EGP");
-    expect(message.indexOf("منتج مرتبط #1")).toBeLessThan(message.indexOf("منتج مرتبط #2"));
+    expect(message.indexOf("صنف داخل المجموعة 1")).toBeLessThan(message.indexOf("صنف داخل المجموعة 2"));
   });
 
   it("formats historical source and option names without any current Product lookup", () => {
@@ -54,7 +85,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     const currentProduct = { name: "Renamed live product", price: "9999" };
     const message = formatNetworkOrderWhatsappMessage(saved);
     expect(message).toContain("Source pizza");
-    expect(message).toContain("Original pizza");
+    expect(message).toContain("First pizza");
     expect(message).not.toContain(currentProduct.name);
     expect(message).not.toContain(currentProduct.price);
   });

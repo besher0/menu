@@ -40,12 +40,12 @@ const source = { schemaVersion: 1, productId: "s6c-source", revision: 1, basePri
   ] }] };
 const combo = { schemaVersion: 1, productId: "s6c-combo", revision: 1, basePrice: "0",
   groups: [{ type: "OPTIONS", id: "slots", label: "Slots", min: 3, max: 3, includedQuantity: 0, options: [
-    { id: "original", label: "Original", price: "10", maxQuantity: 2,
+    { id: "original", label: "First pizza", price: "10", maxQuantity: 2,
       linkedProduct: { sourceProductId: "s6c-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
-    { id: "custom", label: "Custom", price: "3", maxQuantity: 1,
+    { id: "custom", label: "Extra pizza", price: "3", maxQuantity: 1,
       linkedProduct: { sourceProductId: "s6c-source", mode: "CUSTOM", customConfiguration: {
         schemaVersion: 1, productId: "s6c-source", revision: 1, basePrice: null,
-        groups: [{ type: "SIZE", id: "custom-sizes", label: "Custom sizes", sizes: [{ id: "custom-one", label: "One", price: "7" }] }]
+        groups: [{ type: "SIZE", id: "custom-sizes", label: "Pizza sizes", sizes: [{ id: "custom-one", label: "Medium", price: "7" }] }]
       } } }
   ] }] };
 
@@ -140,7 +140,7 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
       configurationTree: combo, configurationVersion: 1, isAvailable: true, isActive: true, deletedAt: null
     } });
     await prisma.subscriptionFeature.update({ where: { id: "s6c-feature" }, data: { enabled: true } });
-    await prisma.restaurant.update({ where: { id: "s6c-r1" }, data: { currency: "EGP" } });
+    await prisma.restaurant.update({ where: { id: "s6c-r1" }, data: { name: "Stage 6C Restaurant", currency: "EGP" } });
   });
 
   afterAll(async () => {
@@ -194,9 +194,9 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     expect(result.status).toBe(201);
     const savedOrder = await prisma.order.findUniqueOrThrow({ where: { id: result.body.orderId } });
     const comboMessage = formatNetworkOrderWhatsappMessage(savedOrder.cartSnapshot);
-    expect(comboMessage).toContain("منتج مرتبط #1");
-    expect(comboMessage).toContain("منتج مرتبط #2");
-    expect(comboMessage).toContain("منتج مرتبط #3");
+    expect(comboMessage).toContain("صنف داخل المجموعة 1");
+    expect(comboMessage).toContain("صنف داخل المجموعة 2");
+    expect(comboMessage).toContain("صنف داخل المجموعة 3");
     expect(comboMessage).toContain("Source Pizza");
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: result.body.orderId } });
     expect((item.options as any).canonicalSelection.groups[0].instances.map((instance: any) => instance.instanceId)).toEqual(["custom-1", "original-1", "original-2"]);
@@ -220,6 +220,61 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     const stored = await prisma.order.findUniqueOrThrow({ where: { id: created.body.orderId }, include: { items: true } });
     expect(stored.items).toHaveLength(2);
     expect(new Set(stored.items.map((item) => (item.options as any).selectionKey)).size).toBe(2);
+  });
+
+  it("persists fictitious customer, delivery, address and notes in the sealed snapshot and previews the saved Pizza", async () => {
+    const request = { ...pizzaDraft(), customerName: "Demo Customer", customerPhone: "0000000000",
+      fulfillmentType: "delivery", deliveryArea: "Demo district", deliveryNear: "Park", deliveryBeside: "Gate",
+      orderNote: "Pack sauce separately", items: [{ ...pizzaDraft().items[0], note: "No onion" }] };
+    const prepared = await prepare(request);
+    expect(prepared.status).toBe(200);
+    const created = await create({ ...request, idempotencyKey: randomUUID(), acceptanceToken: prepared.body.acceptanceToken });
+    expect(created.status).toBe(201);
+    const saved = await prisma.order.findUniqueOrThrow({ where: { id: created.body.orderId }, include: { items: true } });
+    expect(saved.customerName).toBe("Demo Customer");
+    expect(saved.customerPhone).toBe("0000000000");
+    expect(saved.items[0].note).toBe("No onion");
+    expect((saved.cartSnapshot as any).orderDetails).toMatchObject({ restaurantName: "Stage 6C Restaurant",
+      fulfillmentType: "delivery", deliveryArea: "Demo district", orderNote: "Pack sauce separately" });
+    await prisma.restaurant.update({ where: { id: "s6c-r1" }, data: { name: "New restaurant name" } });
+    const message = formatNetworkOrderWhatsappMessage(saved.cartSnapshot);
+    expect(message).toContain("Stage 6C Restaurant");
+    expect(message).not.toContain("New restaurant name");
+    expect(message).toContain("Demo Customer");
+    expect(message).toContain("No onion");
+    expect(message).toContain("530.000008 EGP");
+    await expect(prisma.order.update({ where: { id: saved.id }, data: { customerName: "Changed" } })).rejects.toThrow();
+    await expect(prisma.order.update({ where: { id: saved.id }, data: { cartSnapshot: { changed: true } } })).rejects.toThrow();
+    if (process.env.PRINT_NETWORK_ORDER_PREVIEW === "1") process.stdout.write(`\n--- STORED PIZZA ---\n${message}\n`);
+  });
+
+  it("persists pickup details for an independently selected repeated Combo", async () => {
+    const request = { ...comboDraft(), customerName: "Demo Guest", fulfillmentType: "pickup", pickupTime: "6 PM" };
+    const prepared = await prepare(request);
+    expect(prepared.status).toBe(200);
+    const created = await create({ ...request, idempotencyKey: randomUUID(), acceptanceToken: prepared.body.acceptanceToken });
+    expect(created.status).toBe(201);
+    const saved = await prisma.order.findUniqueOrThrow({ where: { id: created.body.orderId } });
+    const message = formatNetworkOrderWhatsappMessage(saved.cartSnapshot);
+    expect(message).toContain("Demo Guest");
+    expect(message).toContain("6 PM");
+    expect(message).toContain("صنف داخل المجموعة 3");
+    expect(message).not.toContain("CUSTOM");
+    if (process.env.PRINT_NETWORK_ORDER_PREVIEW === "1") process.stdout.write(`\n--- STORED COMBO ---\n${message}\n`);
+  });
+
+  it("binds customer details to explicit acceptance and rejects malformed address input before persistence", async () => {
+    const request = { ...pizzaDraft(), customerName: "Demo Guest", fulfillmentType: "pickup" };
+    const prepared = await prepare(request);
+    expect(prepared.status).toBe(200);
+    const changed = await create({ ...request, customerName: "Other Guest", idempotencyKey: randomUUID(),
+      acceptanceToken: prepared.body.acceptanceToken });
+    expect(changed.status).toBe(409);
+    expect(changed.body.error).toBe("NETWORK_ORDER_REQUIRES_NEW_ACCEPTANCE");
+    expect(await prisma.order.count()).toBe(0);
+    expect((await prepare({ ...request, fulfillmentType: "delivery" })).status).toBe(400);
+    expect((await prepare({ ...request, orderNote: "Forged\nline" })).status).toBe(400);
+    expect(await prisma.order.count()).toBe(0);
   });
 
   it("rejects client monetary fields and cross-restaurant or Legacy products", async () => {
