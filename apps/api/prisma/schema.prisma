@@ -484,6 +484,10 @@ model Order {
   source          String      @default("WHATSAPP")
   whatsappMessage String?
   cartSnapshot    Json?
+  idempotencyKey  String?
+  requestHash     String?
+  acceptanceTokenHash String?
+  networkSnapshotSealedAt DateTime?
   createdAt       DateTime    @default(now())
   branch          Branch?     @relation(fields: [branchId], references: [id])
   restaurant      Restaurant  @relation(fields: [restaurantId], references: [id])
@@ -491,6 +495,8 @@ model Order {
 
   @@index([restaurantId])
   @@index([branchId])
+  @@unique([restaurantId, idempotencyKey], map: "Order_restaurantId_idempotencyKey_key")
+  @@unique([restaurantId, acceptanceTokenHash], map: "Order_restaurantId_acceptanceTokenHash_key")
 }
 
 model OrderItem {
@@ -672,6 +678,7 @@ enum OrderStatus {
   PENDING_WHATSAPP
   SENT_TO_WHATSAPP
   CANCELED
+  VALIDATED_TEST
 }
 
 enum DomainStatus {
