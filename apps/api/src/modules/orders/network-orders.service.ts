@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
   createConfigurationSnapshot,
@@ -12,12 +12,14 @@ import {
 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatNetworkOrderWhatsappMessage } from "./network-order-whatsapp-formatter";
+import { assertNetworkOrderCompletenessGuard, NETWORK_ORDER_COMPLETENESS_CONSTRAINT } from "./network-order-db-guard";
 import { resolvePublicProductConfiguration, type PublicConfigurationProductRecord } from "../public-menu/public-product-configuration";
 import { quotePublicProductConfiguration } from "../public-menu/public-product-quote";
 import {
   issueAcceptanceToken,
   parseNetworkOrderRequest,
   sha256,
+  stableJson,
   verifyAcceptanceToken,
   type NetworkOrderSnapshotDetails,
   type NetworkOrderCreateRequest,
@@ -54,6 +56,42 @@ type Draft = {
   totalAmount: string;
   orderingEnabled: false;
 };
+
+type StoredNetworkOrder = Prisma.OrderGetPayload<{ include: { items: true } }>;
+
+function isSealedStoredOrder(order: StoredNetworkOrder): boolean {
+  const snapshot = order.cartSnapshot;
+  if (order.source !== "NETWORK_TEST" || order.status !== "VALIDATED_TEST"
+    || !order.networkSnapshotSealedAt || !snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return false;
+  const saved = snapshot as Record<string, unknown>;
+  if (saved.snapshotVersion !== 1 || saved.mode !== "NETWORK" || saved.currency !== order.currency
+    || saved.totalAmount !== order.totalAmount.toString() || !Array.isArray(saved.items)
+    || saved.items.length < 1 || saved.items.length !== order.items.length) return false;
+  const evidence = new Map<string, number>();
+  for (const item of saved.items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const key = stableJson(item);
+    evidence.set(key, (evidence.get(key) ?? 0) + 1);
+  }
+  for (const item of order.items) {
+    if (!item.productId || !item.options || typeof item.options !== "object" || Array.isArray(item.options)) return false;
+    const line = item.options as Record<string, unknown>;
+    if (line.productId !== item.productId || line.productName !== item.name
+      || line.quantity !== item.quantity || (line.note ?? null) !== item.note
+      || line.currency !== order.currency || line.unitPrice !== item.unitPrice.toString()
+      || line.lineTotal !== item.totalPrice.toString()) return false;
+    const key = stableJson(line);
+    const count = evidence.get(key) ?? 0;
+    if (count === 0) return false;
+    evidence.set(key, count - 1);
+  }
+  return [...evidence.values()].every((count) => count === 0);
+}
+
+function isGuardError(error: unknown): boolean {
+  return error instanceof ServiceUnavailableException
+    && (error.getResponse() as { error?: string }).error === "NETWORK_ORDER_DB_GUARD_UNAVAILABLE";
+}
 
 function moneyFitsDatabase(value: string, path: string) {
   const issues = validateMoneyString(value, path, DEFAULT_ENGINE_LIMITS);
@@ -239,30 +277,60 @@ export class NetworkOrdersService {
     }
   }
 
+  /** Read only after the write transaction has ended; never create a new order from this result. */
+  private async findCommittedOrder(
+    restaurantId: string, request: NetworkOrderCreateRequest, requestHash: string, acceptanceTokenHash: string,
+    expectedSnapshot?: unknown
+  ) {
+    const existing = await this.prisma.order.findUnique({
+      where: { restaurantId_idempotencyKey: { restaurantId, idempotencyKey: request.idempotencyKey } },
+      include: { items: true }
+    });
+    if (existing) {
+      if (existing.restaurantId !== restaurantId || existing.idempotencyKey !== request.idempotencyKey
+        || existing.requestHash !== requestHash || existing.acceptanceTokenHash !== acceptanceTokenHash) {
+        throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED", message: "This key belongs to a different request." });
+      }
+      if (!isSealedStoredOrder(existing)
+        || (expectedSnapshot !== undefined && stableJson(existing.cartSnapshot) !== stableJson(expectedSnapshot))) {
+        throw new ServiceUnavailableException({ error: "NETWORK_ORDER_COMMIT_UNCONFIRMED", message: "The saved test order could not be verified." });
+      }
+      return { orderId: existing.id, totalAmount: existing.totalAmount.toString(), currency: existing.currency,
+        status: existing.status, replayed: true, orderingEnabled: false };
+    }
+    const usedToken = await this.prisma.order.findUnique({
+      where: { restaurantId_acceptanceTokenHash: { restaurantId, acceptanceTokenHash } },
+      select: { id: true }
+    });
+    if (usedToken) throw new ConflictException({ error: "ACCEPTANCE_TOKEN_ALREADY_USED" });
+    return null;
+  }
+
+  private async confirmAfterFailure(
+    restaurantSlug: string, request: NetworkOrderCreateRequest, requestHash: string, acceptanceTokenHash: string
+  ) {
+    try {
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: { slug: restaurantSlug, isActive: true, deletedAt: null }, select: { id: true }
+      });
+      return restaurant ? this.findCommittedOrder(restaurant.id, request, requestHash, acceptanceTokenHash) : null;
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException({ error: "NETWORK_ORDER_COMMIT_UNCONFIRMED", message: "The test order outcome could not be verified." });
+    }
+  }
+
   async create(restaurantSlug: string, body: unknown) {
     await this.assertDisposableOnly();
     const request = parseNetworkOrderRequest(body, true);
     const requestHash = sha256(request);
     const acceptanceTokenHash = sha256(request.acceptanceToken);
+    let written: { restaurantId: string; orderId: string; snapshot: Prisma.InputJsonValue };
     try {
-      return await this.runSerializable(async (transaction) => {
+      written = await this.runSerializable(async (transaction) => {
+        await assertNetworkOrderCompletenessGuard(transaction);
         const restaurant = await this.lockRestaurant(transaction, restaurantSlug);
-        const existing = await transaction.order.findUnique({
-          where: { restaurantId_idempotencyKey: { restaurantId: restaurant.id, idempotencyKey: request.idempotencyKey } }
-        });
-        if (existing) {
-          if (existing.requestHash !== requestHash || existing.source !== "NETWORK_TEST") {
-            throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED", message: "This key belongs to a different request." });
-          }
-          return { orderId: existing.id, totalAmount: existing.totalAmount.toString(), currency: existing.currency,
-            status: existing.status, replayed: true, orderingEnabled: false };
-        }
         const products = await this.lockCatalog(transaction, restaurant.id);
-        const priorToken = await transaction.order.findUnique({
-          where: { restaurantId_acceptanceTokenHash: { restaurantId: restaurant.id, acceptanceTokenHash } }
-        });
-        if (priorToken) throw new ConflictException({ error: "ACCEPTANCE_TOKEN_ALREADY_USED" });
-
         const draft = this.buildDraft(restaurant, products, request);
         if (!verifyAcceptanceToken(request.acceptanceToken, restaurant.id, sha256(draft))) {
           throw new ConflictException({
@@ -278,16 +346,16 @@ export class NetworkOrdersService {
           snapshotVersion: 1, mode: "NETWORK", locale: draft.locale, currency: draft.currency,
           ...item, createdAt
         }));
+        const snapshot = { snapshotVersion: 1, mode: "NETWORK", locale: draft.locale,
+          orderDetails: draft.orderDetails, totalAmount: draft.totalAmount, currency: draft.currency,
+          items: snapshots, createdAt } as Prisma.InputJsonValue;
         const order = await transaction.order.create({
           data: {
             restaurantId: restaurant.id, totalAmount: new Prisma.Decimal(draft.totalAmount),
             customerName: draft.orderDetails.customerName, customerPhone: draft.orderDetails.customerPhone,
             currency: restaurant.currency, status: "VALIDATED_TEST", source: "NETWORK_TEST",
             idempotencyKey: request.idempotencyKey, requestHash, acceptanceTokenHash,
-            cartSnapshot: { snapshotVersion: 1, mode: "NETWORK", locale: draft.locale,
-              orderDetails: draft.orderDetails,
-              totalAmount: draft.totalAmount, currency: draft.currency, items: snapshots,
-              createdAt } as Prisma.InputJsonValue,
+            cartSnapshot: snapshot,
             items: { create: snapshots.map((item) => ({
               productId: item.productId, name: item.productName, quantity: item.quantity,
               note: item.note,
@@ -299,25 +367,35 @@ export class NetworkOrdersService {
         await transaction.order.update({
           where: { id: order.id }, data: { networkSnapshotSealedAt: new Date() }
         });
-        return { orderId: order.id, totalAmount: draft.totalAmount, currency: draft.currency,
-          status: "VALIDATED_TEST" as const, replayed: false, orderingEnabled: false };
+        // Prisma 5.22 can resolve the callback despite a deferred COMMIT rollback.
+        await transaction.$executeRawUnsafe(`SET CONSTRAINTS ${NETWORK_ORDER_COMPLETENESS_CONSTRAINT} IMMEDIATE`);
+        return { restaurantId: restaurant.id, orderId: order.id, snapshot };
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        const restaurant = await this.prisma.restaurant.findUnique({ where: { slug: restaurantSlug }, select: { id: true } });
-        const existing = restaurant ? await this.prisma.order.findUnique({
-          where: { restaurantId_idempotencyKey: { restaurantId: restaurant.id, idempotencyKey: request.idempotencyKey } }
-        }) : null;
-        if (existing?.requestHash === requestHash && existing.source === "NETWORK_TEST") {
-          return { orderId: existing.id, totalAmount: existing.totalAmount.toString(), currency: existing.currency,
-            status: existing.status, replayed: true, orderingEnabled: false };
-        }
-        throw new ConflictException({ error: existing ? "IDEMPOTENCY_KEY_REUSED" : "ACCEPTANCE_TOKEN_ALREADY_USED" });
-      }
+      if (isGuardError(error)) throw error;
+      // A failed write, lost response or stale Draft may still be an exact replay of a committed order.
+      const confirmed = await this.confirmAfterFailure(restaurantSlug, request, requestHash, acceptanceTokenHash);
+      if (confirmed) return confirmed;
       if (isSerializationConflict(error)) {
         throw new ConflictException({ error: "NETWORK_ORDER_CONCURRENT_UPDATE", message: "Catalog changed concurrently; retry with a new quote." });
       }
-      throw error;
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ServiceUnavailableException({ error: "NETWORK_ORDER_UNRESOLVED_UNIQUE_CONFLICT", message: "The test order conflict could not be verified." });
+      }
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException({ error: "NETWORK_ORDER_PERSISTENCE_FAILED", message: "The test order was not saved or could not be confirmed." });
+    }
+    try {
+      const confirmed = await this.findCommittedOrder(
+        written.restaurantId, request, requestHash, acceptanceTokenHash, written.snapshot
+      );
+      if (!confirmed || confirmed.orderId !== written.orderId) {
+        throw new ServiceUnavailableException({ error: "NETWORK_ORDER_COMMIT_UNCONFIRMED", message: "The test order commit was not confirmed." });
+      }
+      return { ...confirmed, replayed: false };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException({ error: "NETWORK_ORDER_COMMIT_UNCONFIRMED", message: "The test order commit was not confirmed." });
     }
   }
 

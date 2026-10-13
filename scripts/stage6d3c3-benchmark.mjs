@@ -22,8 +22,11 @@ const { NetworkOrdersService } = require("../apps/api/dist/modules/orders/networ
 const { NetworkOrdersController, NetworkOrderLoopbackGuard } = require("../apps/api/dist/modules/orders/network-orders.controller.js");
 const { multiplyMoney } = require("@menu/shared");
 
-const exactDatabase = "ordersawa_stage3_stage6c_stage6d3c3_bench";
-const databaseUrl = process.env.STAGE6D3C3_DATABASE_URL;
+const runtimeGuardMode = process.env.STAGE6D3C3F_RUNTIME_GUARD_BENCH === "1";
+const exactDatabase = runtimeGuardMode
+  ? `ordersawa_stage3_stage6c_stage6d3c3f_${process.env.STAGE6D3C3F_BENCH_RUN === "2" ? "bench2" : "bench"}`
+  : "ordersawa_stage3_stage6c_stage6d3c3_bench";
+const databaseUrl = runtimeGuardMode ? process.env.STAGE6D3C3F_DATABASE_URL : process.env.STAGE6D3C3_DATABASE_URL;
 if (!databaseUrl || process.env.NODE_ENV === "production" || process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS !== "1") {
   throw new Error("Stage 6D.3C3 requires an explicit disposable URL, non-Production mode, and the test-only order flag");
 }
@@ -103,6 +106,7 @@ const cases = {
 };
 const fifty = { lines: Array.from({ length: 50 }, () => ({ productId: pizzaId, quantity: 1, selection: pizzaSelection })),
   total: multiplyMoney(cases.pizza.total, 50) };
+const ten = { lines: fifty.lines.slice(0, 10), total: multiplyMoney(cases.pizza.total, 10) };
 
 function percentile(values, fraction) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -243,11 +247,12 @@ async function post(path, body) {
 
 function payload(kind, scenario, index) {
   const chosen = scenario === "combo" ? cases.combo : cases.pizza;
-  const lines = scenario === "fifty" ? fifty.lines : [{ productId: chosen.productId, quantity: 1, selection: chosen.selection }];
+  const lines = scenario === "fifty" ? fifty.lines : scenario === "ten" ? ten.lines
+    : [{ productId: chosen.productId, quantity: 1, selection: chosen.selection }];
   if (kind === "quote") return { path: `/public/menus/${slug}/products/${chosen.productId}/quote`, body: { selection: chosen.selection }, total: chosen.total };
   const body = { locale: "en", items: lines, orderNote: `Benchmark ${index}-${randomUUID()}` };
   return { path: `/public/menus/${slug}/orders/network-test/${kind === "prepare" ? "prepare" : ""}`, body,
-    total: scenario === "fifty" ? fifty.total : chosen.total };
+    total: scenario === "fifty" ? fifty.total : scenario === "ten" ? ten.total : chosen.total };
 }
 
 async function activitySampler(stop) {
@@ -316,7 +321,7 @@ async function wave(kind, scenario, count, label, measure = true, requestFactory
     const expectedByOrder = new Map(responses.flatMap((response, index) => response.body.orderId
       ? [[response.body.orderId, requests[index].total]] : []));
     if (saved.length !== accepted.length || saved.some((order) => order.totalAmount.toString() !== expectedByOrder.get(order.id)
-      || !order.networkSnapshotSealedAt || order.items.length !== (scenario === "fifty" ? 50 : 1)
+      || !order.networkSnapshotSealedAt || order.items.length !== (scenario === "fifty" ? 50 : scenario === "ten" ? 10 : 1)
       || order.cartSnapshot?.totalAmount !== expectedByOrder.get(order.id))) throw new Error(`${label}: saved Snapshot mismatch`);
     if (scenario === "combo" && saved.some((order) => order.cartSnapshot?.items?.[0]?.canonicalSelection?.groups?.[0]?.instances?.length !== 3)) {
       throw new Error(`${label}: repeated Linked selections missing from saved Snapshot`);
@@ -654,7 +659,7 @@ try {
       for (const concurrency of [1, 5]) await lockTrial(size, concurrency);
     }
     if (size === 1_000) {
-      for (const scenario of ["combo", "fifty"]) {
+      for (const scenario of (runtimeGuardMode ? ["combo", "ten", "fifty"] : ["combo", "fifty"])) {
         for (const kind of ["quote", "prepare", "create"]) {
           if (scenario === "fifty" && kind === "quote") continue; // Quote accepts one selected Product, not an Order.
           const measured = await series(kind, scenario, size, 1, scenario === "fifty" ? 3 : 7);

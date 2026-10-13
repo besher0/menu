@@ -3,7 +3,13 @@
 -- Future adoption requires migration-history audit, an approved migration, and a fresh compatibility review.
 DO $$ BEGIN
   IF current_database() NOT IN ('ordersawa_stage3_stage6c_stage6d3c3e_guard',
-    'ordersawa_stage3_stage6c_stage6d3c3e_integration')
+    'ordersawa_stage3_stage6c_stage6d3c3e_integration',
+    'ordersawa_stage3_stage6c_stage6d3c2_conflict',
+    'ordersawa_stage3_stage6c_stage6d3c3f_atomic',
+    'ordersawa_stage3_stage6c_stage6d3c3f_fake_guard',
+    'ordersawa_stage3_stage6c_stage6d3c3f_bench',
+    'ordersawa_stage3_stage6c_stage6d3c3f_bench2',
+    'ordersawa_stage3_stage6c_stage6d3a_demo')
     OR host(inet_server_addr()) <> '127.0.0.1' OR inet_server_port() <> 55440
     OR EXISTS (SELECT 1 FROM public."Order") THEN
     RAISE EXCEPTION 'Refusing non-empty or non-disposable Stage 6D.3C3E database';

@@ -24,17 +24,20 @@ const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--disable-
   "--disable-features=Vulkan,UseSkiaRenderer", "--no-sandbox", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9223", "--remote-allow-origins=*",
   `--user-data-dir=${profile}`, "about:blank"], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-chrome.stderr.on("data", () => {});
+let chromeStartupError = "";
+chrome.stderr.on("data", (chunk) => { chromeStartupError = (chromeStartupError + String(chunk)).slice(-2000); });
 let socket;
 
 function check(value, message) { if (!value) throw new Error(message); }
 async function waitForJson(path) {
   for (let i = 0; i < 60; i++) {
-    try { const response = await fetch(`http://127.0.0.1:9223${path}`); if (response.ok) return response.json(); }
-    catch { /* Chrome debugger is starting. */ }
+    for (const loopback of ["127.0.0.1", "[::1]"]) {
+      try { const response = await fetch(`http://${loopback}:9223${path}`); if (response.ok) return response.json(); }
+      catch { /* Chrome debugger is starting or Windows selected the other loopback family. */ }
+    }
     await pause(200);
   }
-  throw new Error("Chrome loopback debugger did not start");
+  throw new Error(`Chrome loopback debugger did not start (exit ${chrome.exitCode ?? "running"}): ${chromeStartupError}`);
 }
 
 try {

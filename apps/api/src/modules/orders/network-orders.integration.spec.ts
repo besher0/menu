@@ -226,6 +226,26 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     expect(new Set(stored.items.map((item) => (item.options as any).selectionKey)).size).toBe(2);
   });
 
+  it.each([[10, "2650.00004"], [50, "13250.0002"]])(
+    "persists and seals %i independently validated Network lines", async (lineCount, expectedTotal) => {
+      const request = { locale: "ar", items: Array.from({ length: lineCount }, () => ({
+        productId: "s6c-pizza", quantity: 1, selection: pizzaSelection()
+      })) };
+      const prepared = await prepare(request);
+      expect(prepared.status).toBe(200);
+      expect(prepared.body.draft.totalAmount).toBe(expectedTotal);
+      const created = await create({ ...request, idempotencyKey: randomUUID(), acceptanceToken: prepared.body.acceptanceToken });
+      expect(created.status).toBe(201);
+      expect(created.body.totalAmount).toBe(expectedTotal);
+      const saved = await prisma.order.findUniqueOrThrow({ where: { id: created.body.orderId }, include: { items: true } });
+      expect(saved.networkSnapshotSealedAt).not.toBeNull();
+      expect(saved.totalAmount.toString()).toBe(expectedTotal);
+      expect(saved.items).toHaveLength(lineCount);
+      expect((saved.cartSnapshot as any).items).toHaveLength(lineCount);
+      expect(saved.items.every((item) => (item.options as any).unitPrice === "265.000004")).toBe(true);
+    }
+  );
+
   it("persists fictitious customer, delivery, address and notes in the sealed snapshot and previews the saved Pizza", async () => {
     const request = { ...pizzaDraft(), customerName: "Demo Customer", customerPhone: "0000000000",
       fulfillmentType: "delivery", deliveryArea: "Demo district", deliveryNear: "Park", deliveryBeside: "Gate",
@@ -448,7 +468,8 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     await prisma.$executeRawUnsafe(`CREATE TRIGGER stage6c_reject_item_trigger BEFORE INSERT ON "OrderItem" FOR EACH ROW EXECUTE FUNCTION stage6c_reject_item()`);
     try {
       const result = await create({ ...pizzaDraft(), idempotencyKey: randomUUID(), acceptanceToken: prepared.body.acceptanceToken });
-      expect(result.status).toBe(500);
+      expect(result.status).toBe(503);
+      expect(result.body.error).toBe("NETWORK_ORDER_PERSISTENCE_FAILED");
       expect(await prisma.order.count()).toBe(0);
     } finally {
       await prisma.$executeRawUnsafe(`DROP TRIGGER stage6c_reject_item_trigger ON "OrderItem"`);
