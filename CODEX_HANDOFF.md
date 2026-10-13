@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-12
 
-Current state: **Stage 5 Public Product Configurator is complete in source and verified on isolated PostgreSQL. The public Network configurator is preview-only; Network products remain blocked from legacy Cart/WhatsApp ordering. Tests pass 128/128 with no skips. Read `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md` before any further work. Stage 6 requires a new explicit approval.**
+Current state: **Stage 6B Network Cart is complete in source. Stage 6A Server Quote feeds the existing Public Cart; Network lines can be previewed, edited, persisted, and rechecked, but cannot enter Checkout/WhatsApp or create Orders. Stage 6B tests pass 152/152 with no skips. Read `STAGE_6B_NETWORK_CART_REPORT_AR.md` before further work. Stage 6C/6D require separate explicit approval.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -24,6 +24,9 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 4 implementation/report/handoff commit: `feat(web): add Stage 4 product configuration editor` (use `git log -1 --oneline` for its hash).
 - Stage 4.1 verification/fix/report/handoff commit: `test(web): verify Stage 4 dashboard editor` (use `git log -1 --oneline` for its hash after completion).
 - Stage 5 implementation/report/handoff commit: `feat(public): add Stage 5 preview-only product configurator` (use `git log -1 --oneline` for its final hash).
+- Stage 6A Server Quote commit: `55b5dc9 feat(api): add Stage 6A trusted server quote validation`.
+- Stage 6B implementation commit: `4ec4c14 feat(web): integrate Stage 6B Network cart with server quote`.
+- Stage 6B report/handoff commit follows implementation; use `git log -2 --oneline` for its hash.
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -506,7 +509,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 1. **Migration history is still unaudited on any real OrderSawa database.** Do not deploy the Stage 2C migration until the read-only history audit is separately approved and completed.
 2. **No initial migration exists in the repository.** Follow the Stage 2C runbook; never rewrite or guess production history.
 3. **Backfill rollout safety is now enforced at legacy public boundaries:** converted products are excluded by tree/version markers without mutating `isAvailable`. Backfill still must not run on real data without separate approval, dry-run review, checkpoint/quarantine planning, and migration-history audit.
-4. **Public preview and Stage 6A Server Quote are implemented; ordering is not.** Network Products appear in Public Menu only when assigned the capability, but cannot enter legacy Cart/WhatsApp. Stage 6B/C/D still require Canonical Cart Identity, revalidation, trusted Checkout pricing, and immutable Order Snapshot.
+4. **Stage 6B Network Cart is implemented; ordering is not.** Network lines use Stage 6A Quote, semantic identity, local versioned storage, and recheck-on-cart-open. They cannot enter legacy Checkout/WhatsApp; mixed carts are preview-only. Stage 6C must revalidate before Order persistence, and Stage 6D must verify the full flow. No Network Order Snapshot exists yet.
 5. **Capability model is an adapter.** Package version/snapshot/exception/market semantics need a future schema decision.
 6. **Default package assignment is unresolved.** The capability exists but is not automatically mapped to BASIC/PRO/PREMIUM.
 7. **Currency rounding policy is unresolved.** Keep decimal strings/`DECIMAL(24,6)`; do not introduce ad hoc rounding.
@@ -534,7 +537,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 3. Verify branch, status, and commits.
 4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, Stage 4, Stage 4.1, and Stage 5 files actually exist.
 5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
-6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md` and `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md` before considering Stage 6.
+6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, and `STAGE_6B_NETWORK_CART_REPORT_AR.md` before considering Stage 6C.
 7. Re-run the baseline tests before a new stage if practical.
 8. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 9. Ask for explicit approval if the requested work would change an unresolved decision above.
@@ -559,11 +562,11 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-The next proposed stage is **Stage 6B - Cart selection identity**, only after a new explicit approval and review of its exact authorized scope. Stage 6A Server Quote is complete; Stage 6B/C/D are not. Do not infer implementation details or a currency rounding policy from this handoff alone.
+The next proposed stage is **Stage 6C — server revalidation and order persistence**, only after a new explicit approval and review of its exact authorized scope. Stages 6A and 6B are complete; 6C/6D are not. Do not infer a currency rounding policy from this handoff alone.
 
-Do not begin Stage 6B/C/D, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Do not begin Stage 6C/6D, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
-## 12. Stage 6A — Server-side Quote & Validation (latest)
+## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
 Read `STAGE_6A_SERVER_QUOTE_REPORT_AR.md` before any Stage 6B/C work. Stage 6A adds `POST /public/menus/:restaurantSlug/products/:productId/quote` as a read-only, no-store endpoint. It accepts only versioned `selection`, rejects client prices/totals at all depths, reloads the current Restaurant-scoped catalog and Package Capability, and calls the existing Shared Engine for validity and decimal-safe price. It returns `canonicalSelection`, `selectionKey`, `priceBreakdown`, `trustedTotal`, `linkedSourceRevisions`, and explicit `configurationOrderable:true` alongside unchanged Stage 5 `previewOnly:true` and `orderAction:"STAGE_6_REQUIRED"`, plus `orderingEnabled:false`. The quote is current at response time only; Stage 6C must recompute before saving an order. No Cart, Checkout, WhatsApp, Order Snapshot, schema, or migration was changed.
 
@@ -571,4 +574,12 @@ Changed files: `apps/api/src/modules/public-menu/public-product-quote.ts`, its `
 
 Final tests on a **new** disposable PostgreSQL 16 cluster `../work/stage6a-postgres-data`, database `ordersawa_stage3_stage6a`, loopback port `55440`: Shared 21/21; API 96/96 including 21/21 DB/HTTP integration and 0 skipped; Web 22/22; total 139/139; root Typecheck and Build passed, 27/27 Next.js routes generated. The cluster was stopped after tests. The cluster directory remains outside Git and contains only test data. No real `.env`, database, migration, backfill, or deployment was used.
 
-Carry-forward limits: currency rounding policy remains unapproved; the quote is not a price hold or checkout authority, Catalog and Capability reads are not one transactional snapshot, and Stage 6C must revalidate against current data and safely handle changes. Business/Outlet Differential, Service Mode, and Product Scheduling are not implemented. The Stage 2C migration history has not been audited against any real database. Stop after this stage and await separate approval for Stage 6B.
+Carry-forward limits: currency rounding policy remains unapproved; the quote is not a price hold or checkout authority, Catalog and Capability reads are not one transactional snapshot, and Stage 6C must revalidate against current data and safely handle changes. Business/Outlet Differential, Service Mode, and Product Scheduling are not implemented. The Stage 2C migration history has not been audited against any real database.
+
+## 13. Stage 6B — Network Cart Integration (latest)
+
+Read `STAGE_6B_NETWORK_CART_REPORT_AR.md` for the full file list, Cart Identity contract, test evidence, safe Demo instructions, and risks. Implementation commit `4ec4c14` integrates the existing Stage 5 configurator and Stage 6A Quote with the existing Public Cart. `apps/web/src/components/public/cart-model.ts` defines `LEGACY | NETWORK` lines, semantic identity using `selectionKey` plus Restaurant/Product/Currency/Revision/linked-source versions/runtime context, version-2 local storage with safe Legacy-array migration, explicit recheck/changed-price acceptance, and a Checkout gate. The UI preserves independent Nested/Linked selections and supports add/edit/quantity/remove/reload; recheck runs on Cart entry. Server Quote errors leave lines invalid or offline, never trusted from storage. Out-of-order Quote responses cannot replace newer selections or line checks. Network and mixed carts do not reach Checkout/WhatsApp; a saved Legacy line whose product became Network is kept but also blocked pending explicit re-add.
+
+Stage 6B final tests: Shared 21/21, API 96/96 including disposable-PostgreSQL HTTP integration with 0 skips, Web 35/35, total 152/152; root Typecheck and Build passed (27/27 Next.js routes). A fresh Stage 6B cluster `../work/stage6b-postgres-data` used `127.0.0.1:55440` and database `ordersawa_stage3_stage6b`; it was stopped. No real `.env`, database, migration, backfill, deployment, or Browser E2E was used. The public Quote already has a 256-kb default request limit, parser depth/node limits, and a shared POST rate policy; its full-Catalog read and globally-IP-scoped limit need load/security review before launch. Currency rounding remains undecided. Stage 6C must never treat Cart Local Storage or a prior Quote as order authority; it must reload and price atomically against current data.
+
+Stop after Stage 6B. Await explicit approval before Stage 6C/6D or any real database action.
