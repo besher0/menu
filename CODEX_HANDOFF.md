@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-13
 
-Current state: **Stage 6D.3B Security, Performance & Production Readiness Audit is complete as an audit only. Read `STAGE_6D_3B_SECURITY_READINESS_AUDIT_AR.md` before further work. A new disposable PostgreSQL suite proved the `ensureAllCategory` first-read/soft-delete failure and an unmapped exhausted Serializable retry in test-order Prepare; neither runtime defect was changed in this audit. Local 10/100/1000-product benchmarks were recorded. Directed Shared/API/Web and root Typecheck passed. Stage 6D.3A browser code remains at `2f1b18b`; the public Network Cart still cannot enter real Checkout/WhatsApp, and `orderingEnabled:false` remains. Any fix or activation needs separate explicit approval.**
+Current state: **Stage 6D.3C1 Public Menu race fix is complete. Read `STAGE_6D_3C1_PUBLIC_MENU_RACE_FIX_REPORT_AR.md` and section 20 below before further work. `PublicMenuService.ensureAllCategory` now handles concurrent first requests and restores the tenant's soft-deleted `all` row in place, preserving Category ID and relationships. A new HTTP/PostgreSQL regression passed 8/8; full API passed 147/147, root Typecheck and Build passed. The separate Stage 6D.3B `P2034` Prepare finding remains unfixed. No Production data, migration, backfill, deployment, Stage 6D.3C2, or real Network Ordering was touched; `orderingEnabled:false` remains. Stop and await explicit approval for any next stage.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -33,6 +33,8 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 6D.1 report/handoff commit follows implementation; check `git log -2 --oneline` for its hash.
 - Stage 6D.2A implementation commit: `ce0e192 feat(api): preserve network order details in sealed WhatsApp preview`.
 - Stage 6D.2A report/handoff commit follows implementation; check `git log -2 --oneline` for its hash.
+- Stage 6D.3B audit commit: `1bdc92d audit: document Stage 6D.3B network readiness findings`.
+- Stage 6D.3C1 implementation/report/handoff commit: `fix(api): stabilize Public Menu all category creation` (run `git log -1 --format=%H` for the final hash).
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -568,7 +570,7 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-Stage 6D.3B is complete as a **disposable local audit only**. Read section 19 and the Stage 6D.3B report for evidence and small independent proposed fixes. Do not implement those fixes, activate real ordering, deploy, or run any real migration automatically. Do not infer a currency rounding policy from this handoff alone. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Stage 6D.3C1 is complete as a **limited Public Menu fix only**. Read section 20 and its report. Do not begin Stage 6D.3C2 or another Stage 6D.3B follow-up without explicit approval. Do not activate real ordering, deploy, or run any real migration automatically. Do not infer a currency rounding policy from this handoff alone. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
 ## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
@@ -647,3 +649,11 @@ Local benchmark (one warm-up + five sequential measurements per size; not a Prod
 Final directed checks: new audit suite **4/4**, API Quote/Contract/Formatter/Order HTTP+DB **44/44**, Shared **21/21**, Web **39/39**, total **108/108** non-overlapping tests with zero skips. Root Typecheck passed. A separate test-source `tsc` still fails at existing `network-orders.integration.spec.ts:316` and `product-import-parser.spec.ts:23`; no new test-file diagnostics. No independent Build, full API suite, Browser E2E or multi-client load test ran during this audit. No real `.env`, database, migration, backfill, deployment or WhatsApp send was used. `orderingEnabled:false` remains.
 
 Follow-up order **only after approval**: (1) atomic/system-category `all` fix and HTTP race regression; (2) map exhausted Prepare serialization to structured 409; (3) founder financial/operational decisions; (4) Production auth/privacy/HMAC/rate controls; (5) bounded catalog/lock performance work after concurrent benchmarks; (6) read-only Migration History audit with separate database-access authorization. Do not start any of these automatically.
+
+## 20. Stage 6D.3C1 - Public Menu Race Condition Fix (current)
+
+Read `STAGE_6D_3C1_PUBLIC_MENU_RACE_FIX_REPORT_AR.md` for root cause, exact file list, test matrix and limits. `apps/api/src/modules/public-menu/public-menu.service.ts` now looks up the protected `all` category with tenant-scoped unique `(restaurantId, slug)` even if soft-deleted; an existing row is restored in place only when needed, preserving its ID, product relationships and presentation metadata. On a missing row, creation catches **only** a `P2002` for that composite key, re-reads the same tenant row and restores it if needed; unrelated database errors propagate. The existing Stage 6D.3B audit regression was updated to expect success. New `public-menu-race.integration.spec.ts` uses real Nest HTTP requests and a fresh PostgreSQL 16 disposable database, forcing concurrent first reads rather than pre-seeding `all`.
+
+Final tests on a new cluster `../work/stage6d3c1-postgres-data`, loopback `127.0.0.1:55440`, with separate fresh databases for HTTP race, audit, Product Configuration/API regression, and Network Orders: HTTP race **8/8** (including two/eight concurrent requests, soft-delete ID/relation retention, tenant isolation, unrelated `P2002`/`P2003` propagation); full API **147/147 in 22 files, 0 skipped**; root Typecheck and Build passed (27/27 Next.js pages); `git diff --check` passed. Test Baseline SQL and, only where needed, Stage 6C SQL were applied to those disposable databases. The cluster was stopped after use. No real `.env`, database, migration, backfill or deployment was used. Shared/Web tests were not rerun independently, and Browser E2E was not run; neither runtime path was edited.
+
+Carry-forward: the separate Dashboard `ensureAllCategory` helper was not altered, nor was Stage 6D.3B's exhausted-`P2034` Prepare behavior. All Founder financial/operational decisions, Production auth/HMAC/rate policy, actual Migration History, and real ordering remain unresolved. `orderingEnabled:false` is still required. **Do not start Stage 6D.3C2 automatically.**

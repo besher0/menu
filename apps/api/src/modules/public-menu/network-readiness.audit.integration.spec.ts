@@ -51,20 +51,23 @@ integration("Stage 6D.3B disposable database audit", () => {
 
   afterAll(async () => { await prisma.$disconnect(); });
 
-  it("reproduces concurrent first-read all-category creation against PostgreSQL", async () => {
+  it("keeps both concurrent first-read all-category requests successful after the fix", async () => {
     await prisma.category.deleteMany({ where: { restaurantId, slug: "all" } });
     let reads = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const category = {
-      findFirst: async (args: Parameters<typeof prisma.category.findFirst>[0]) => {
-        const result = await prisma.category.findFirst(args);
-        reads += 1;
-        if (reads === 2) release();
-        await gate; // Both requests observe the missing row before either INSERT.
+      findUnique: async (args: Parameters<typeof prisma.category.findUnique>[0]) => {
+        const result = await prisma.category.findUnique(args);
+        if (reads < 2) {
+          reads += 1;
+          if (reads === 2) release();
+          await gate; // Both requests observe the missing row before either INSERT.
+        }
         return result;
       },
-      create: (args: Parameters<typeof prisma.category.create>[0]) => prisma.category.create(args)
+      create: (args: Parameters<typeof prisma.category.create>[0]) => prisma.category.create(args),
+      update: (args: Parameters<typeof prisma.category.update>[0]) => prisma.category.update(args)
     };
     const service = new PublicMenuService({ category } as any, {} as any, {} as any);
     const results = await Promise.allSettled([
@@ -72,17 +75,28 @@ integration("Stage 6D.3B disposable database audit", () => {
       (service as any).ensureAllCategory(restaurantId)
     ]);
     expect(reads).toBe(2);
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
-    const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
-    expect(rejected.reason.code).toBe("P2002");
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(0);
     expect(await prisma.category.count({ where: { restaurantId, slug: "all" } })).toBe(1);
   });
 
-  it("records the soft-deleted all-category variant separately", async () => {
+  it("restores a soft-deleted all category without allocating another ID", async () => {
+    await prisma.category.upsert({
+      where: { restaurantId_slug: { restaurantId, slug: "all" } },
+      create: { restaurantId, slug: "all", name: "الكل" },
+      update: { deletedAt: null }
+    });
+    const original = await prisma.category.findUniqueOrThrow({
+      where: { restaurantId_slug: { restaurantId, slug: "all" } }
+    });
     await prisma.category.updateMany({ where: { restaurantId, slug: "all" }, data: { deletedAt: new Date() } });
     const service = new PublicMenuService(prisma as any, {} as any, {} as any);
-    await expect((service as any).ensureAllCategory(restaurantId)).rejects.toMatchObject({ code: "P2002" });
+    await expect((service as any).ensureAllCategory(restaurantId)).resolves.toBeUndefined();
+    const restored = await prisma.category.findUniqueOrThrow({
+      where: { restaurantId_slug: { restaurantId, slug: "all" } }
+    });
+    expect(restored.id).toBe(original.id);
+    expect(restored.deletedAt).toBeNull();
     await prisma.category.deleteMany({ where: { restaurantId, slug: "all" } });
   });
 
