@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-13
 
-Current state: **Stage 6C test-only trusted Network Order persistence is complete in source, commit `3816efc`. The public Network Cart still cannot enter Checkout/WhatsApp or create real Orders. Stage 6C's protected loopback/disposable-only API revalidates and saves immutable test snapshots; it must never be exposed to Production. Final regression: 171/171 tests, no skips; Typecheck, Build, Prisma Validate and disposable Schema Diff passed. Read `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md` before further work. Stage 6D or any real activation needs separate explicit approval.**
+Current state: **Stage 6D.1 WhatsApp message formatting from Stage 6C immutable Network snapshots is complete in source, commit `3ec08c8`. It is a pure formatter and local preview only. The public Network Cart still cannot enter Checkout/WhatsApp or create real Orders; `orderingEnabled:false` remains. Final Stage 6D.1 regression: 182/182 tests, no skips; Typecheck and Build passed. Read `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md` before further work. Stage 6D.2/6D.3 or any real activation needs separate explicit approval.**
 
 This file is intentionally self-contained. A new Codex conversation should be able to continue without the previous chat history.
 
@@ -29,6 +29,8 @@ This file is intentionally self-contained. A new Codex conversation should be ab
 - Stage 6B report/handoff commit follows implementation; use `git log -2 --oneline` for its hash.
 - Stage 6C implementation commit: `3816efc feat(api): add Stage 6C test-only trusted Network orders`.
 - Stage 6C report/handoff commit follows implementation; use `git log -2 --oneline` for its hash.
+- Stage 6D.1 formatter implementation commit: `3ec08c8 feat(api): format Stage 6C Network order snapshots for WhatsApp preview`.
+- Stage 6D.1 report/handoff commit follows implementation; check `git log -2 --oneline` for its hash.
 
 At the end of Stage 3.1, the expected state is a clean working tree on the branch above. Verify with:
 
@@ -511,7 +513,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 1. **Migration history is still unaudited on any real OrderSawa database.** Do not deploy the Stage 2C migration until the read-only history audit is separately approved and completed.
 2. **No initial migration exists in the repository.** Follow the Stage 2C runbook; never rewrite or guess production history.
 3. **Backfill rollout safety is now enforced at legacy public boundaries:** converted products are excluded by tree/version markers without mutating `isAvailable`. Backfill still must not run on real data without separate approval, dry-run review, checkpoint/quarantine planning, and migration-history audit.
-4. **Stage 6C test-only Order persistence exists; real ordering does not.** Network Cart remains preview-only and blocked from Legacy Checkout/WhatsApp. The new API requires a disposable local PostgreSQL target and explicit test flag, revalidates inside a Serializable transaction, and stores sealed snapshots. Never enable this test endpoint for public traffic. Stage 6D and the financial/operational blockers in the Stage 6C report remain.
+4. **Stage 6D.1 formats immutable test-order snapshots; real ordering does not.** Network Cart remains preview-only and blocked from Legacy Checkout/WhatsApp. Stage 6C API remains disposable-only. New Formatter reads only stored `Order.cartSnapshot`, with no live Product lookup, and local preview sends nothing. Stage 6D.2/6D.3 and financial/operational blockers remain.
 5. **Capability model is an adapter.** Package version/snapshot/exception/market semantics need a future schema decision.
 6. **Default package assignment is unresolved.** The capability exists but is not automatically mapped to BASIC/PRO/PREMIUM.
 7. **Currency rounding policy is unresolved.** Keep decimal strings/`DECIMAL(24,6)`; do not introduce ad hoc rounding.
@@ -539,7 +541,7 @@ An extra all-test-source TypeScript command (`tsc -p apps/api/tsconfig.json --no
 3. Verify branch, status, and commits.
 4. Confirm Stage 1, Stage 2C, Stage 3, Stage 3.1, Stage 4, Stage 4.1, and Stage 5 files actually exist.
 5. Read the Stage 3, Stage 3.1, and Stage 4 Arabic implementation reports.
-6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, `STAGE_6B_NETWORK_CART_REPORT_AR.md`, and `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md` before considering any further stage.
+6. Read `STAGE_4_1_DASHBOARD_VERIFICATION_REPORT_AR.md`, `STAGE_5_PUBLIC_CONFIGURATOR_REPORT_AR.md`, `STAGE_6A_SERVER_QUOTE_REPORT_AR.md`, `STAGE_6B_NETWORK_CART_REPORT_AR.md`, `STAGE_6C_TRUSTED_ORDERS_REPORT_AR.md`, and `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md` before considering any further stage.
 7. Re-run the baseline tests before a new stage if practical.
 8. Do not rebuild completed engine, schema preparation, persistence, or Admin API without a documented defect.
 9. Ask for explicit approval if the requested work would change an unresolved decision above.
@@ -564,9 +566,9 @@ npm run test:product-configuration:integration -w @menu/api
 
 ## 11. Next stage
 
-The next proposed stage is **Stage 6D — network order presentation/WhatsApp and full-flow verification**, only after a new explicit approval and review of its exact authorized scope and Stage 6C blockers. Stages 6A, 6B, and test-only 6C are complete; real ordering and 6D are not. Do not infer a currency rounding policy from this handoff alone.
+The next proposed stage is **Stage 6D.2**, only after a new explicit approval and review of its exact authorized scope plus Stage 6C/6D.1 blockers. Stages 6A, 6B, test-only 6C, and formatter-only 6D.1 are complete; real ordering, 6D.2 and 6D.3 are not. Do not infer a currency rounding policy from this handoff alone.
 
-Do not begin Stage 6D, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
+Do not begin Stage 6D.2/6D.3, deployment, or any real migration automatically. Never expose Network Products through the Legacy order path. Stop and wait for explicit approval.
 
 ## 12. Stage 6A — Server-side Quote & Validation (historical stage record)
 
@@ -594,4 +596,12 @@ The service reuses Stage 6A Quote and Shared Engine inside a Prisma Serializable
 
 Final Stage 6C verification used a fresh PostgreSQL 16 disposable cluster at `../work/stage6c-postgres-data`, `127.0.0.1:55440`, with separate `ordersawa_stage3_stage6c_orders_v3` and `ordersawa_stage3_stage6c_regression_v3` databases. Baseline test SQL plus final Stage 6C Migration were applied there only. Shared 21/21, API 115/115, Web 35/35 (171/171 total; 0 skipped), Typecheck, Build (27/27 Next.js routes), Prisma Validate, and Schema Diff (no difference) passed. The cluster was stopped after testing. No real `.env`, existing database, production migration, backfill, deployment, or Browser E2E was used.
 
-Carry-forward blockers: real migration history unaudited; no approved currency rounding policy; current HMAC acceptance key is per-process, unsuitable for multi-instance activation; the test-only endpoint has no production authentication/rate policy; public Cart remains gated; Stage 6D WhatsApp formatting must derive solely from the sealed Snapshot and needs browser E2E. Business/Outlet Differential, Service Mode/Scheduling, quote/catalog scalability, and old Dashboard Decimal-to-Number display remain separate work. Do not begin Stage 6D or real Network ordering without explicit user approval.
+Carry-forward blockers: real migration history unaudited; no approved currency rounding policy; current HMAC acceptance key is per-process, unsuitable for multi-instance activation; the test-only endpoint has no production authentication/rate policy; public Cart remains gated; Stage 6D WhatsApp formatting must derive solely from the sealed Snapshot and needs browser E2E. Business/Outlet Differential, Service Mode/Scheduling, quote/catalog scalability, and old Dashboard Decimal-to-Number display remain separate work. Historical Stage 6C stop point: Stage 6D.1 was subsequently approved and completed; do not begin 6D.2/6D.3 or real Network ordering without explicit user approval.
+
+## 15. Stage 6D.1 — WhatsApp Order Message Formatter (latest)
+
+Read `STAGE_6D_1_WHATSAPP_FORMATTER_REPORT_AR.md` for the contract, examples, file list, preview commands, test evidence, and remaining blockers. Commit `3ec08c8` adds `apps/api/src/modules/orders/network-order-whatsapp-formatter.ts`, a pure formatter of Stage 6C `Order.cartSnapshot` only. It renders historical Product/Size/Option/Linked names, independent ORIGINAL/CUSTOM instances, Included/Free/Paid charges, nested groups, quantity and exact decimal strings; it never queries a live catalog or sends a message. It throws structured errors for incomplete/malformed snapshots and unsafe display text, never silently truncates. `buildNetworkWhatsappPreviewUrl` URL-encodes complete text and refuses a locally oversized URL rather than cutting it. The separate CLI `npm run preview:network-whatsapp -w @menu/api -- pizza|combo ar|en` prints in-memory demo messages; `snapshot path-to-local-cartSnapshot.json` previews a saved test snapshot without DB access. Legacy WhatsApp formatter and ordering flow are unchanged.
+
+Stage 6D.1 final checks: Shared 21/21, API 126/126 including 11 formatter tests and real disposable-PostgreSQL persisted Pizza/Combo Snapshot integration, Web 35/35, total 182/182 with 0 skips; root Typecheck and Build passed, Next.js 27/27 routes. A new isolated cluster `../work/stage6d1-postgres-data` ran only on `127.0.0.1:55440` with two `ordersawa_stage3_stage6c_formatter*` test databases containing Baseline SQL plus Stage 6C Migration; it was stopped after tests. No Production DB, real `.env`, deployment, message send, new migration, or order-persistence change was used.
+
+Stage 6D.2 prerequisites: Stage 6C snapshot carries one historical label per node, not a full translation bundle; formatter cannot invent another language. It also lacks production order number/customer/fulfillment/address/note data. Long WhatsApp URL behavior needs UX decision; the local cap is not an external guarantee. The 6C currency rounding, multi-instance acceptance key, production endpoint security, migration-history audit, and Business/Outlet/Scheduling constraints remain. `orderingEnabled:false` is still mandatory. Do not start 6D.2/6D.3 or activate Network ordering without explicit approval.
