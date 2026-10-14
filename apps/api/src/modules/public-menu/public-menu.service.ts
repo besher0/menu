@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
+import { currencyDisplayReconciliation, currencyDisplayScale, formatCurrencyAmount, formatDecimalForDisplay, multiplyMoney, sumMoney, validateCurrencyAmount } from "@menu/shared";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
@@ -155,7 +156,7 @@ export class PublicMenuService {
   async productConfiguration(restaurantSlug: string, productId: string) {
     const restaurant = await this.prisma.restaurant.findFirst({
       where: { slug: restaurantSlug, isActive: true, deletedAt: null },
-      select: { id: true }
+      select: { id: true, currency: true }
     });
     if (!restaurant) throw new NotFoundException("Restaurant not found");
 
@@ -175,7 +176,8 @@ export class PublicMenuService {
       restaurantId: restaurant.id,
       owner,
       catalogProducts,
-      capabilityEnabled
+      capabilityEnabled,
+      currency: restaurant.currency
     });
     if (!resolved) throw new NotFoundException("Product configuration is unavailable");
     return resolved;
@@ -318,11 +320,14 @@ export class PublicMenuService {
     if (products.some((product) => product.basePrice === null)) {
       throw new BadRequestException("One or more products do not have a legacy price");
     }
+    if (products.some((product) => validateCurrencyAmount(product.basePrice!.toString(), restaurant.currency, "$product.basePrice").length)) {
+      throw new BadRequestException({ error: "INVALID_CURRENCY_PRICE", message: "A product has an invalid price for the restaurant currency." });
+    }
 
     const items = dto.items.map((item) => {
       const product = products.find((candidate) => candidate.slug === item.productSlug)!;
-      const unitPrice = Number(product.basePrice);
-      const totalPrice = unitPrice * item.quantity;
+      const unitPrice = product.basePrice!.toString();
+      const totalPrice = multiplyMoney(unitPrice, item.quantity);
 
       return {
         product,
@@ -335,7 +340,7 @@ export class PublicMenuService {
       };
     });
 
-    const totalAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
+    const totalAmount = sumMoney(items.map((item) => item.totalPrice));
     const dashboardSettings = this.dashboardSettingsFromTheme(restaurant.themeSettings?.settings);
     const showPrices = dashboardSettings.showPrices ?? true;
     const orderNumber = this.formatDailyOrderNumber(await this.nextDailyOrderSequence(restaurant.id));
@@ -576,7 +581,10 @@ export class PublicMenuService {
 
     return products.flatMap((product) => {
       const legacy = product.configurationVersion === 0 && product.configurationTree === null;
-      if (legacy) return [this.serializeProduct(product, features, currency)];
+      if (legacy) {
+        if (product.basePrice === null || validateCurrencyAmount(product.basePrice.toString(), currency, "$product.basePrice").length) return [];
+        return [this.serializeProduct(product, features, currency)];
+      }
       if (!capabilityEnabled) return [];
 
       const owner = catalogProducts.find((candidate) => candidate.id === product.id);
@@ -585,7 +593,8 @@ export class PublicMenuService {
         restaurantId,
         owner,
         catalogProducts,
-        capabilityEnabled
+        capabilityEnabled,
+        currency
       });
       if (!configuration) return [];
 
@@ -888,14 +897,17 @@ export class PublicMenuService {
     items: Array<{
       name: string;
       quantity: number;
-      unitPrice: number;
-      totalPrice: number;
+      unitPrice: string;
+      totalPrice: string;
       options: string[];
       note?: string;
     }>;
-    totalAmount: number;
+    totalAmount: string;
     showPrices: boolean;
   }) {
+    const displayDifference = input.showPrices
+      ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.totalAmount, input.currency)
+      : null;
     const lines = [
       `طلب جديد من ${input.restaurantName}`,
       `رقم الطلب: ${input.orderNumber}`,
@@ -914,10 +926,15 @@ export class PublicMenuService {
         `${index + 1}- ${item.quantity}x ${item.name}`,
         item.options.length ? `الإضافات: ${item.options.join(", ")}` : null,
         item.note ? `ملاحظة: ${item.note}` : null,
-        input.showPrices ? `السعر: ${item.totalPrice.toFixed(2)} ${input.currency}` : null,
+        input.showPrices ? `السعر: ${currencyDisplayScale(input.currency) === null
+          ? `${formatDecimalForDisplay(item.totalPrice, 2)} ${input.currency}`
+          : formatCurrencyAmount(item.totalPrice, input.currency)}` : null,
         ""
       ]),
-      input.showPrices ? `الإجمالي: ${input.totalAmount.toFixed(2)} ${input.currency}` : null,
+      displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
+      input.showPrices ? `الإجمالي: ${currencyDisplayScale(input.currency) === null
+        ? `${formatDecimalForDisplay(input.totalAmount, 2)} ${input.currency}`
+        : formatCurrencyAmount(input.totalAmount, input.currency)}` : null,
       input.orderNote ? "" : null,
       input.orderNote ? "ملاحظة الطلب:" : null,
       input.orderNote ?? null,

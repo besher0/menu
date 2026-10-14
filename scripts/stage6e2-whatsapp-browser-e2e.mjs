@@ -245,6 +245,31 @@ try {
     && message.includes("Source Pizza") && message.includes("265.000004") && message.includes("13.000001"),
     `Incomplete trusted WhatsApp message: ${message.slice(0,500)}`);
   results.push("Explicit acceptance opens only the revalidated complete WhatsApp URL (intercepted, never sent)");
+  const originalPizza = await db.product.findUniqueOrThrow({ where: { id: "s6e2-pizza" } });
+  const wholePizza = structuredClone(originalPizza.configurationTree);
+  wholePizza.groups[0].sizes[1].price = "200";
+  wholePizza.groups[1].options[0].price = "30";
+  wholePizza.groups[1].options[0].children[0].options[0].price = "5";
+  try {
+    await db.restaurant.update({ where: { id: "s6e2-r1" }, data: { currency: "SYP" } });
+    await db.product.updateMany({ where: { restaurantId: "s6e2-r1" }, data: { currency: "SYP" } });
+    await db.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12" } });
+    await db.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: wholePizza } });
+    await navigate("/product/s6e2-pizza");
+    await until("!!document.querySelector('[data-testid=public-product-configurator] [role=radiogroup]')", "SYP Pizza configurator");
+    check(await evaluate("document.querySelector('[data-testid=public-product-configurator]').innerText.includes('200 SYP')"),
+      "SYP size was not displayed as a whole amount");
+    await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    check(await evaluate("document.querySelector('[data-testid=public-product-configurator]').getAttribute('dir')==='rtl'"),
+      "SYP mobile configurator lost RTL");
+    results.push("SYP integer size display and RTL 390px configurator verified in Chrome");
+    await cdp("Emulation.clearDeviceMetricsOverride");
+  } finally {
+    await db.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: originalPizza.configurationTree } });
+    await db.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12.000001" } });
+    await db.product.updateMany({ where: { restaurantId: "s6e2-r1" }, data: { currency: "EGP" } });
+    await db.restaurant.update({ where: { id: "s6e2-r1" }, data: { currency: "EGP" } });
+  }
   console.log(JSON.stringify({ results, whatsappUrlLength: whatsappUrl.length, screenshot: screenshotPath }, null, 2));
   }
 } finally {

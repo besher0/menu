@@ -1,4 +1,5 @@
 "use client";
+import { displayCurrencyAmount } from "@/lib/currency-display";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -1497,7 +1498,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
           {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}
           <b>
-            {configurationMode === "NETWORK" ? productId ? "السعر من شبكة التكوين" : "شبكة غير مسعّرة بعد" : form.basePrice.trim() ? `${form.basePrice} ${form.currency}` : "لا يوجد سعر أساسي"}
+            {configurationMode === "NETWORK" ? productId ? "السعر من شبكة التكوين" : "شبكة غير مسعّرة بعد" : form.basePrice.trim() ? displayCurrencyAmount(form.basePrice, form.currency) : "لا يوجد سعر أساسي"}
           </b>
         </aside>
       </section>

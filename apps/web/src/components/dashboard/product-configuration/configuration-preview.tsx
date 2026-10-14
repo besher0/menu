@@ -1,4 +1,5 @@
 "use client";
+import { displayCurrencyAmount, displayRoundingDifference } from "@/lib/currency-display";
 
 import { useEffect, useMemo, useState } from "react";
 import { Calculator, Minus, Plus, RotateCcw } from "lucide-react";
@@ -92,11 +93,13 @@ function SelectionGroups({
   configuration,
   selection,
   sources,
+  currency,
   onChange
 }: {
   configuration: ProductConfigurationV1;
   selection: ProductSelectionV1;
   sources: ReadonlyMap<string, ProductConfigurationEnvelope>;
+  currency: string;
   onChange: (selection: ProductSelectionV1) => void;
 }) {
   return <div className="pc-preview-groups">{configuration.groups.map((group) => {
@@ -116,11 +119,12 @@ function SelectionGroups({
             sizeChoiceId: size.id,
             children: buildGroups(size.children ?? [], sources)
           }))}
-        ><span>{size.label}</span><small>{size.price}</small></button>)}</div>
+        ><span>{size.label}</span><small>{displayCurrencyAmount(size.price, currency)}</small></button>)}</div>
         {selectedSize && selected ? <SelectionGroups
           configuration={{ ...configuration, groups: selectedSize.children ?? [] }}
           selection={{ ...selection, groups: selected.children ?? [] }}
           sources={sources}
+          currency={currency}
           onChange={(nested) => onChange(replaceGroup(selection, { ...selected, children: nested.groups }))}
         /> : null}
       </section>;
@@ -136,7 +140,7 @@ function SelectionGroups({
         const minimum = option.minQuantity ?? 0;
         const canAdd = option.available !== false && instances.length < option.maxQuantity && (group.max === null || total < group.max);
         return <div className="pc-preview-option" key={option.id}>
-          <div><span>{option.label}</span><small>{option.price}</small></div>
+          <div><span>{option.label}</span><small>{displayCurrencyAmount(option.price, currency)}</small></div>
           <span className="pc-quantity-control">
             <button type="button" disabled={instances.length <= minimum} onClick={() => {
               const removeId = instances[instances.length - 1]?.instanceId;
@@ -153,6 +157,7 @@ function SelectionGroups({
                 configuration={{ ...configuration, groups: option.children }}
                 selection={{ ...selection, groups: instance.children ?? [] }}
                 sources={sources}
+                currency={currency}
                 onChange={(nested) => onChange(replaceGroup(selection, {
                   ...selected,
                   instances: selected.instances.map((item) => item.instanceId === instance.instanceId ? { ...item, children: nested.groups } : item)
@@ -162,6 +167,7 @@ function SelectionGroups({
                 configuration={linked}
                 selection={instance.linkedSelection}
                 sources={sources}
+                currency={currency}
                 onChange={(linkedSelection) => onChange(replaceGroup(selection, {
                   ...selected,
                   instances: selected.instances.map((item) => item.instanceId === instance.instanceId ? { ...item, linkedSelection } : item)
@@ -222,12 +228,14 @@ export function ConfigurationPreview({
   return (
     <section className="pc-preview" dir="rtl">
       <header><div><Calculator size={19} /><b>معاينة واختبار التسعير</b></div><button type="button" onClick={() => setSelection(buildSelection(configuration, sources))}><RotateCcw size={14} /> إعادة الضبط</button></header>
-      <SelectionGroups configuration={configuration} selection={selection} sources={sources} onChange={setSelection} />
+      <SelectionGroups configuration={configuration} selection={selection} sources={sources} currency={currency} onChange={setSelection} />
       {result.valid && result.total !== null ? (
         <div className="pc-price-result">
-          <div><span>السعر النهائي</span><b>{result.total} {currency}</b></div>
+          <div><span>السعر النهائي</span><b>{displayCurrencyAmount(result.total, currency)}</b></div>
           {result.baseIgnored ? <small>تم تجاهل Base Price لأن المسار يحتوي على Size.</small> : null}
-          <ul>{result.lines.map((line, index) => <li key={`${line.path}-${index}`}><span>{line.label}{line.included ? " (مشمول)" : ""}</span><b>{line.chargedAmount} {currency}</b></li>)}</ul>
+          <ul>{result.lines.map((line, index) => <li key={`${line.path}-${index}`}><span>{line.label}{line.included ? " (مشمول)" : ""}</span><b>{displayCurrencyAmount(line.chargedAmount, currency)}</b></li>)}</ul>
+          {displayRoundingDifference(result.lines.map((line) => line.chargedAmount), result.total, currency)
+            ? <small>فرق عرض التقريب: {displayRoundingDifference(result.lines.map((line) => line.chargedAmount), result.total, currency)}</small> : null}
         </div>
       ) : (
         <div className="pc-preview-errors"><b>لا يمكن عرض سعر قبل اكتمال التكوين</b><ul>{result.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issueMessage(issue)}</li>)}</ul></div>

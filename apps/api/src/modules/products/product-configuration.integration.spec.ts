@@ -913,4 +913,39 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     expect(current.status).toBe(200);
     expect(await current.json()).toMatchObject({ data: { trustedTotal: "275.000004", configurationRevision: 2 } });
   });
+
+  it("rejects direct fractional SYP create, quick-price and Network writes while preserving null Base", async () => {
+    const headers = { "content-type": "application/json", authorization: `Bearer ${ownerToken}`, "x-restaurant-id": "stage3-r1" };
+    const id = "stage6f1-syp-owner";
+    await prisma.restaurant.update({ where: { id: "stage3-r1" }, data: { currency: "SYP" } });
+    try {
+      const create = await fetch(`${httpOrigin}/dashboard/products`, { method: "POST", headers,
+        body: JSON.stringify({ name: "Fractional SYP", basePrice: 12500.5, currency: "SYP" }) });
+      expect(create.status).toBe(400);
+      expect(JSON.stringify(await create.json())).toContain("SYP_FRACTIONAL_PRICE");
+
+      const quick = await fetch(`${httpOrigin}/dashboard/products/legacy-null-zero/price`, { method: "PATCH", headers,
+        body: JSON.stringify({ basePrice: 0.5 }) });
+      expect(quick.status).toBe(400);
+
+      await prisma.product.create({ data: { id, restaurantId: "stage3-r1", slug: id, name: "SYP Setup", currency: "SYP", basePrice: "0" } });
+      const tree: ProductConfigurationV1 = { schemaVersion: 1, productId: id, revision: 1, basePrice: null,
+        groups: [{ type: "SIZE", id: "sizes", label: "Sizes", sizes: [{ id: "small", label: "Small", price: "12500.50" }] }] };
+      const invalid = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, { method: "PUT", headers,
+        body: JSON.stringify({ expectedVersion: 0, configuration: tree }) });
+      expect(invalid.status).toBe(400);
+      expect(JSON.stringify(await invalid.json())).toContain("SYP_FRACTIONAL_PRICE");
+      expect((await prisma.product.findUniqueOrThrow({ where: { id } })).configurationTree).toBeNull();
+
+      const valid = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, { method: "PUT", headers,
+        body: JSON.stringify({ expectedVersion: 0, configuration: { ...tree,
+          groups: [{ type: "SIZE", id: "sizes", label: "Sizes", sizes: [{ id: "small", label: "Small", price: "12500.000000" }] }] } }) });
+      expect(valid.status).toBe(200);
+      const saved = await prisma.product.findUniqueOrThrow({ where: { id } });
+      expect(saved.basePrice).toBeNull();
+      expect(saved.configurationVersion).toBe(1);
+    } finally {
+      await prisma.restaurant.update({ where: { id: "stage3-r1" }, data: { currency: "EGP" } });
+    }
+  });
 });

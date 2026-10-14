@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
+import { DEFAULT_ENGINE_LIMITS, validateMoneyString } from "@menu/shared";
 
 export const PRODUCT_IMPORT_COLUMNS = [
   "الصور",
@@ -38,6 +39,7 @@ export type ProductImportParsedRow = {
   name: string;
   categoryName: string;
   basePrice: number | null;
+  basePriceRaw: string;
   description: string;
   isPopular: boolean;
   isNew: boolean;
@@ -120,7 +122,8 @@ export async function parseProductImportWorkbook(buffer: Buffer, fallbackMoodOpt
     const errors: string[] = [];
     const name = cellText(row.getCell(2));
     const categoryName = cellText(row.getCell(3));
-    const price = parsePrice(cellText(row.getCell(4)));
+    const basePriceRaw = cellText(row.getCell(4));
+    const price = parsePrice(basePriceRaw);
     const popular = parseBoolean(cellText(row.getCell(6)), "الأكثر طلباً");
     const isNew = parseBoolean(cellText(row.getCell(7)), "جديدنا");
     const mood = parseMoodSelection(cellText(row.getCell(8)), moodOptionRecords);
@@ -139,6 +142,7 @@ export async function parseProductImportWorkbook(buffer: Buffer, fallbackMoodOpt
       name,
       categoryName,
       basePrice: price.value,
+      basePriceRaw,
       description: cellText(row.getCell(5)),
       isPopular: popular.value,
       isNew: isNew.value,
@@ -418,12 +422,13 @@ function validateImages(images: ProductImportParsedImage[]) {
 function parsePrice(value: string) {
   if (!value.trim()) return { valid: false, value: null, error: "السعر مطلوب" };
 
-  const parsed = Number(value.replace(",", "."));
-  if (!Number.isFinite(parsed) || parsed < 0) {
+  const normalized = value.trim().replace(",", ".");
+  if (validateMoneyString(normalized, "$import.basePrice", DEFAULT_ENGINE_LIMITS).length) {
     return { valid: false, value: null, error: "السعر يجب أن يكون رقم 0 أو أكبر" };
   }
 
-  return { valid: true, value: parsed, error: "" };
+  // The existing import DTO is numeric; monetary validity is decided on the exact text first.
+  return { valid: true, value: Number(normalized), error: "" };
 }
 
 function isEmptyProductRow(row: ExcelJS.Row) {

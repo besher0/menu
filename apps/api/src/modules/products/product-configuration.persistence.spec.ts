@@ -26,11 +26,13 @@ function configuration(productId = "owner", revision = 1): ProductConfigurationV
 }
 
 function transactionHarness(args?: {
+  currency?: string;
   ownerVersion?: number;
   sources?: Array<{ id: string; configurationTree: object | null; configurationVersion: number }>;
   existingEdges?: Array<{ productId: string; sourceProductId: string }>;
 }) {
   const transaction = {
+    restaurant: { findUnique: vi.fn().mockResolvedValue({ currency: args?.currency ?? "EGP" }) },
     product: {
       findFirst: vi.fn().mockResolvedValue({ configurationVersion: args?.ownerVersion ?? 0 }),
       findMany: vi.fn().mockResolvedValue(args?.sources ?? []),
@@ -49,6 +51,15 @@ function transactionHarness(args?: {
 }
 
 describe("product configuration persistence preparation", () => {
+  it("rejects a fractional SYP option in the same transaction before any write", async () => {
+    const { prisma, transaction } = transactionHarness({ currency: "ل.س" });
+    await expect(persistProductConfiguration(prisma as any, {
+      restaurantId: "restaurant-1", productId: "owner", expectedVersion: 0,
+      configuration: configuration()
+    })).rejects.toMatchObject({ kind: "PRODUCT_CONFIGURATION_VALIDATION",
+      issues: [expect.objectContaining({ code: "SYP_FRACTIONAL_PRICE" })] });
+    expect(transaction.product.updateMany).not.toHaveBeenCalled();
+  });
   it("detects a linked-product cycle", () => {
     expect(findDependencyCycle([
       { productId: "a", sourceProductId: "b" },

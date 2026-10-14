@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
+import { validateCurrencyAmount } from "@menu/shared";
 import { slugify } from "../../common/slugify";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { ProductLibraryService } from "../media/product-library.service";
@@ -75,6 +76,10 @@ export class ProductsService {
   }
 
   async create(restaurantId: string, dto: CreateProductDto, allowAdvancedMedia = false) {
+    if (dto.basePrice !== undefined) {
+      const currency = await this.restaurantCurrency(restaurantId);
+      this.assertCurrencyPrice(dto.basePrice, currency);
+    }
     const networkSetup = dto.configurationIntent === "NETWORK_SETUP";
     if (networkSetup) {
       await this.featureFlags.assertAssignedFeature(restaurantId, "PRODUCT_CONFIGURATION");
@@ -308,7 +313,7 @@ export class ProductsService {
       categoryId: string;
       name: string;
       description?: string | null;
-      basePrice: number;
+      basePrice: number | string;
       currency: string;
       isPopular: boolean;
       isNew: boolean;
@@ -319,6 +324,9 @@ export class ProductsService {
       sortOrder: number;
     }
   ) {
+    const restaurant = await tx.restaurant.findUnique({ where: { id: restaurantId }, select: { currency: true } });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+    this.assertCurrencyPrice(input.basePrice, restaurant.currency);
     const slug = await this.uniqueProductSlug(restaurantId, input.name, undefined, tx);
 
     return tx.product.create({
@@ -364,6 +372,9 @@ export class ProductsService {
 
     if (!existing) {
       throw new NotFoundException("Product not found");
+    }
+    if (dto.basePrice !== undefined) {
+      this.assertCurrencyPrice(dto.basePrice, await this.restaurantCurrency(restaurantId));
     }
 
     const isConfigured = existing.configurationTree !== null && existing.configurationVersion > 0;
@@ -472,6 +483,7 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException("Product not found");
     }
+    this.assertCurrencyPrice(basePrice, await this.restaurantCurrency(restaurantId));
 
     if (product.configurationTree !== null && product.configurationVersion > 0) {
       throw new ConflictException({
@@ -494,6 +506,23 @@ export class ProductsService {
     });
 
     return this.serializeProduct(updated);
+  }
+
+  private async restaurantCurrency(restaurantId: string): Promise<string> {
+    const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId }, select: { currency: true } });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+    return restaurant.currency;
+  }
+
+  private assertCurrencyPrice(price: number | string, currency: string): void {
+    const issues = validateCurrencyAmount(String(price), currency, "$product.basePrice");
+    if (issues.length) throw new BadRequestException({
+      error: issues[0].code,
+      message: issues[0].code === "SYP_FRACTIONAL_PRICE"
+        ? "SYP prices must be whole amounts; fractional values are not allowed."
+        : "Product price is invalid.",
+      issues
+    });
   }
 
   async reorder(restaurantId: string, items: Array<{ id: string; sortOrder: number }>) {

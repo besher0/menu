@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, StreamableFile } from "@nestjs/common";
 import ExcelJS from "exceljs";
 import { Prisma } from "@prisma/client";
+import { validateCurrencyAmount } from "@menu/shared";
 import { readFile } from "fs/promises";
 import { basename, extname, resolve } from "path";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
@@ -278,7 +279,8 @@ export class ProductsImportService {
             categoryId: row.categoryId!,
             name: row.name,
             description: row.description || null,
-            basePrice: row.basePrice!,
+            // Persist the validated workbook decimal, not the legacy numeric preview value.
+            basePrice: row.basePriceRaw.replace(",", "."),
             currency: context.restaurant.currency,
             isPopular: row.isPopular,
             isNew: row.isNew,
@@ -347,6 +349,12 @@ export class ProductsImportService {
   private validateRows(rows: ProductImportParsedRow[], context: ImportContext): ValidatedImportRow[] {
     return rows.map((row) => {
       const errors = [...row.errors];
+      if (row.basePrice !== null && row.basePriceRaw) {
+        const currencyIssues = validateCurrencyAmount(row.basePriceRaw.replace(",", "."), context.restaurant.currency, "$row.basePrice");
+        if (currencyIssues.length) errors.push(currencyIssues[0].code === "SYP_FRACTIONAL_PRICE"
+          ? "SYP prices must be whole amounts; fractional values are not allowed."
+          : "Product price is invalid for the restaurant currency.");
+      }
       const categoryMatches = context.categories.get(this.normalize(row.categoryName)) ?? [];
       const categoryId = categoryMatches.length === 1 ? categoryMatches[0].id : null;
 

@@ -1,4 +1,4 @@
-import { compareMoney, multiplyMoney, normalizeMoney, sumMoney, validateMoneyString, DEFAULT_ENGINE_LIMITS } from "@menu/shared";
+import { compareMoney, currencyDisplayReconciliation, formatCurrencyAmount, multiplyMoney, normalizeMoney, sumMoney, validateMoneyString, DEFAULT_ENGINE_LIMITS } from "@menu/shared";
 import type {
   ConfigurationGroup, GroupSelection, OptionChoice, OptionSelectionInstance,
   PriceLine, ProductConfigurationV1, ProductSelectionV1
@@ -114,7 +114,7 @@ class LineRenderer {
     const w = words[this.locale];
     if (line.included) return w.included;
     if (compareMoney(line.chargedAmount, "0") === 0) return linkedSize ? w.linkedSizeNoExtra : w.free;
-    return `${line.chargedAmount} ${this.currency} ${w.each}`;
+    return `${formatCurrencyAmount(line.chargedAmount, this.currency)} ${w.each}`;
   }
 
   render(configuration: ProductConfigurationV1, selection: ProductSelectionV1) {
@@ -343,8 +343,10 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   if (compareMoney(sumMoney(priceLines.map((entry) => money(entry.chargedAmount, `${path}.priceBreakdown.chargedAmount`))), unitPrice) !== 0) {
     throw new NetworkOrderSnapshotFormatError("UNIT_BREAKDOWN_MISMATCH", `${path}.priceBreakdown`, "Saved breakdown differs from the saved unit price.");
   }
-  lines.push(`${words[locale].unit}: ${unitPrice} ${currency}`);
-  lines.push(`${words[locale].line}: ${lineTotal} ${currency}`);
+  const reconciliation = currencyDisplayReconciliation(priceLines.map((entry) => entry.chargedAmount), unitPrice, currency);
+  if (reconciliation) lines.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
+  lines.push(`${words[locale].unit}: ${formatCurrencyAmount(unitPrice, currency)}`);
+  lines.push(`${words[locale].line}: ${formatCurrencyAmount(lineTotal, currency)}`);
   return { lines, lineTotal };
 }
 
@@ -372,7 +374,9 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
   if (compareMoney(sumMoney(lineTotals), total) !== 0) {
     throw new NetworkOrderSnapshotFormatError("ORDER_TOTAL_MISMATCH", "$snapshot.totalAmount", "Saved order total differs from line totals.");
   }
-  output.push(`💵 ${w.total}: ${total} ${currency}`);
+  const reconciliation = currencyDisplayReconciliation(lineTotals, total, currency);
+  if (reconciliation) output.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
+  output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency)}`);
   output.push(...details.footer);
   return output.join("\n");
 }

@@ -355,4 +355,50 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     }
     expect(await prisma.order.count()).toBe(before);
   });
+
+  it("rejects historical fractional SYP prices and formats a valid mixed draft without changing exact totals", async () => {
+    const before = await prisma.order.count();
+    const wholePizza = JSON.parse(JSON.stringify(pizza)) as typeof pizza;
+    wholePizza.groups[0].sizes[1].price = "200";
+    wholePizza.groups[1].options[0].price = "30";
+    wholePizza.groups[1].options[0].children[0].options[0].price = "5";
+    try {
+      await prisma.restaurant.update({ where: { id: "s6e2-r1" }, data: { currency: "SYP" } });
+      await prisma.product.updateMany({ where: { restaurantId: "s6e2-r1" }, data: { currency: "SYP" } });
+      const historicalInvalid = await prepare(request([legacyLine, networkLine]));
+      expect(historicalInvalid.status).toBe(409);
+      expect(historicalInvalid.body.error).toBe("INVALID_CURRENCY_PRICE");
+
+      await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12" } });
+      await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: wholePizza } });
+      const valid = await prepare(request([
+        { ...legacyLine, expectedUnitPrice: "12" },
+        { ...networkLine, expectedUnitPrice: "265" }
+      ]));
+      expect(valid.status).toBe(200);
+      expect(valid.body.draft.totalAmount).toBe("554");
+      expect(valid.body.messagePreview).toContain("554 SYP");
+      expect(valid.body.messagePreview).not.toContain("554.00 SYP");
+
+      const legacyOrder = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: [{ productSlug: "legacy", quantity: 2 }], fulfillmentType: "pickup",
+          customerName: "Synthetic SYP Customer", customerPhone: "0000000000" })
+      });
+      expect(legacyOrder.status).toBe(201);
+      const legacyPayload = await legacyOrder.json() as { message: string };
+      expect(legacyPayload.message).toContain("24 SYP");
+      expect(await prisma.order.count()).toBe(before + 1);
+
+      await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: pizza } });
+      const invalidNetwork = await prepare(request([networkLine]));
+      expect(invalidNetwork.status).toBe(409);
+      expect(await prisma.order.count()).toBe(before + 1);
+    } finally {
+      await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: pizza } });
+      await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12.000001" } });
+      await prisma.product.updateMany({ where: { restaurantId: "s6e2-r1" }, data: { currency: "EGP" } });
+      await prisma.restaurant.update({ where: { id: "s6e2-r1" }, data: { currency: "EGP" } });
+    }
+  });
 });

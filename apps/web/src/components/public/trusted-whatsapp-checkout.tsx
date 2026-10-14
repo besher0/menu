@@ -6,6 +6,7 @@ import {
   type PublicWhatsappCheckoutDraft, type PublicWhatsappCheckoutRequest
 } from "@/lib/api";
 import type { CartItem } from "./cart-model";
+import { displayCurrencyAmount } from "@/lib/currency-display";
 
 type Locale = "ar" | "en";
 
@@ -130,11 +131,11 @@ export function TrustedWhatsappCheckout({ cart, restaurantSlug, locale, disabled
     {prepared ? <div className="trusted-whatsapp-draft" role="status">
       <h3>{ar ? "المراجعة الموثوقة" : "Verified review"}</h3>
       <ul>{prepared.draft.items.map((line) => <li key={line.lineId}>
-        <b>{line.productName} × {line.quantity}</b> — {line.lineTotal} {prepared.draft.currency}
+        <b>{line.productName} × {line.quantity}</b> — {displayCurrencyAmount(line.lineTotal, prepared.draft.currency)}
         {line.changed ? <em> {ar ? "(تغيّر السعر؛ راجع قبل الموافقة)" : "(price changed; review before accepting)"}</em> : null}
       </li>)}</ul>
       <pre className="trusted-whatsapp-message-preview" dir="auto">{prepared.messagePreview}</pre>
-      <strong>{ar ? "الإجمالي" : "Total"}: {prepared.draft.totalAmount} {prepared.draft.currency}</strong>
+      <strong>{ar ? "الإجمالي" : "Total"}: {displayCurrencyAmount(prepared.draft.totalAmount, prepared.draft.currency)}</strong>
       <p>{ar ? "أوافق على السعر والاختيارات أعلاه، وأفتح WhatsApp لإرسال الطلب بنفسي." : "I accept the prices and choices above and will send the message myself in WhatsApp."}</p>
       <button className="cart-whatsapp" type="button" disabled={busy} onClick={() => void acceptAndOpen()}>
         {ar ? "أوافق وأفتح WhatsApp" : "Accept and open WhatsApp"}

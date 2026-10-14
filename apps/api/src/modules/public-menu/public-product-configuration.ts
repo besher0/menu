@@ -2,6 +2,7 @@ import {
   calculateMinimumPrice,
   collectDependencyEdges,
   validateConfiguration,
+  validateConfigurationCurrency,
   type ConfigurationIssue,
   type LinkedProductCatalogEntry,
   type ProductConfigurationContext,
@@ -135,6 +136,7 @@ export function resolvePublicProductConfiguration(args: {
   owner: PublicConfigurationProductRecord;
   catalogProducts: readonly PublicConfigurationProductRecord[];
   capabilityEnabled: boolean;
+  currency?: string;
 }): PublicProductConfigurationResponse | null {
   const ownerConfiguration = canonicalConfiguration(args.owner);
   if (!ownerConfiguration) return null;
@@ -147,13 +149,16 @@ export function resolvePublicProductConfiguration(args: {
     const available = sourceAvailable(product);
     const structurallyValid = networkConfiguration
       ? validateConfiguration(networkConfiguration).length === 0
+        && (!args.currency || validateConfigurationCurrency(networkConfiguration, args.currency).length === 0)
       : true;
     linkedProducts.set(product.id, {
       productId: product.id,
       catalogId: args.restaurantId,
       configuration,
       available,
-      orderable: available && structurallyValid && !isUnpricedNetworkSetup(configuration) && args.capabilityEnabled
+      orderable: available && structurallyValid
+        && (!args.currency || validateConfigurationCurrency(configuration, args.currency).length === 0)
+        && !isUnpricedNetworkSetup(configuration) && args.capabilityEnabled
     });
   }
 
@@ -162,6 +167,7 @@ export function resolvePublicProductConfiguration(args: {
     linkedProducts
   };
   const issues: ConfigurationIssue[] = [...validateConfiguration(ownerConfiguration)];
+  if (args.currency && issues.length === 0) issues.push(...validateConfigurationCurrency(ownerConfiguration, args.currency));
   for (const edge of collectDependencyEdges(ownerConfiguration)) {
     const source = products.get(edge.sourceProductId);
     if (edge.mode === "ORIGINAL" && source && !canonicalConfiguration(source)) {
@@ -203,7 +209,10 @@ export function resolvePublicProductConfiguration(args: {
       name: product.name,
       mode,
       available,
-      orderable: available && args.capabilityEnabled && (mode === "LEGACY" || (validateConfiguration(configuration).length === 0 && !isUnpricedNetworkSetup(configuration))),
+      orderable: available && args.capabilityEnabled
+        && validateConfiguration(configuration).length === 0
+        && (!args.currency || validateConfigurationCurrency(configuration, args.currency).length === 0)
+        && (mode === "LEGACY" || !isUnpricedNetworkSetup(configuration)),
       configuration
     }];
   });

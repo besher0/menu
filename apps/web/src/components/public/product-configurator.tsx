@@ -29,6 +29,7 @@ import {
   updateOptionGroup
 } from "./product-configurator-model";
 import styles from "./product-configurator.module.css";
+import { displayCurrencyAmount, displayRoundingDifference } from "@/lib/currency-display";
 
 type Props = {
   restaurantSlug: string;
@@ -79,6 +80,7 @@ function SelectionGroups({
   configuration,
   selection,
   sources,
+  currency,
   createId,
   onChange,
   depth = 0
@@ -86,6 +88,7 @@ function SelectionGroups({
   configuration: ProductConfigurationV1;
   selection: ProductSelectionV1;
   sources: ReadonlyMap<string, PublicLinkedConfigurationSource>;
+  currency: string;
   createId: (prefix: string) => string;
   onChange: (selection: ProductSelectionV1) => void;
   depth?: number;
@@ -119,7 +122,7 @@ function SelectionGroups({
             }))}
           >
             <span>{size.label}</span>
-            <strong>{size.price}</strong>
+            <strong>{displayCurrencyAmount(size.price, currency)}</strong>
           </button>)}
         </div>
         {selectedSize && selected && (selectedSize.children?.length ?? 0) > 0 ? <div className={styles.nested}>
@@ -127,6 +130,7 @@ function SelectionGroups({
             configuration={{ ...configuration, groups: selectedSize.children ?? [] }}
             selection={{ ...selection, groups: selected.children ?? [] }}
             sources={sources}
+            currency={currency}
             createId={createId}
             depth={depth + 1}
             onChange={(nested) => onChange(replaceGroup(selection, { ...selected, children: nested.groups }))}
@@ -141,6 +145,7 @@ function SelectionGroups({
       configuration={configuration}
       selection={selection}
       sources={sources}
+      currency={currency}
       createId={createId}
       depth={depth}
       onChange={onChange}
@@ -153,6 +158,7 @@ function OptionGroup({
   configuration,
   selection,
   sources,
+  currency,
   createId,
   depth,
   onChange
@@ -161,6 +167,7 @@ function OptionGroup({
   configuration: ProductConfigurationV1;
   selection: ProductSelectionV1;
   sources: ReadonlyMap<string, PublicLinkedConfigurationSource>;
+  currency: string;
   createId: (prefix: string) => string;
   depth: number;
   onChange: (selection: ProductSelectionV1) => void;
@@ -226,7 +233,7 @@ function OptionGroup({
               onClick={() => count > 0 && (radioMode || option.maxQuantity === 1) && canRemove ? remove() : add()}
             >
               <i>{count > 0 ? <Check size={14} /> : null}</i>
-              <span><b>{option.label}</b><small>{priceHint}</small></span>
+              <span><b>{option.label}</b><small>{priceHint === option.price ? displayCurrencyAmount(option.price, currency) : priceHint}</small></span>
             </button>
             {option.maxQuantity > 1 ? <div className={styles.quantity}>
               <button type="button" onClick={remove} disabled={!canRemove} aria-label={`تقليل ${option.label}`}><Minus size={14} /></button>
@@ -248,6 +255,7 @@ function OptionGroup({
                   configuration={{ ...configuration, groups: option.children ?? [] }}
                   selection={{ ...selection, groups: instance.children ?? [] }}
                   sources={sources}
+                  currency={currency}
                   createId={createId}
                   depth={depth + 1}
                   onChange={(nested) => setInstances(instances.map((item) => item.instanceId === instance.instanceId
@@ -261,6 +269,7 @@ function OptionGroup({
                   configuration={linked}
                   selection={instance.linkedSelection}
                   sources={sources}
+                  currency={currency}
                   createId={createId}
                   depth={depth + 1}
                   onChange={(linkedSelection) => setInstances(instances.map((item) => item.instanceId === instance.instanceId
@@ -409,6 +418,7 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       configuration={envelope.configuration}
       selection={selection}
       sources={sources}
+      currency={currency}
       createId={createId}
       onChange={(next) => { quoteGate.current.invalidate(); setQuoteBusy(false); setContinueMessage(null); setQuoteAdded(false); setSelection(next); }}
     />
@@ -416,11 +426,13 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     <aside className={styles.summary} aria-live="polite">
       <div className={styles.summaryTitle}><span>ملخص السعر</span><small>معاينة فقط</small></div>
       {preview.valid && preview.total !== null ? <>
-        <div className={styles.total}><span>الإجمالي الحالي</span><strong>{preview.total} <small>{currency}</small></strong></div>
+        <div className={styles.total}><span>الإجمالي الحالي</span><strong>{displayCurrencyAmount(preview.total, currency)}</strong></div>
         <ul>{preview.lines.map((line, index) => <li key={`${line.path}-${index}`}>
           <span>{line.label}{line.included ? " · مشمول" : ""}{line.instanceId ? " · وحدة مستقلة" : ""}</span>
-          <b>{line.chargedAmount} {currency}</b>
+          <b>{displayCurrencyAmount(line.chargedAmount, currency)}</b>
         </li>)}</ul>
+        {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)
+          ? <p className={styles.hint}>فرق عرض التقريب: {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)}</p> : null}
         {preview.baseIgnored ? <p className={styles.hint}>تم تجاهل السعر الأساسي لأن التكوين يحتوي على أحجام كاملة السعر.</p> : null}
       </> : <div className={styles.errors}>
         <b>لا يمكن عرض سعر نهائي بعد</b>

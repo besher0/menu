@@ -6,7 +6,8 @@ import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, 
 import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
-import { multiplyMoney } from "@menu/shared";
+import { multiplyMoney, sumMoney } from "@menu/shared";
+import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator } from "./product-configurator";
 import {
@@ -2342,13 +2343,11 @@ function ProductPrice({
       {startingAt ? <em>ابتداءً من</em> : null}
       {priceFirst ? (
         <>
-          <span>{price}</span>
-          <small>{currency}</small>
+          <span>{displayCurrencyAmount(price, currency)}</span>
         </>
       ) : (
         <>
-          <small>{currency}</small>
-          <span>{price}</span>
+          <span>{displayCurrencyAmount(price, currency)}</span>
         </>
       )}
     </strong>
@@ -2440,9 +2439,10 @@ function CartView({
   // Preserve the existing persisted Legacy order flow even when Network checkout is enabled.
   const useTrustedNetworkCheckout = shouldUseTrustedWhatsappCheckout(cart, networkWhatsappCheckoutEnabled);
   const subtotal = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY")
-    .reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const deliveryFee = fulfillment === "delivery" ? 0 : 0;
-  const total = subtotal + deliveryFee;
+    .map((item) => multiplyMoney(item.priceText ?? String(item.price), item.quantity));
+  const legacySubtotal = sumMoney(subtotal);
+  const deliveryFee = "0"; // Existing checkout does not apply a delivery charge.
+  const total = sumMoney([legacySubtotal, deliveryFee]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const [orderNumber, setOrderNumber] = useState("001");
 
@@ -2566,7 +2566,7 @@ function CartView({
                         canEdit={data.products.some((candidate) => candidate.id === item.productId)}
                       /> : <>
                         {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
-                        {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
+                        {showPrices ? <ProductPrice price={multiplyMoney(item.priceText ?? String(item.price), item.quantity)} currency={item.currency} /> : null}
                       </>}
                       {useTrustedNetworkCheckout ? <label className="cart-item-note">
                         <span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
@@ -2683,17 +2683,17 @@ function CartView({
         <dl>
           <div>
             <dt>{t.subtotal}</dt>
-            <dd>{subtotal}{data.restaurant.currency ?? "ل.س"}</dd>
+            <dd>{displayCurrencyAmount(legacySubtotal, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
           {fulfillment === "delivery" ? (
           <div>
               <dt>{t.deliveryFee}</dt>
-              <dd>{deliveryFee}{data.restaurant.currency ?? "ل.س"}</dd>
+              <dd>{displayCurrencyAmount(deliveryFee, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
           ) : null}
           <div>
             <dt />
-            <dd>{total}{data.restaurant.currency ?? "ل.س"}</dd>
+            <dd>{displayCurrencyAmount(total, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
         </dl>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
@@ -2745,11 +2745,11 @@ function NetworkCartDetails({
     <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p>
     {showPrices ? <div className="network-cart-price">
       <span>{item.status === "CURRENT" ? (ar ? "السعر الحالي" : "Current quote") : (ar ? "آخر سعر وافقت عليه" : "Last accepted quote")}</span>
-      <b>{multiplyMoney(item.acceptedQuote.total, item.quantity)} {item.currency}</b>
+      <b>{displayCurrencyAmount(multiplyMoney(item.acceptedQuote.total, item.quantity), item.currency)}</b>
     </div> : null}
     {item.status === "CHANGED" && item.proposedQuote && showPrices ? <div className="network-cart-price changed">
       <span>{ar ? "السعر الجديد المقترح" : "New proposed quote"}</span>
-      <b>{multiplyMoney(item.proposedQuote.total, item.quantity)} {item.currency}</b>
+      <b>{displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency)}</b>
     </div> : null}
     {item.issues.length ? <ul className="network-cart-issues">{item.issues.slice(0, 4).map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.code}{ar ? " — يتطلب مراجعة" : " — needs review"}</li>)}</ul> : null}
     <div className="network-cart-actions">

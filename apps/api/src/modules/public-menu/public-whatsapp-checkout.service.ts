@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { currencyDisplayReconciliation, formatCurrencyAmount, validateCurrencyAmount } from "@menu/shared";
 import { compareMoney, createConfigurationSnapshot, multiplyMoney, sumMoney, type PriceLine, type ProductConfigurationContext, type ProductSelectionV1 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { sha256, stableJson } from "../orders/network-order-contract";
@@ -92,13 +93,15 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
     } else {
       output.push(`${index + 1}. ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)} × ${line.quantity}`);
       if (line.note) output.push(`${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}`);
-      output.push(`${ar ? "سعر الوحدة" : "Unit price"}: ${line.unitPrice} ${draft.currency}`);
-      output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${line.lineTotal} ${draft.currency}`);
+      output.push(`${ar ? "سعر الوحدة" : "Unit price"}: ${formatCurrencyAmount(line.unitPrice, draft.currency)}`);
+      output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
     }
     output.push("━━━━━━━━━━━━━━", "");
   }
   if (sumMoney(draft.items.map((item) => item.lineTotal)) !== draft.totalAmount) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
-  output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${draft.totalAmount} ${draft.currency}`);
+  const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.totalAmount, draft.currency);
+  if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
+  output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
   output.push(...details.footer);
   return output.join("\n");
 }
@@ -185,6 +188,10 @@ export class PublicWhatsappCheckoutService {
             throw new ConflictException({ error: "WHATSAPP_PRODUCT_TYPE_CHANGED", lineId: line.lineId });
           }
           const unitPrice = product.basePrice.toString();
+          if (validateCurrencyAmount(unitPrice, restaurant.currency, "$product.basePrice").length) {
+            throw new ConflictException({ error: "INVALID_CURRENCY_PRICE", lineId: line.lineId,
+              message: "This product has an invalid price for the restaurant currency." });
+          }
           const lineTotal = multiplyMoney(unitPrice, line.quantity);
           return { mode: "LEGACY", lineId: line.lineId, productId: product.id, productName: product.name,
             quantity: line.quantity, ...note, unitPrice, lineTotal,
@@ -202,7 +209,7 @@ export class PublicWhatsappCheckoutService {
           throw new BadRequestException(payload);
         }
         const resolved = resolvePublicProductConfiguration({ restaurantId: restaurant.id, owner: product,
-          catalogProducts: catalog, capabilityEnabled: capability });
+          catalogProducts: catalog, capabilityEnabled: capability, currency: restaurant.currency });
         if (!resolved?.orderable) throw new ConflictException({ error: "CONFIGURATION_NOT_ORDERABLE", lineId: line.lineId });
         const context: ProductConfigurationContext = { catalogId: restaurant.id,
           linkedProducts: new Map(resolved.linkedProducts.map((source) => [source.productId, {
@@ -233,10 +240,14 @@ export class PublicWhatsappCheckoutService {
           linkedSourceRevisions: result.quote.linkedSourceRevisions, display };
       });
       const { items: _items, locale: _locale, branchSlug: _branchSlug, ...details } = request;
+      const totalAmount = sumMoney(lines.map((line) => line.lineTotal));
+      if (validateCurrencyAmount(totalAmount, restaurant.currency, "$draft.totalAmount").length) {
+        throw new ConflictException({ error: "INVALID_CURRENCY_TOTAL", message: "The order total is invalid for the restaurant currency." });
+      }
       return { schemaVersion: 1, restaurantId: restaurant.id, restaurantName: restaurant.name,
         restaurantSlug: restaurant.slug, ...(branch ? { branchName: branch.name } : {}),
         whatsappPhone: digits, currency: restaurant.currency, locale: request.locale, details,
-        items: lines, totalAmount: sumMoney(lines.map((line) => line.lineTotal)) };
+        items: lines, totalAmount };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 20_000 });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError

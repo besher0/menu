@@ -31,6 +31,7 @@ function configuration(
 
 function createHarness() {
   const transaction = {
+    restaurant: { findUnique: vi.fn().mockResolvedValue({ currency: "EGP" }) },
     restaurantSubscription: {
       findUnique: vi.fn().mockResolvedValue({
         plan: { features: [{ key: "PRODUCT_CONFIGURATION", enabled: true }] }

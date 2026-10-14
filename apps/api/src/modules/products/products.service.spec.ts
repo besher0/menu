@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ProductsService } from "./products.service";
 
 function createService(prisma: Record<string, any>) {
+  prisma.restaurant ??= { findUnique: vi.fn().mockResolvedValue({ currency: "EGP" }) };
   return new ProductsService(
     prisma as any,
     { getFeatureLimit: vi.fn().mockResolvedValue(null) } as any,
@@ -13,6 +14,15 @@ function createService(prisma: Record<string, any>) {
 }
 
 describe("ProductsService product-configuration compatibility", () => {
+  it("rejects fractional SYP quick prices without mutating a legacy product", async () => {
+    const prisma = { restaurant: { findUnique: vi.fn().mockResolvedValue({ currency: "SYP" }) },
+      product: { findFirst: vi.fn().mockResolvedValue({ id: "legacy", configurationTree: null, configurationVersion: 0 }),
+        update: vi.fn() } };
+    await expect(createService(prisma).updatePrice("restaurant-1", "legacy", 12500.5)).rejects.toMatchObject({
+      response: expect.objectContaining({ error: "SYP_FRACTIONAL_PRICE" })
+    });
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
   it("blocks soft deletion when another configuration depends on the product", async () => {
     const prisma = {
       product: {

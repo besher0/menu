@@ -1,4 +1,5 @@
 "use client";
+import { displayCurrencyAmount } from "@/lib/currency-display";
 
 import { ChangeEvent, Fragment, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type * as React from "react";
@@ -554,7 +555,7 @@ function ProductsTable() {
                           />
                         ) : (
                           <button className="inline-price" type="button" onDoubleClick={() => startPriceEdit(product)} title={product.configurationMode === "NETWORK" ? "يُدار السعر من محرر الشبكة" : undefined}>
-                            {product.configurationMode === "NETWORK" ? "شبكة التكوين" : product.basePrice === null ? "بلا سعر" : `${product.basePrice} ${product.currency}`}
+                            {product.configurationMode === "NETWORK" ? "شبكة التكوين" : product.basePrice === null ? "بلا سعر" : displayCurrencyAmount(product.basePrice, product.currency)}
                           </button>
                         )}
                       </td>

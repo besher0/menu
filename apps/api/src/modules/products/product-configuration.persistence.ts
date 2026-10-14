@@ -3,7 +3,8 @@ import {
   collectDependencyEdges,
   type FeatureKey,
   ProductConfigurationV1,
-  validateConfiguration
+  validateConfiguration,
+  validateConfigurationCurrency
 } from "@menu/shared";
 import { Prisma, PrismaClient } from "@prisma/client";
 
@@ -102,6 +103,12 @@ export async function persistProductConfiguration(
   const uniqueSourceIds = [...new Set(edges.map((edge) => edge.sourceProductId))];
 
   return prisma.$transaction(async (transaction) => {
+    const restaurant = await transaction.restaurant.findUnique({
+      where: { id: input.restaurantId }, select: { currency: true }
+    });
+    if (!restaurant) throw new ProductConfigurationConflictError("Restaurant was not found");
+    const currencyIssues = validateConfigurationCurrency(input.configuration, restaurant.currency);
+    if (currencyIssues.length) throw new ProductConfigurationValidationError(currencyIssues);
     if (input.requiredCapabilityKey) {
       const subscription = await transaction.restaurantSubscription.findUnique({
         where: { restaurantId: input.restaurantId },

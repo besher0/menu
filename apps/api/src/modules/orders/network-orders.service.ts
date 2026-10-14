@@ -199,7 +199,8 @@ export class NetworkOrdersService {
         throw new BadRequestException(payload);
       }
       const resolved = resolvePublicProductConfiguration({
-        restaurantId: restaurant.id, owner, catalogProducts: products, capabilityEnabled: true
+        restaurantId: restaurant.id, owner, catalogProducts: products, capabilityEnabled: true,
+        currency: restaurant.currency
       });
       if (!resolved || !resolved.orderable) {
         throw new ConflictException({ error: "CONFIGURATION_NOT_ORDERABLE", lineIndex: index });
