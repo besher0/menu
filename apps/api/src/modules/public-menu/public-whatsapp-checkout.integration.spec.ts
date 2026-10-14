@@ -282,18 +282,35 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
 
   it("preserves the separate Legacy WhatsApp endpoint and rejects Network there", async () => {
     const before = await prisma.order.count();
-    const legacy = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
+    const beforeEvents = await prisma.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } });
+    const legacyBody = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup",
+      customerName: "Synthetic Customer", customerPhone: "0000000000", orderNote: "Synthetic note" };
+    const originalFlag = process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT;
+    process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "0";
+    const legacyOff = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup" })
+      body: JSON.stringify(legacyBody)
     });
-    expect(legacy.status).toBe(201);
-    expect(await prisma.order.count()).toBe(before + 1);
+    process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "1";
+    const legacyOn = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(legacyBody)
+    });
+    process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = originalFlag;
+    expect(legacyOff.status).toBe(201);
+    expect(legacyOn.status).toBe(201);
+    expect(await prisma.order.count()).toBe(before + 2);
+    expect(await prisma.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } })).toBe(beforeEvents + 2);
+    const saved = await prisma.order.findMany({ where: { restaurantId: "s6e2-r1", customerName: "Synthetic Customer" },
+      orderBy: { createdAt: "desc" }, take: 2, include: { items: true } });
+    expect(saved).toHaveLength(2);
+    expect(saved.every((order) => order.items.length === 1 && order.customerPhone === "0000000000"
+      && order.whatsappMessage?.includes("Synthetic note") && order.status === "PENDING_WHATSAPP")).toBe(true);
     const network = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ items: [{ productSlug: "pizza", quantity: 1 }] })
     });
     expect(network.status).toBe(400);
-    expect(await prisma.order.count()).toBe(before + 1);
+    expect(await prisma.order.count()).toBe(before + 2);
   });
 
   it("rechecks quantity, notes, restaurant phone and confirmation binding", async () => {
@@ -309,5 +326,29 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     const stale = await confirm(payload, prepared.body.acceptanceToken);
     expect(stale.status).toBe(409);
     expect(stale.body.changedDraft).toBeDefined();
+  });
+
+  it("keeps a small concurrent trusted checkout wave safe without writing Orders", async () => {
+    const before = await prisma.order.count();
+    const payload = request([legacyLine, networkLine]);
+    const prepared = await Promise.all(Array.from({ length: 5 }, () => prepare(payload)));
+    expect(prepared.some((result) => result.status === 200)).toBe(true);
+    for (const result of prepared) {
+      expect([200, 409]).toContain(result.status);
+      if (result.status === 200) {
+        expect(result.body.draft.totalAmount).toBe("554.00001");
+      } else {
+        expect(result.body.error).toBe("WHATSAPP_CHECKOUT_CONCURRENT_UPDATE");
+        expect(JSON.stringify(result.body)).not.toMatch(/Prisma|P2034|40001|SELECT /);
+      }
+    }
+    const confirmed = await Promise.all(prepared.filter((result) => result.status === 200)
+      .map((result) => confirm(payload, result.body.acceptanceToken)));
+    for (const result of confirmed) {
+      expect([200, 409]).toContain(result.status);
+      if (result.status === 200) expect(result.body.draft.totalAmount).toBe("554.00001");
+      else expect(result.body.error).toBe("WHATSAPP_CHECKOUT_CONCURRENT_UPDATE");
+    }
+    expect(await prisma.order.count()).toBe(before);
   });
 });

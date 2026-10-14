@@ -18,6 +18,7 @@ import {
   putLegacyCartItem,
   restoreCartStorage,
   serializeCartStorage,
+  shouldUseTrustedWhatsappCheckout,
   updateCartLineNote,
   updateCartLineQuantity,
   type CartItem,
@@ -674,7 +675,6 @@ export function PublicMenuClient({
   const showPrices = data.restaurant.showPrices ?? true;
   const publicUi = data.theme?.publicUi as PublicThemeUiSettings | undefined;
   const whatsappOrderingEnabled = publicUi?.whatsappOrderingEnabled !== false;
-  const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
   const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
   const publicPath = (pathname = "") => restaurantPath(data.restaurant.slug, pathname, useSubdomainRoutes);
@@ -842,7 +842,6 @@ export function PublicMenuClient({
   }, [activeView, productSlug]);
 
   const legacyCart = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY");
-  const cartTotal = legacyCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string) {
@@ -977,29 +976,6 @@ export function PublicMenuClient({
     }, 180);
   }
 
-  const whatsappMessage = useMemo(() => {
-    if (!showPrices) {
-      return [
-        `${t.newOrderFrom} ${data.restaurant.name}`,
-        "",
-        t.items,
-        ...legacyCart.map((item, index) => `${index + 1}. ${item.quantity}x ${item.name}`),
-        `${t.time}: ${new Date().toLocaleString(language === "ar" ? "ar-SY" : "en-US")}`
-      ].join("\n");
-    }
-
-    const lines = [
-      `${t.newOrderFrom} ${data.restaurant.name}`,
-      "",
-      t.items,
-      ...legacyCart.map((item, index) => showPrices ? `${index + 1}. ${item.quantity}x ${item.name} - ${item.price * item.quantity} ${item.currency}` : `${index + 1}. ${item.quantity}x ${item.name}`),
-      "",
-      `${t.total}: ${cartTotal} ${currency}`,
-      `${t.time}: ${new Date().toLocaleString(language === "ar" ? "ar-SY" : "en-US")}`
-    ];
-    return lines.join("\n");
-  }, [legacyCart, cartTotal, currency, data.restaurant.name, language, showPrices, t]);
-
   const socialLinks = [
     { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com") },
     { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com") },
@@ -1071,8 +1047,7 @@ export function PublicMenuClient({
       window.open(nextWhatsappUrl, "_blank", "noreferrer");
     } catch {
       setOrderMessage(t.orderError);
-      const fallbackMessage = `${whatsappMessage}${checkoutDetailsMessage(checkoutDetails)}`;
-      window.open(`https://wa.me/${data.restaurant.whatsappPhone ?? ""}?text=${encodeURIComponent(fallbackMessage)}`, "_blank", "noreferrer");
+      // A failed server checkout must never fall back to stale browser prices.
     } finally {
       setOrderSubmitting(false);
     }
@@ -2462,6 +2437,8 @@ function CartView({
     return item.mode === "LEGACY" && Boolean(product && isNetworkProduct(product));
   });
   const hasNetwork = cartNeedsPreviewGate(cart, data.products);
+  // Preserve the existing persisted Legacy order flow even when Network checkout is enabled.
+  const useTrustedNetworkCheckout = shouldUseTrustedWhatsappCheckout(cart, networkWhatsappCheckoutEnabled);
   const subtotal = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY")
     .reduce((sum, item) => sum + item.price * item.quantity, 0);
   const deliveryFee = fulfillment === "delivery" ? 0 : 0;
@@ -2557,7 +2534,7 @@ function CartView({
 
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
-      {!hasNetwork && !networkWhatsappCheckoutEnabled ? <CheckoutSteps active={cartStep} /> : null}
+      {!hasNetwork ? <CheckoutSteps active={cartStep} /> : null}
 
       {cartStep === "review" || hasNetwork ? (
         <>
@@ -2591,7 +2568,7 @@ function CartView({
                         {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
                         {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
                       </>}
-                      {networkWhatsappCheckoutEnabled ? <label className="cart-item-note">
+                      {useTrustedNetworkCheckout ? <label className="cart-item-note">
                         <span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
                         <input value={item.note ?? ""} maxLength={500} onChange={(event) => updateCartNote(item.lineId, event.target.value)} />
                       </label> : null}
@@ -2684,7 +2661,7 @@ function CartView({
         </section>
       )}
 
-      {networkWhatsappCheckoutEnabled ? <TrustedWhatsappCheckout
+      {useTrustedNetworkCheckout ? <TrustedWhatsappCheckout
         cart={cart} restaurantSlug={data.restaurant.slug} locale={language}
         disabledReason={staleLegacyNetwork
           ? language === "ar" ? "هذا الصنف تغيّر إلى شبكة خيارات. احذفه وأضفه مجددًا." : "A product changed to Network configuration. Remove and add it again."

@@ -10,6 +10,7 @@ import {
   putLegacyCartItem,
   restoreCartStorage,
   serializeCartStorage,
+  shouldUseTrustedWhatsappCheckout,
   updateCartLineQuantity,
   updateCartLineNote
 } from "./cart-model";
@@ -155,5 +156,16 @@ describe("versioned public cart model", () => {
     expect(restored).toHaveLength(2);
     expect(restored[0]).toMatchObject({ mode: "LEGACY", priceText: "1.250001", note: "Cold", quantity: 2 });
     expect(restored[1]).toMatchObject({ mode: "NETWORK", note: "No onion", status: "CHECKING" });
+  });
+
+  it("routes Legacy-only to the persisted checkout regardless of the Network flag", () => {
+    const legacy = putLegacyCartItem([], { id: "water", slug: "water", name: "Water", basePrice: 0,
+      currency: "EGP" }, 0, null, 1);
+    const network = item();
+    expect(shouldUseTrustedWhatsappCheckout(legacy, false)).toBe(false);
+    expect(shouldUseTrustedWhatsappCheckout(legacy, true)).toBe(false);
+    expect(shouldUseTrustedWhatsappCheckout([network], false)).toBe(false);
+    expect(shouldUseTrustedWhatsappCheckout([network], true)).toBe(true);
+    expect(shouldUseTrustedWhatsappCheckout([...legacy, network], true)).toBe(true);
   });
 });

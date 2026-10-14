@@ -5,7 +5,9 @@ import { setTimeout as pause } from "node:timers/promises";
 import { PrismaClient } from "@prisma/client";
 
 const target = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
-if (process.env.NODE_ENV === "production" || process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT !== "1"
+const browserMode = process.env.STAGE6E3_BROWSER_MODE === "off" ? "off" : "on";
+if (process.env.NODE_ENV === "production"
+  || process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT !== (browserMode === "off" ? "0" : "1")
   || !target || target.hostname !== "127.0.0.1" || target.port !== "55440"
   || target.pathname !== "/ordersawa_stage3_stage6e2_checkout") {
   throw new Error("Stage 6E.2 browser runner requires the exact disposable loopback database and checkout flag.");
@@ -80,10 +82,75 @@ try {
   };
   const navigate = async (path) => { await cdp("Page.navigate", { url: `http://127.0.0.1:3000/m/s6e2-r1${path}` }); };
   await cdp("Page.enable");
+  await cdp("Runtime.enable");
   await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
     window.__waTargets = [];
-    window.open = () => ({ location: { set href(value) { window.__waTargets.push(value); } }, close() {} });
+    window.open = (url) => { if (url && url !== 'about:blank') window.__waTargets.push(url);
+      return { location: { set href(value) { window.__waTargets.push(value); } }, close() {} }; };
   ` });
+
+  if (browserMode === "off") {
+    const ordersBefore = await db.order.count({ where: { restaurantId: "s6e2-r1" } });
+    await navigate("/cart");
+    await until("localStorage.getItem('cart:s6e2-r1:main')!==null", "Flag OFF cart hydration");
+    await evaluate("[...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector(':scope > button')?.click()");
+    await until("document.querySelectorAll('.cart-page-list article').length===1", "Flag OFF Legacy cart");
+    check(await evaluate("!!document.querySelector('.trusted-whatsapp-checkout')") === false, "Flag OFF exposed trusted checkout");
+    await evaluate("document.querySelector('.cart-checkout-card button.cart-whatsapp').click()");
+    await until("!!document.querySelector('.cart-confirm-form')", "Flag OFF Legacy confirm form");
+    await evaluate("document.querySelector('.cart-checkout-card button.cart-whatsapp').click()");
+    await until("window.__waTargets.length===1", "Flag OFF Legacy WhatsApp URL");
+    check(await db.order.count({ where: { restaurantId: "s6e2-r1" } }) === ordersBefore + 1, "Flag OFF Legacy Order persistence changed");
+    results.push("Flag OFF Legacy-only browser checkout persists exactly one old Order and opens official WhatsApp URL");
+    const denied = await fetch("http://127.0.0.1:5000/public/menus/s6e2-r1/checkout/whatsapp/prepare", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ locale: "ar", items: [] })
+    });
+    check(denied.status === 403, `Flag OFF trusted endpoint returned ${denied.status}`);
+    results.push("Flag OFF public trusted endpoint rejects direct HTTP with 403");
+    await navigate("/product/s6e2-pizza");
+    await until("!!document.querySelector('[data-testid=public-product-configurator] [role=radiogroup]')", "Flag OFF Pizza configurator");
+    await evaluate("[...document.querySelectorAll('[data-testid=public-product-configurator] [role=radio]')].find(x=>x.textContent.includes('Small')).click()");
+    await until("!![...document.querySelectorAll('[class*=previewGate] button')].find(x=>!x.disabled)", "Flag OFF valid Pizza selection");
+    await evaluate("document.querySelector('[class*=previewGate] button').click()");
+    await until("(localStorage.getItem('cart:s6e2-r1:main')||'').includes('NETWORK')", "Flag OFF Network cart line");
+    await navigate("/cart");
+    await until("document.querySelectorAll('.cart-page-list article').length===2", "Flag OFF mixed cart");
+    check(await evaluate("!!document.querySelector('.network-cart-gate') && !document.querySelector('.cart-checkout-card button.cart-whatsapp') && !document.querySelector('.trusted-whatsapp-checkout')"),
+      "Flag OFF mixed cart exposed a checkout route");
+    results.push("Flag OFF mixed cart cannot enter Legacy or trusted checkout");
+    await evaluate("[...document.querySelectorAll('.cart-page-list article')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector('.cart-page-remove')?.click()");
+    await until("document.querySelectorAll('.cart-page-list article').length===1", "Flag OFF Network-only cart");
+    check(await evaluate("!!document.querySelector('.network-cart-gate') && !document.querySelector('.cart-checkout-card button.cart-whatsapp') && !document.querySelector('.trusted-whatsapp-checkout')"),
+      "Flag OFF Network-only cart exposed a checkout route");
+    results.push("Flag OFF Network-only cart cannot enter Legacy or trusted checkout");
+    console.log(JSON.stringify({ results }, null, 2));
+  } else {
+  const legacyOrdersBefore = await db.order.count({ where: { restaurantId: "s6e2-r1" } });
+  const legacyEventsBefore = await db.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } });
+  await navigate("/cart");
+  await until("!![...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))", "Legacy recommendation");
+  await until("localStorage.getItem('cart:s6e2-r1:main')!==null", "empty cart client hydration");
+  check(await evaluate("!![...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector(':scope > button')"), "Legacy rail Add button missing");
+  await evaluate("[...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector(':scope > button')?.click()");
+  await until("document.querySelectorAll('.cart-page-list article').length===1", "Legacy-only cart");
+  check(await evaluate("!!document.querySelector('.trusted-whatsapp-checkout')") === false, "Legacy-only cart replaced by trusted checkout");
+  await evaluate("document.querySelector('.cart-checkout-card button.cart-whatsapp').click()");
+  await until("!!document.querySelector('.cart-confirm-form')", "Legacy confirmation form");
+  await evaluate("document.querySelector('.cart-checkout-card button.cart-whatsapp').click()");
+  await until("window.__waTargets.length===1", "Legacy WhatsApp URL");
+  check(await db.order.count({ where: { restaurantId: "s6e2-r1" } }) === legacyOrdersBefore + 1, "Legacy checkout did not save exactly one Order");
+  check(await db.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } }) === legacyEventsBefore + 1,
+    "Legacy checkout did not preserve Analytics");
+  check((await evaluate("window.__waTargets[0]")).startsWith("https://wa.me/201000000000?text="), "Legacy destination changed");
+  results.push("Legacy-only with Network flag ON uses the persisted checkout once, with Analytics and original WhatsApp route");
+  await evaluate("window.__realFetch = window.fetch; window.fetch = (url, options) => String(url).includes('/orders/whatsapp') ? Promise.resolve(new Response('{}', {status:503})) : window.__realFetch(url, options)");
+  await evaluate("document.querySelector('.cart-checkout-card button.cart-whatsapp').click()");
+  await until("!!document.querySelector('.cart-checkout-card .cart-message')", "Legacy server error message");
+  check(await evaluate("window.__waTargets.length") === 1, "Legacy failure opened an untrusted browser-price fallback URL");
+  check(await db.order.count({ where: { restaurantId: "s6e2-r1" } }) === legacyOrdersBefore + 1, "Legacy failure wrote a duplicate Order");
+  await evaluate("window.fetch = window.__realFetch");
+  results.push("Legacy server failure does not open an untrusted local-price fallback or duplicate Order");
+  await evaluate("localStorage.removeItem('cart:s6e2-r1:main'); window.__waTargets = []");
 
   await navigate("/product/s6e2-pizza");
   await until("!!document.querySelector('[data-testid=public-product-configurator] [role=radiogroup]')", "Pizza configurator");
@@ -106,8 +173,23 @@ try {
   await navigate("/cart");
   await until("!!document.querySelector('.trusted-whatsapp-checkout')", "trusted cart checkout");
   await until("[...document.querySelectorAll('.cart-page-list article')].some(x=>x.textContent.includes('Pizza Margherita'))", "restored Pizza cart line");
-  await evaluate("[...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector('button')?.click()");
+  await evaluate("document.querySelector('.trusted-whatsapp-checkout button.cart-whatsapp').click()");
+  await until("!!document.querySelector('.trusted-whatsapp-draft')", "Network-only trusted draft");
+  await evaluate("document.querySelector('.trusted-whatsapp-draft button.cart-whatsapp').click()");
+  await until("window.__waTargets.length===1", "Network-only WhatsApp URL");
+  check((await evaluate("window.__waTargets[0]")).includes("wa.me/201000000000"), "Network-only destination changed");
+  check(await db.order.count({ where: { restaurantId: "s6e2-r1" } }) === legacyOrdersBefore + 1, "Network-only checkout persisted an Order");
+  await evaluate("window.__waTargets = []");
+  results.push("Network-only checkout uses trusted revalidation and creates no Order");
+  await evaluate("[...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector(':scope > button')?.click()");
   await until("document.querySelectorAll('.cart-page-list article').length===2", "mixed cart after Legacy add");
+  await evaluate("document.querySelectorAll('.cart-page-list article')[1].querySelector('.cart-page-stepper button')?.click()");
+  await until("document.querySelectorAll('.cart-page-list article')[1]?.querySelector('.cart-page-stepper strong')?.textContent==='2'", "Legacy quantity edit");
+  await evaluate("document.querySelectorAll('.cart-page-list article')[1].querySelector('.cart-page-remove')?.click()");
+  await until("document.querySelectorAll('.cart-page-list article').length===1", "Legacy cart item deletion");
+  await evaluate("[...document.querySelectorAll('.rail-product')].find(x=>x.textContent.includes('Legacy Salad'))?.querySelector(':scope > button')?.click()");
+  await until("document.querySelectorAll('.cart-page-list article').length===2", "Legacy item re-added");
+  results.push("Cart quantity edit, removal and re-add preserve Network line");
   results.push("Legacy and Network coexist in one cart");
 
   await navigate("/product/s6e2-combo");
@@ -125,6 +207,13 @@ try {
   await until("document.querySelectorAll('.cart-page-list article').length===3", "cart persisted after reload");
   await until("document.querySelectorAll('.network-cart-item [role=alert]').length===0", "network lines rechecked");
   results.push("Mixed cart persists after reload");
+  await evaluate("document.querySelector('.cart-item-note input').focus()");
+  await cdp("Input.insertText", { text: "No onion" });
+  await until("document.querySelector('.cart-item-note input').value==='No onion'", "product note");
+  await evaluate("document.querySelector('.trusted-whatsapp-checkout textarea').focus()");
+  await cdp("Input.insertText", { text: "Ring once" });
+  await until("document.querySelector('.trusted-whatsapp-checkout textarea').value==='Ring once'", "order note");
+  results.push("Product and order notes entered through the live checkout form");
   await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await pause(250);
   const bounds = await evaluate("({width:document.querySelector('.trusted-whatsapp-checkout').getBoundingClientRect().width,dir:document.querySelector('.trusted-whatsapp-checkout').getAttribute('dir')})");
@@ -139,6 +228,7 @@ try {
   await until("!!document.querySelector('.trusted-whatsapp-draft')", "trusted server draft");
   check(await evaluate("document.querySelector('.trusted-whatsapp-draft').innerText.includes('Legacy Salad') && document.querySelector('.trusted-whatsapp-draft').innerText.includes('Family Combo')"), "Draft did not include all mixed lines");
   check(await evaluate("document.querySelector('.trusted-whatsapp-message-preview')?.innerText.includes('Pizza Margherita') && document.querySelector('.trusted-whatsapp-message-preview')?.innerText.includes('BBQ') && document.querySelector('.trusted-whatsapp-message-preview')?.innerText.includes('Family Combo')"), "Full trusted message preview omitted configured choices");
+  check(await evaluate("document.querySelector('.trusted-whatsapp-message-preview')?.innerText.includes('No onion') && document.querySelector('.trusted-whatsapp-message-preview')?.innerText.includes('Ring once')"), "Trusted message omitted customer notes");
   results.push("Trusted Draft displays all mixed lines and exact server total");
   await db.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "13.000001" } });
   await evaluate("document.querySelector('.trusted-whatsapp-draft button.cart-whatsapp').click()");
@@ -156,6 +246,7 @@ try {
     `Incomplete trusted WhatsApp message: ${message.slice(0,500)}`);
   results.push("Explicit acceptance opens only the revalidated complete WhatsApp URL (intercepted, never sent)");
   console.log(JSON.stringify({ results, whatsappUrlLength: whatsappUrl.length, screenshot: screenshotPath }, null, 2));
+  }
 } finally {
   await db.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12.000001" } }).catch(() => undefined);
   socket?.close();

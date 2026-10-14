@@ -54,6 +54,11 @@ export type NetworkCartItem = {
 
 export type CartItem = LegacyCartItem | NetworkCartItem;
 
+/** Enabling the Network flow must not replace the persisted Legacy-only checkout. */
+export function shouldUseTrustedWhatsappCheckout(cart: readonly CartItem[], networkFeatureEnabled: boolean): boolean {
+  return networkFeatureEnabled && cart.some((line) => line.mode === "NETWORK");
+}
+
 const CART_STORAGE_VERSION = 2 as const;
 
 export function putLegacyCartItem(cart: readonly CartItem[], product: PublicProduct, price: number, imageUrl: string | null, quantity: number): CartItem[] {
