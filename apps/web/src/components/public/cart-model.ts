@@ -15,9 +15,11 @@ export type LegacyCartItem = {
   name: string;
   quantity: number;
   price: number;
+  priceText?: string;
   currency: string;
   imageUrl?: string | null;
   description?: string | null;
+  note?: string;
 };
 
 export type NetworkQuoteValue = {
@@ -47,6 +49,7 @@ export type NetworkCartItem = {
   proposedQuote?: NetworkQuoteValue;
   status: NetworkCartStatus;
   issues: ConfigurationIssue[];
+  note?: string;
 };
 
 export type CartItem = LegacyCartItem | NetworkCartItem;
@@ -58,17 +61,22 @@ export function putLegacyCartItem(cart: readonly CartItem[], product: PublicProd
   const existing = cart.find((item): item is LegacyCartItem => item.mode === "LEGACY" && item.slug === product.slug);
   if (quantity === 0) return cart.filter((item) => item !== existing);
   if (existing) return cart.map((item) => item === existing ? {
-    ...existing, quantity, price, currency: product.currency, imageUrl, description: product.description
+    ...existing, quantity, price, priceText: product.basePriceExact ?? String(price), currency: product.currency, imageUrl, description: product.description
   } : item);
   return [...cart, {
     mode: "LEGACY", lineId: `legacy:${product.slug}`, slug: product.slug, name: product.name,
-    quantity, price, currency: product.currency, imageUrl, description: product.description
+    quantity, price, priceText: product.basePriceExact ?? String(price), currency: product.currency, imageUrl, description: product.description
   }];
 }
 
 export function updateCartLineQuantity(cart: readonly CartItem[], lineId: string, quantity: number): CartItem[] {
   if (!Number.isSafeInteger(quantity)) return [...cart];
   return cart.map((item) => item.lineId === lineId ? { ...item, quantity } : item).filter((item) => item.quantity > 0);
+}
+
+export function updateCartLineNote(cart: readonly CartItem[], lineId: string, note: string): CartItem[] {
+  if (note.length > 500) return [...cart];
+  return cart.map((item) => item.lineId === lineId ? { ...item, note } : item);
 }
 
 export function cartNeedsPreviewGate(cart: readonly CartItem[], products: readonly PublicProduct[]) {
@@ -187,7 +195,7 @@ export function addOrEditNetworkCartItem(cart: readonly CartItem[], incoming: Ne
     ...matched, quantity: matched.quantity + amount, acceptedQuote: incoming.acceptedQuote,
     proposedQuote: undefined, status: "CURRENT", issues: []
   } : item);
-  const next = { ...incoming, quantity: amount, lineId: previous?.lineId ?? incoming.lineId };
+  const next = { ...incoming, quantity: amount, lineId: previous?.lineId ?? incoming.lineId, note: previous?.note };
   if (!previous) return [...other, next];
   const index = cart.findIndex((item) => item.lineId === previous.lineId);
   return [...other.slice(0, index), next, ...other.slice(index)];
@@ -232,9 +240,11 @@ function restoreLegacy(raw: unknown, currency: string): LegacyCartItem | null {
   return {
     mode: "LEGACY", lineId: `legacy:${raw.slug}`, slug: raw.slug,
     name: nonempty(raw.name) ? raw.name : raw.slug, quantity: raw.quantity, price: raw.price,
+    priceText: money(raw.priceText) ? raw.priceText : String(raw.price),
     currency: nonempty(raw.currency) ? raw.currency : currency,
     imageUrl: typeof raw.imageUrl === "string" ? raw.imageUrl : null,
-    description: typeof raw.description === "string" ? raw.description : null
+    description: typeof raw.description === "string" ? raw.description : null,
+    note: typeof raw.note === "string" && raw.note.length <= 500 ? raw.note : undefined
   };
 }
 
@@ -268,7 +278,8 @@ function restoreNetwork(raw: unknown, restaurantSlug: string, currency: string):
     selection: raw.selection as ProductSelectionV1, selectionKey: raw.selectionKey,
     configurationRevision: raw.configurationRevision as number, runtimeContext,
     acceptedQuote: { total: raw.acceptedQuote.total, priceBreakdown: raw.acceptedQuote.priceBreakdown as PriceLine[], linkedSourceRevisions },
-    status: "CHECKING", issues: []
+    status: "CHECKING", issues: [],
+    note: typeof raw.note === "string" && raw.note.length <= 500 ? raw.note : undefined
   };
 }
 

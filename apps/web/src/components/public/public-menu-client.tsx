@@ -18,11 +18,13 @@ import {
   putLegacyCartItem,
   restoreCartStorage,
   serializeCartStorage,
+  updateCartLineNote,
   updateCartLineQuantity,
   type CartItem,
   type LegacyCartItem,
   type NetworkCartItem
 } from "./cart-model";
+import { TrustedWhatsappCheckout } from "./trusted-whatsapp-checkout";
 
 type PublicLanguage = "ar" | "en";
 type CategoryProductListLayout = "single" | "double";
@@ -881,6 +883,10 @@ export function PublicMenuClient({
     setCart((current) => updateCartLineQuantity(current, lineId, quantity));
   }
 
+  function updateCartNote(lineId: string, note: string) {
+    setCart((current) => updateCartLineNote(current, lineId, note));
+  }
+
   function removeCartItem(lineId: string) {
     nextLineQuoteRequest(lineId);
     setCart((current) => current.filter((item) => item.lineId !== lineId));
@@ -1177,6 +1183,7 @@ export function PublicMenuClient({
           t={t}
           showPrices={showPrices}
           whatsappOrderingEnabled={whatsappOrderingEnabled}
+          networkWhatsappCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true && whatsappOrderingEnabled}
           navigateTo={navigateTo}
           useSubdomainRoutes={useSubdomainRoutes}
         />
@@ -1191,12 +1198,14 @@ export function PublicMenuClient({
           data={data}
           cart={cart}
           updateCartItem={updateCartItem}
+          updateCartNote={updateCartNote}
           removeCartItem={removeCartItem}
           addToCart={addToCart}
           sendWhatsappOrder={sendWhatsappOrder}
           orderSubmitting={orderSubmitting}
           orderMessage={orderMessage}
           whatsappOrderingEnabled={whatsappOrderingEnabled}
+          networkWhatsappCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true && whatsappOrderingEnabled}
           language={language}
           acceptNetworkPrice={(lineId) => void acceptNetworkPrice(lineId)}
           retryNetworkLine={(lineId) => void retryNetworkLine(lineId)}
@@ -2401,12 +2410,14 @@ function CartView({
   data,
   cart,
   updateCartItem,
+  updateCartNote,
   removeCartItem,
   addToCart,
   sendWhatsappOrder,
   orderSubmitting,
   orderMessage,
   whatsappOrderingEnabled,
+  networkWhatsappCheckoutEnabled,
   language,
   acceptNetworkPrice,
   retryNetworkLine,
@@ -2418,12 +2429,14 @@ function CartView({
   data: PublicMenuData;
   cart: CartItem[];
   updateCartItem: (slug: string, quantity: number) => void;
+  updateCartNote: (lineId: string, note: string) => void;
   removeCartItem: (slug: string) => void;
   addToCart: (product: PublicProduct) => void;
   sendWhatsappOrder: (details?: CheckoutDetails) => void;
   orderSubmitting: boolean;
   orderMessage: string | null;
   whatsappOrderingEnabled: boolean;
+  networkWhatsappCheckoutEnabled: boolean;
   language: PublicLanguage;
   acceptNetworkPrice: (lineId: string) => void;
   retryNetworkLine: (lineId: string) => void;
@@ -2544,7 +2557,7 @@ function CartView({
 
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
-      {!hasNetwork ? <CheckoutSteps active={cartStep} /> : null}
+      {!hasNetwork && !networkWhatsappCheckoutEnabled ? <CheckoutSteps active={cartStep} /> : null}
 
       {cartStep === "review" || hasNetwork ? (
         <>
@@ -2578,6 +2591,10 @@ function CartView({
                         {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
                         {showPrices ? <ProductPrice price={item.price * item.quantity} currency={item.currency} /> : null}
                       </>}
+                      {networkWhatsappCheckoutEnabled ? <label className="cart-item-note">
+                        <span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
+                        <input value={item.note ?? ""} maxLength={500} onChange={(event) => updateCartNote(item.lineId, event.target.value)} />
+                      </label> : null}
                     </div>
                     <div className="cart-page-stepper" aria-label={item.name}>
                       <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity + 1)} aria-label={`+ ${item.name}`}>
@@ -2667,7 +2684,14 @@ function CartView({
         </section>
       )}
 
-      {hasNetwork ? <section className="network-cart-gate" role="status">
+      {networkWhatsappCheckoutEnabled ? <TrustedWhatsappCheckout
+        cart={cart} restaurantSlug={data.restaurant.slug} locale={language}
+        disabledReason={staleLegacyNetwork
+          ? language === "ar" ? "هذا الصنف تغيّر إلى شبكة خيارات. احذفه وأضفه مجددًا." : "A product changed to Network configuration. Remove and add it again."
+          : networkItems.some((item) => item.status !== "CURRENT")
+            ? language === "ar" ? "راجع خيارات الأصناف المتغيرة قبل إتمام الطلب." : "Review changed configurations before checkout."
+            : undefined}
+      /> : hasNetwork ? <section className="network-cart-gate" role="status">
         <b>{language === "ar" ? "سلة الشبكة للمعاينة فقط" : "Network cart is preview-only"}</b>
         {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
         <p>{language === "ar"
@@ -2792,6 +2816,7 @@ function ProductView({
   t,
   showPrices,
   whatsappOrderingEnabled,
+  networkWhatsappCheckoutEnabled,
   navigateTo,
   useSubdomainRoutes
 }: {
@@ -2806,6 +2831,7 @@ function ProductView({
   t: PublicTranslations;
   showPrices: boolean;
   whatsappOrderingEnabled: boolean;
+  networkWhatsappCheckoutEnabled: boolean;
   navigateTo: (href: string) => void;
   useSubdomainRoutes: boolean;
 }) {
@@ -3042,6 +3068,7 @@ function ProductView({
             initialSelection={editingItem?.selection}
             editingLineId={editingItem?.lineId}
             onNetworkQuote={onNetworkQuote}
+            checkoutEnabled={networkWhatsappCheckoutEnabled}
           />
         ) : null}
 

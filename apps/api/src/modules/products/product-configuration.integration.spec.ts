@@ -21,6 +21,7 @@ import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicMenuService } from "../public-menu/public-menu.service";
 import { PublicMenuController } from "../public-menu/public-menu.controller";
+import { PublicWhatsappCheckoutService } from "../public-menu/public-whatsapp-checkout.service";
 import { initialNetworkSetupConfiguration } from "./network-setup-configuration";
 import { ProductConfigurationService } from "./product-configuration.service";
 import { ProductsController } from "./products.controller";
@@ -327,6 +328,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         RestaurantContextGuard,
         FeatureFlagsService,
         ProductConfigurationService,
+        PublicWhatsappCheckoutService,
         { provide: PublicMenuService, useValue: publicMenuService },
         { provide: PrismaService, useValue: prisma },
         { provide: ProductsService, useValue: productsService },

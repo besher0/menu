@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicMenuController } from "./public-menu.controller";
+import { PublicWhatsappCheckoutService } from "./public-whatsapp-checkout.service";
 import { PublicMenuService } from "./public-menu.service";
 
 const databaseUrl = process.env.PUBLIC_MENU_RACE_TEST_DATABASE_URL;
@@ -101,7 +102,7 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     const db = new Proxy(prisma, {
       get(target, key) { return key === "category" ? category : Reflect.get(target, key, target); }
     });
-    @Module({ controllers: [PublicMenuController], providers: [PublicMenuService, FeatureFlagsService,
+    @Module({ controllers: [PublicMenuController], providers: [PublicMenuService, PublicWhatsappCheckoutService, FeatureFlagsService,
       { provide: PrismaService, useValue: db }, { provide: ConfigService, useValue: { get: () => undefined } }] })
     class TestModule {}
     app = await NestFactory.create(TestModule, { logger: false });

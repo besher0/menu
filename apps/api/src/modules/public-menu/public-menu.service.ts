@@ -108,6 +108,8 @@ export class PublicMenuService {
         productsCount: category._count.products
       })),
       products,
+      networkWhatsappCheckoutEnabled: process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT === "1"
+        && /^[0-9a-fA-F]{64,}$/.test(process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY ?? ""),
       theme: this.serializePublicThemeSettings(restaurant.themeSettings?.settings, features),
       menus: this.serializeMenus(menus)
     };
@@ -527,6 +529,7 @@ export class PublicMenuService {
       name: product.name,
       description: product.description,
       basePrice: product.basePrice === null ? null : Number(product.basePrice),
+      basePriceExact: product.basePrice === null ? null : product.basePrice.toString(),
       currency,
       sortOrder: product.sortOrder,
       isFeatured: product.isFeatured,

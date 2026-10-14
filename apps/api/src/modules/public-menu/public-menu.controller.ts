@@ -2,10 +2,14 @@ import { Body, Controller, Get, Header, HttpCode, Inject, Param, Post, Query, Re
 import { Request } from "express";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
 import { PublicMenuService } from "./public-menu.service";
+import { PublicWhatsappCheckoutService } from "./public-whatsapp-checkout.service";
 
 @Controller("public/menus")
 export class PublicMenuController {
-  constructor(@Inject(PublicMenuService) private readonly publicMenuService: PublicMenuService) {}
+  constructor(
+    @Inject(PublicMenuService) private readonly publicMenuService: PublicMenuService,
+    @Inject(PublicWhatsappCheckoutService) private readonly publicWhatsappCheckout: PublicWhatsappCheckoutService
+  ) {}
 
   @Get("by-host/current")
   @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
@@ -72,5 +76,19 @@ export class PublicMenuController {
     @Body() dto: CreateWhatsappOrderDto
   ) {
     return this.publicMenuService.createWhatsappOrder(restaurantSlug, dto);
+  }
+
+  @Post(":restaurantSlug/checkout/whatsapp/prepare")
+  @HttpCode(200)
+  @Header("Cache-Control", "no-store")
+  prepareWhatsappCheckout(@Param("restaurantSlug") slug: string, @Body() body: unknown) {
+    return this.publicWhatsappCheckout.prepare(slug, body);
+  }
+
+  @Post(":restaurantSlug/checkout/whatsapp/confirm")
+  @HttpCode(200)
+  @Header("Cache-Control", "no-store")
+  confirmWhatsappCheckout(@Param("restaurantSlug") slug: string, @Body() body: unknown) {
+    return this.publicWhatsappCheckout.confirm(slug, body);
   }
 }

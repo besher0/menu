@@ -47,6 +47,7 @@ export type PublicProduct = {
   name: string;
   description?: string | null;
   basePrice: number | null;
+  basePriceExact?: string | null;
   price?: number | string | null;
   currency: string;
   imageUrl?: string | null;
@@ -154,6 +155,7 @@ export class PublicProductQuoteError extends Error {
 }
 
 export type PublicMenuData = {
+  networkWhatsappCheckoutEnabled?: boolean;
   restaurant: {
     slug: string;
     name: string;
@@ -238,6 +240,74 @@ export type PublicMenuData = {
     }>;
   }>;
 };
+
+export type PublicWhatsappCheckoutRequest = {
+  locale: "ar" | "en";
+  branchSlug?: string;
+  customerName?: string;
+  customerPhone?: string;
+  fulfillmentType?: "pickup" | "delivery";
+  deliveryArea?: string;
+  deliveryNear?: string;
+  deliveryBeside?: string;
+  pickupTime?: string;
+  orderNote?: string;
+  items: Array<{
+    mode: "LEGACY" | "NETWORK";
+    lineId: string;
+    productSlug?: string;
+    productId?: string;
+    quantity: number;
+    selection?: ProductSelectionV1;
+    note?: string;
+    expectedUnitPrice?: string;
+    expectedLinkedSourceRevisions?: PublicProductQuoteResponse["linkedSourceRevisions"];
+  }>;
+};
+
+export type PublicWhatsappCheckoutDraft = {
+  restaurantName: string;
+  restaurantSlug: string;
+  branchName?: string;
+  currency: string;
+  locale: "ar" | "en";
+  details: Record<string, unknown>;
+  items: Array<{ mode: "LEGACY" | "NETWORK"; lineId: string; productName: string; quantity: number;
+    note?: string; unitPrice: string; lineTotal: string; changed: boolean }>;
+  totalAmount: string;
+  requiresExplicitAcceptance: true;
+};
+
+export class PublicWhatsappCheckoutError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string,
+    readonly changedDraft?: PublicWhatsappCheckoutDraft, readonly acceptanceToken?: string,
+    readonly changedMessagePreview?: string) {
+    super(message);
+  }
+}
+
+async function whatsappCheckoutPost<T>(slug: string, action: "prepare" | "confirm", body: unknown): Promise<T> {
+  const response = await fetch(`${API_URL}/public/menus/${encodeURIComponent(slug)}/checkout/whatsapp/${action}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store"
+  });
+  const payload = await response.json().catch(() => null) as {
+    data?: T; error?: string; message?: string; changedDraft?: PublicWhatsappCheckoutDraft;
+    acceptanceToken?: string; changedMessagePreview?: string
+  } | null;
+  if (!response.ok) throw new PublicWhatsappCheckoutError(payload?.message ?? "Checkout could not be verified.",
+    response.status, payload?.error ?? "WHATSAPP_CHECKOUT_FAILED", payload?.changedDraft,
+    payload?.acceptanceToken, payload?.changedMessagePreview);
+  if (!payload?.data) throw new PublicWhatsappCheckoutError("Trusted checkout response is unavailable.", 502, "WHATSAPP_CHECKOUT_RESPONSE_INVALID");
+  return payload.data;
+}
+
+export function preparePublicWhatsappCheckout(slug: string, request: PublicWhatsappCheckoutRequest) {
+  return whatsappCheckoutPost<{ draft: PublicWhatsappCheckoutDraft; messagePreview: string; acceptanceToken: string }>(slug, "prepare", request);
+}
+
+export function confirmPublicWhatsappCheckout(slug: string, request: PublicWhatsappCheckoutRequest, acceptanceToken: string) {
+  return whatsappCheckoutPost<{ draft: PublicWhatsappCheckoutDraft; message: string; whatsappUrl: string }>(slug, "confirm", { request, acceptanceToken });
+}
 
 type ApiResponse<T> = {
   data: T;

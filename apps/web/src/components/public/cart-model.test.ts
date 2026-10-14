@@ -10,7 +10,8 @@ import {
   putLegacyCartItem,
   restoreCartStorage,
   serializeCartStorage,
-  updateCartLineQuantity
+  updateCartLineQuantity,
+  updateCartLineNote
 } from "./cart-model";
 
 const product: PublicProduct = { id: "pizza", slug: "pizza", name: "بيتزا", basePrice: null, currency: "EGP" };
@@ -140,5 +141,19 @@ describe("versioned public cart model", () => {
       mode: "NETWORK", configurationRevision: 1, orderable: true, previewOnly: true,
       minimumPrice: "0", priceDisplay: "EXACT", issueCodes: []
     } }])).toBe(true);
+  });
+
+  it("restores a mixed cart with exact Legacy price hints and independent item notes", () => {
+    const legacyProduct: PublicProduct = {
+      id: "water", slug: "water", name: "Water", basePrice: 1.25,
+      basePriceExact: "1.250001", currency: "EGP"
+    };
+    const legacy = putLegacyCartItem([], legacyProduct, 1.25, null, 2);
+    const network = addOrEditNetworkCartItem(legacy, item());
+    const noted = updateCartLineNote(updateCartLineNote(network, "legacy:water", "Cold"), "line-1", "No onion");
+    const restored = restoreCartStorage(serializeCartStorage(noted, "restaurant-a"), "restaurant-a", "EGP");
+    expect(restored).toHaveLength(2);
+    expect(restored[0]).toMatchObject({ mode: "LEGACY", priceText: "1.250001", note: "Cold", quantity: 2 });
+    expect(restored[1]).toMatchObject({ mode: "NETWORK", note: "No onion", status: "CHECKING" });
   });
 });

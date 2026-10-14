@@ -38,6 +38,7 @@ type Props = {
   initialSelection?: ProductSelectionV1 | null;
   editingLineId?: string;
   onNetworkQuote?: (quote: PublicProductQuoteResponse, editingLineId?: string) => boolean;
+  checkoutEnabled?: boolean;
 };
 
 function issueText(code: string, fallback: string) {
@@ -275,7 +276,7 @@ function OptionGroup({
   </section>;
 }
 
-export function ProductConfigurator({ restaurantSlug, productId, currency, cartHref, initialSelection, editingLineId, onNetworkQuote }: Props) {
+export function ProductConfigurator({ restaurantSlug, productId, currency, cartHref, initialSelection, editingLineId, onNetworkQuote, checkoutEnabled = false }: Props) {
   const [envelope, setEnvelope] = useState<PublicProductConfigurationResponse | null>(null);
   const [selection, setSelection] = useState<ProductSelectionV1 | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -431,7 +432,9 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       <button type="button" onClick={() => void continuePreview()} disabled={quoteBusy || !preview.valid || !envelope.orderable}>
         {quoteBusy ? "جارٍ التحقق من السعر..." : editingLineId ? "حفظ التكوين في السلة" : "تحقق وأضف إلى السلة"}
       </button>
-      <p>السعر الظاهر أعلاه معاينة محلية؛ الإضافة تستخدم Quote من الخادم. السلة للتجربة فقط ولا تتيح إرسال طلب Network الآن.</p>
+      <p>{checkoutEnabled
+        ? "الإضافة تستخدم سعرًا موثوقًا من الخادم؛ ستراجع السعر والتوفر مجددًا قبل فتح WhatsApp."
+        : "السعر الظاهر أعلاه معاينة محلية؛ الإضافة تستخدم Quote من الخادم. السلة للتجربة فقط ولا تتيح إرسال طلب Network الآن."}</p>
       {continueMessage ? <strong>{continueMessage}</strong> : null}
       {cartHref && quoteAdded ? <a href={cartHref}>عرض السلة</a> : null}
     </div>

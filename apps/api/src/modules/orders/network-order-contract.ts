@@ -85,6 +85,10 @@ function parseDetails(body: Record<string, unknown>): NetworkOrderDetails {
   return details;
 }
 
+export function parseNetworkOrderDetails(body: Record<string, unknown>): NetworkOrderDetails {
+  return parseDetails(body);
+}
+
 export function parseNetworkOrderRequest(body: unknown, create: false): NetworkOrderDraftRequest;
 export function parseNetworkOrderRequest(body: unknown, create: true): NetworkOrderCreateRequest;
 export function parseNetworkOrderRequest(body: unknown, create: boolean): NetworkOrderDraftRequest | NetworkOrderCreateRequest {

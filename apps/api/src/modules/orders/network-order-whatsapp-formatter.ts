@@ -304,6 +304,50 @@ function renderOrderDetails(value: unknown, locale: Locale): { header: string[];
   return { header, footer };
 }
 
+export function formatWhatsappDisplayText(value: string, path: string, maxLength = 200): string {
+  return display(value, path, maxLength);
+}
+
+export function formatNetworkOrderDetails(value: unknown, locale: Locale) {
+  return renderOrderDetails(value, locale);
+}
+
+export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, currency: string, index: number): { lines: string[]; lineTotal: string } {
+  const path = `$snapshot.items[${index}]`;
+  const item = object(rawItem, path);
+  if (item.snapshotVersion !== 1 || item.mode !== "NETWORK" || item.locale !== locale || item.currency !== currency) {
+    throw new NetworkOrderSnapshotFormatError("ITEM_SNAPSHOT_MISMATCH", path, "Line envelope differs from order snapshot.");
+  }
+  const productId = nonempty(item.productId, `${path}.productId`);
+  const name = display(nonempty(item.productName, `${path}.productName`), `${path}.productName`);
+  const count = quantity(item.quantity, `${path}.quantity`);
+  const unitPrice = money(item.unitPrice, `${path}.unitPrice`);
+  const lineTotal = money(item.lineTotal, `${path}.lineTotal`);
+  if (compareMoney(multiplyMoney(unitPrice, count), lineTotal) !== 0) {
+    throw new NetworkOrderSnapshotFormatError("LINE_TOTAL_MISMATCH", `${path}.lineTotal`, "Saved line amount and quantity differ.");
+  }
+  const configuration = object(item.configurationTree, `${path}.configurationTree`) as ProductConfigurationV1;
+  const selection = object(item.canonicalSelection, `${path}.canonicalSelection`) as ProductSelectionV1;
+  if (configuration.productId !== productId || selection.productId !== productId || item.configurationRevision !== configuration.revision) {
+    throw new NetworkOrderSnapshotFormatError("PRODUCT_SNAPSHOT_MISMATCH", path, "Historical product identity or revision differs.");
+  }
+  const priceLines = array(item.priceBreakdown, `${path}.priceBreakdown`).map((entry, lineIndex) =>
+    object(entry, `${path}.priceBreakdown[${lineIndex}]`) as PriceLine);
+  const sources = array(item.linkedSources, `${path}.linkedSources`).map((entry, sourceIndex) =>
+    object(entry, `${path}.linkedSources[${sourceIndex}]`) as StoredSource);
+  const renderer = new LineRenderer(locale, currency, priceLines, sources);
+  const lines = [`${index + 1}. ${name} × ${count}`, ...renderer.render(configuration, selection)];
+  if (item.note !== undefined) {
+    lines.push(`${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}`);
+  }
+  if (compareMoney(sumMoney(priceLines.map((entry) => money(entry.chargedAmount, `${path}.priceBreakdown.chargedAmount`))), unitPrice) !== 0) {
+    throw new NetworkOrderSnapshotFormatError("UNIT_BREAKDOWN_MISMATCH", `${path}.priceBreakdown`, "Saved breakdown differs from the saved unit price.");
+  }
+  lines.push(`${words[locale].unit}: ${unitPrice} ${currency}`);
+  lines.push(`${words[locale].line}: ${lineTotal} ${currency}`);
+  return { lines, lineTotal };
+}
+
 export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): string {
   const snapshot = object(snapshotValue, "$snapshot");
   if (snapshot.snapshotVersion !== 1 || snapshot.mode !== "NETWORK" || (snapshot.locale !== "ar" && snapshot.locale !== "en")) {
@@ -320,41 +364,10 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
   const output = [w.title, ...details.header, ""];
   const lineTotals: string[] = [];
   for (const [index, rawItem] of items.entries()) {
-    const path = `$snapshot.items[${index}]`;
-    const item = object(rawItem, path);
-    if (item.snapshotVersion !== 1 || item.mode !== "NETWORK" || item.locale !== locale || item.currency !== currency) {
-      throw new NetworkOrderSnapshotFormatError("ITEM_SNAPSHOT_MISMATCH", path, "Line envelope differs from order snapshot.");
-    }
-    const productId = nonempty(item.productId, `${path}.productId`);
-    const name = display(nonempty(item.productName, `${path}.productName`), `${path}.productName`);
-    const count = quantity(item.quantity, `${path}.quantity`);
-    const unitPrice = money(item.unitPrice, `${path}.unitPrice`);
-    const lineTotal = money(item.lineTotal, `${path}.lineTotal`);
-    if (compareMoney(multiplyMoney(unitPrice, count), lineTotal) !== 0) {
-      throw new NetworkOrderSnapshotFormatError("LINE_TOTAL_MISMATCH", `${path}.lineTotal`, "Saved line amount and quantity differ.");
-    }
-    const configuration = object(item.configurationTree, `${path}.configurationTree`) as ProductConfigurationV1;
-    const selection = object(item.canonicalSelection, `${path}.canonicalSelection`) as ProductSelectionV1;
-    if (configuration.productId !== productId || selection.productId !== productId || item.configurationRevision !== configuration.revision) {
-      throw new NetworkOrderSnapshotFormatError("PRODUCT_SNAPSHOT_MISMATCH", path, "Historical product identity or revision differs.");
-    }
-    const priceLines = array(item.priceBreakdown, `${path}.priceBreakdown`).map((entry, lineIndex) =>
-      object(entry, `${path}.priceBreakdown[${lineIndex}]`) as PriceLine);
-    const sources = array(item.linkedSources, `${path}.linkedSources`).map((entry, sourceIndex) =>
-      object(entry, `${path}.linkedSources[${sourceIndex}]`) as StoredSource);
-    const renderer = new LineRenderer(locale, currency, priceLines, sources);
-    output.push(`${index + 1}. ${name} × ${count}`);
-    output.push(...renderer.render(configuration, selection));
-    if (item.note !== undefined) {
-      output.push(`${w.itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}`);
-    }
-    if (compareMoney(sumMoney(priceLines.map((entry) => money(entry.chargedAmount, `${path}.priceBreakdown.chargedAmount`))), unitPrice) !== 0) {
-      throw new NetworkOrderSnapshotFormatError("UNIT_BREAKDOWN_MISMATCH", `${path}.priceBreakdown`, "Saved breakdown differs from the saved unit price.");
-    }
-    output.push(`${w.unit}: ${unitPrice} ${currency}`);
-    output.push(`${w.line}: ${lineTotal} ${currency}`);
+    const rendered = formatNetworkSnapshotLine(rawItem, locale, currency, index);
+    output.push(...rendered.lines);
     output.push("━━━━━━━━━━━━━━", "");
-    lineTotals.push(lineTotal);
+    lineTotals.push(rendered.lineTotal);
   }
   if (compareMoney(sumMoney(lineTotals), total) !== 0) {
     throw new NetworkOrderSnapshotFormatError("ORDER_TOTAL_MISMATCH", "$snapshot.totalAmount", "Saved order total differs from line totals.");
