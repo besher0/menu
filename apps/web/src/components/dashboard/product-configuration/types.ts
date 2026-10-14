@@ -15,7 +15,7 @@ export type ProductConfigurationEnvelope = {
   basePrice: string | null;
   isAvailable: boolean;
   capability: ConfigurationCapability;
-  orderabilityState: "LEGACY" | "PUBLIC_INTEGRATION_PENDING" | "ACTION_REQUIRED_CAPABILITY";
+  orderabilityState: "LEGACY" | "SETUP_INCOMPLETE" | "PUBLIC_INTEGRATION_PENDING" | "ACTION_REQUIRED_CAPABILITY";
 };
 
 export type ProductCandidate = {

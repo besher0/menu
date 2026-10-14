@@ -21,6 +21,7 @@ import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicMenuService } from "../public-menu/public-menu.service";
 import { PublicMenuController } from "../public-menu/public-menu.controller";
+import { initialNetworkSetupConfiguration } from "./network-setup-configuration";
 import { ProductConfigurationService } from "./product-configuration.service";
 import { ProductsController } from "./products.controller";
 import { ProductsImportService } from "./products-import.service";
@@ -240,7 +241,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
         restaurantId: "stage3-r1",
         name: id,
         slug: id,
-        basePrice: id === "legacy-null-zero" ? "0.000000" : id === "legacy-null-price" ? null : "7.000000",
+        basePrice: id === "legacy-null-zero" || id === "legacy-null-price" ? "0.000000" : "7.000000",
         currency: "EGP"
       }))
     });
@@ -276,6 +277,13 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     } });
     await prisma.product.update({ where: { id: "quote-combo" }, data: {
       configurationTree: quoteComboConfiguration(), configurationVersion: 1, basePrice: "0"
+    } });
+    // Stage 2C disallows a null-priced Legacy row. This historical fixture is
+    // an unpriced Network row so the actual CHECKs can be enabled in tests.
+    await prisma.product.update({ where: { id: "legacy-null-price" }, data: {
+      configurationTree: initialNetworkSetupConfiguration("legacy-null-price"),
+      configurationVersion: 1,
+      basePrice: null
     } });
 
     await prisma.user.createMany({
@@ -358,17 +366,17 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       "x-restaurant-id": "stage3-r1",
       "content-type": "application/json"
     };
-    const createBody = { name: "Stage 6E Setup Pizza", basePrice: 12.5, currency: "EGP", configurationIntent: "NETWORK_SETUP" };
+    const createBody = { name: "Stage 6E Setup Pizza", currency: "EGP", configurationIntent: "NETWORK_SETUP" };
     const employee = await fetch(`${httpOrigin}/dashboard/products`, {
       method: "POST", headers: { ...headers, authorization: `Bearer ${employeeToken}` }, body: JSON.stringify(createBody)
     });
     expect(employee.status).toBe(403);
     expect(await employee.json()).toMatchObject({ error: "PRODUCT_CONFIGURATION_PERMISSION_DENIED" });
 
-    const missingPrice = await fetch(`${httpOrigin}/dashboard/products`, {
-      method: "POST", headers, body: JSON.stringify({ ...createBody, basePrice: undefined })
+    const provisionalPrice = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers, body: JSON.stringify({ ...createBody, basePrice: 12.5 })
     });
-    expect(missingPrice.status).toBe(400);
+    expect(provisionalPrice.status).toBe(400);
     const invalidIntent = await fetch(`${httpOrigin}/dashboard/products`, {
       method: "POST", headers, body: JSON.stringify({ ...createBody, configurationIntent: "UNKNOWN" })
     });
@@ -386,8 +394,11 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     });
     expect(createdResponse.status).toBe(201);
     const created = (await createdResponse.json()).data;
-    expect(created).toMatchObject({ configurationMode: "LEGACY", configurationVersion: 0, basePrice: 12.5, isAvailable: false });
+    expect(created).toMatchObject({ configurationMode: "NETWORK", configurationVersion: 1, basePrice: null, isAvailable: false });
     const id = created.id as string;
+    expect((await prisma.product.findUniqueOrThrow({ where: { id } })).configurationTree).toEqual({
+      schemaVersion: 1, productId: id, revision: 1, basePrice: null, groups: []
+    });
     const patchIntent = await fetch(`${httpOrigin}/dashboard/products/${id}`, {
       method: "PATCH", headers, body: JSON.stringify({ configurationIntent: "NETWORK_SETUP", name: "Unexpected" })
     });
@@ -395,20 +406,57 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
 
     const initial = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, { headers });
     expect(initial.status).toBe(200);
-    expect(await initial.json()).toMatchObject({ data: { configurationVersion: 0, configurationTree: null, basePrice: "12.5" } });
+    expect(await initial.json()).toMatchObject({ data: { mode: "NETWORK", orderabilityState: "SETUP_INCOMPLETE", configurationVersion: 1, configurationTree: {
+      schemaVersion: 1, productId: id, revision: 1, basePrice: null, groups: []
+    }, basePrice: null } });
+    const prematureActivation = await fetch(`${httpOrigin}/dashboard/products/${id}/toggle-availability`, { method: "PATCH", headers });
+    expect(prematureActivation.status).toBe(409);
+    expect(await prematureActivation.json()).toMatchObject({ error: "PRODUCT_CONFIGURATION_SETUP_INCOMPLETE" });
+    const directPatch = await fetch(`${httpOrigin}/dashboard/products/${id}`, {
+      method: "PATCH", headers, body: JSON.stringify({ name: "Still Setup", basePrice: 12.5, isAvailable: true })
+    });
+    expect(directPatch.status).toBe(409);
+    const quickPrice = await fetch(`${httpOrigin}/dashboard/products/${id}/price`, {
+      method: "PATCH", headers, body: JSON.stringify({ basePrice: 12.5 })
+    });
+    expect(quickPrice.status).toBe(409);
     const hidden = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/${id}/configuration`);
     expect(hidden.status).toBe(404);
+    const legacyHttpOrder = () => fetch(`${httpOrigin}/public/menus/stage3-r1/orders/whatsapp`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: [{ productSlug: created.slug, quantity: 1 }] })
+    });
+    expect((await legacyHttpOrder()).status).toBe(400);
+    await expect(publicMenuService.createWhatsappOrder("stage3-r1", {
+      items: [{ productSlug: created.slug, quantity: 1 }]
+    })).rejects.toBeInstanceOf(BadRequestException);
+    // Defense in depth: even a direct DB availability flip cannot turn this
+    // persisted Network identity into a priced Legacy product or valid Quote.
+    await prisma.product.update({ where: { id }, data: { isAvailable: true } });
+    const forcedPublic = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/${id}/configuration`);
+    expect(forcedPublic.status).toBe(200);
+    expect(await forcedPublic.json()).toMatchObject({ data: { orderable: false, minimumPrice: null, priceDisplay: "UNAVAILABLE" } });
+    const forcedQuote = await postQuote("stage3-r1", id, { selection: {
+      schemaVersion: 1, productId: id, configurationRevision: 1, groups: []
+    } });
+    expect(forcedQuote.status).toBe(409);
+    expect(await forcedQuote.json()).toMatchObject({ error: "CONFIGURATION_NOT_ORDERABLE" });
+    expect((await legacyHttpOrder()).status).toBe(400);
+    await expect(publicMenuService.createWhatsappOrder("stage3-r1", {
+      items: [{ productSlug: created.slug, quantity: 1 }]
+    })).rejects.toBeInstanceOf(BadRequestException);
+    await prisma.product.update({ where: { id }, data: { isAvailable: false } });
 
-    const tree = baseConfiguration(id);
+    const tree = baseConfiguration(id, 2);
     const save = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
-      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 0, configuration: tree })
+      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 1, configuration: tree })
     });
     expect(save.status).toBe(200);
-    expect(await save.json()).toMatchObject({ data: { configurationVersion: 1, mode: "NETWORK", basePrice: null, isAvailable: false } });
+    expect(await save.json()).toMatchObject({ data: { configurationVersion: 2, mode: "NETWORK", basePrice: null, isAvailable: false } });
     const reload = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, { headers });
-    expect(await reload.json()).toMatchObject({ data: { configurationTree: tree, configurationVersion: 1, basePrice: null } });
+    expect(await reload.json()).toMatchObject({ data: { configurationTree: tree, configurationVersion: 2, basePrice: null } });
     const stale = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
-      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 0, configuration: tree })
+      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 1, configuration: tree })
     });
     expect(stale.status).toBe(409);
 
@@ -416,14 +464,49 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     expect(available.status).toBe(200);
     const publicConfiguration = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/${id}/configuration`);
     expect(publicConfiguration.status).toBe(200);
-    expect(await publicConfiguration.json()).toMatchObject({ data: { configurationRevision: 1, previewOnly: true, orderable: true } });
+    expect(await publicConfiguration.json()).toMatchObject({ data: { configurationRevision: 2, previewOnly: true, orderable: true } });
     const quote = await postQuote("stage3-r1", id, { selection: {
-      schemaVersion: 1, productId: id, configurationRevision: 1,
+      schemaVersion: 1, productId: id, configurationRevision: 2,
       groups: [{ type: "SIZE", groupId: `${id}-sizes`, sizeChoiceId: `${id}-small` }]
     } });
     expect(quote.status).toBe(200);
     expect(await quote.json()).toMatchObject({ data: { trustedTotal: "10.000001", baseIgnored: true } });
     expect((await prisma.product.findUniqueOrThrow({ where: { id } })).basePrice).toBeNull();
+    const zeroTree = { ...tree, revision: 3, basePrice: "0" };
+    const zeroSave = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
+      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 2, configuration: zeroTree })
+    });
+    expect(zeroSave.status).toBe(200);
+    expect((await prisma.product.findUniqueOrThrow({ where: { id } })).basePrice?.toString()).toBe("0");
+  });
+
+  it("keeps Network identity during a configuration-save/availability race", async () => {
+    const headers = {
+      authorization: `Bearer ${ownerToken}`,
+      "x-restaurant-id": "stage3-r1",
+      "content-type": "application/json"
+    };
+    const createdResponse = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers, body: JSON.stringify({ name: "Concurrent Network Setup", configurationIntent: "NETWORK_SETUP" })
+    });
+    expect(createdResponse.status).toBe(201);
+    const { id, slug } = (await createdResponse.json()).data as { id: string; slug: string };
+    const configuration = baseConfiguration(id, 2);
+    const [save, toggle] = await Promise.all([
+      fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
+        method: "PUT", headers, body: JSON.stringify({ expectedVersion: 1, configuration })
+      }),
+      fetch(`${httpOrigin}/dashboard/products/${id}/toggle-availability`, { method: "PATCH", headers })
+    ]);
+    expect(save.status).toBe(200);
+    expect([200, 409]).toContain(toggle.status);
+    const stored = await prisma.product.findUniqueOrThrow({ where: { id } });
+    expect(stored.configurationVersion).toBe(2);
+    expect(stored.configurationTree).toEqual(configuration);
+    expect(stored.basePrice).toBeNull();
+    await expect(publicMenuService.createWhatsappOrder("stage3-r1", {
+      items: [{ productSlug: slug, quantity: 1 }]
+    })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("atomically creates and updates a network tree and dependency index", async () => {
@@ -507,7 +590,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     for (const id of ["cycle-b", "cycle-c"]) {
       await prisma.product.update({
         where: { id },
-        data: { configurationTree: baseConfiguration(id), configurationVersion: 1, isAvailable: false }
+        data: { configurationTree: baseConfiguration(id), configurationVersion: 1, basePrice: null, isAvailable: false }
       });
     }
     await prisma.productConfigurationDependency.createMany({ data: [

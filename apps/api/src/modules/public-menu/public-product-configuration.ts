@@ -7,6 +7,7 @@ import {
   type ProductConfigurationContext,
   type ProductConfigurationV1
 } from "@menu/shared";
+import { isUnpricedNetworkSetup } from "../products/network-setup-configuration";
 
 export type PublicConfigurationProductRecord = {
   id: string;
@@ -152,7 +153,7 @@ export function resolvePublicProductConfiguration(args: {
       catalogId: args.restaurantId,
       configuration,
       available,
-      orderable: available && structurallyValid && args.capabilityEnabled
+      orderable: available && structurallyValid && !isUnpricedNetworkSetup(configuration) && args.capabilityEnabled
     });
   }
 
@@ -202,7 +203,7 @@ export function resolvePublicProductConfiguration(args: {
       name: product.name,
       mode,
       available,
-      orderable: available && args.capabilityEnabled && (mode === "LEGACY" || validateConfiguration(configuration).length === 0),
+      orderable: available && args.capabilityEnabled && (mode === "LEGACY" || (validateConfiguration(configuration).length === 0 && !isUnpricedNetworkSetup(configuration))),
       configuration
     }];
   });

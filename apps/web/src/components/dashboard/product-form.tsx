@@ -745,7 +745,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           name: form.name,
           description: form.description,
           ...(!productId && configurationMode === "NETWORK" ? { configurationIntent: "NETWORK_SETUP" } : {}),
-          ...((productId && configurationMode === "NETWORK") || form.basePrice.trim() === "" ? {} : { basePrice: Number(form.basePrice) }),
+          ...(configurationMode === "NETWORK" || form.basePrice.trim() === "" ? {} : { basePrice: Number(form.basePrice) }),
           currency: form.currency,
           categoryId: form.categoryId || undefined,
           moodKey: form.moodKeys[0] || undefined,
@@ -803,7 +803,7 @@ export function ProductForm({ productId }: { productId?: string }) {
         if (typeof createdId !== "string" || !createdId) {
           throw new Error("تم إنشاء الصنف لكن لم يُرجع الخادم معرّفه. افتحه من قائمة المنتجات لإكمال الشبكة.");
         }
-        setMessage("تم إنشاء الصنف غير متاح للعامة. أكمل الشبكة ثم فعّل التوفر يدويًا.");
+        setMessage("تم إنشاء شبكة غير مسعّرة وغير متاحة للعامة. أكمل التكوين ثم فعّل التوفر يدويًا.");
         router.push(`/dashboard/products/${encodeURIComponent(createdId)}/edit`);
       } else {
         setMessage("تم حفظ المنتج بنجاح.");
@@ -1064,7 +1064,7 @@ export function ProductForm({ productId }: { productId?: string }) {
               <legend>نوع الصنف الجديد</legend>
               <label><input type="radio" name="creation-mode" checked={configurationMode === "LEGACY"} onChange={() => setConfigurationMode("LEGACY")} /> صنف عادي بسعر أساسي</label>
               <label><input type="radio" name="creation-mode" checked={configurationMode === "NETWORK"} onChange={() => setConfigurationMode("NETWORK")} /> إعداد شبكة تكوين (أحجام، إضافات، كومبوهات)</label>
-              {configurationMode === "NETWORK" ? <p>أدخل سعرًا تمهيديًا صريحًا لأن قاعدة البيانات تتطلب سعرًا قبل حفظ الشبكة. سيبقى الصنف غير متاح للعامة، ويمكنك جعل Base Price بقيمة null في المحرر. فعّل التوفر يدويًا بعد الحفظ.</p> : null}
+              {configurationMode === "NETWORK" ? <p>سيُنشأ الصنف بشبكة فارغة وBase Price بلا قيمة، دون سعر تمهيدي أو إتاحة للعامة. أكمل الأحجام أو الأسعار في المحرر قبل تفعيل التوفر.</p> : null}
             </fieldset>
           ) : null}
           <label className="full">
@@ -1217,7 +1217,7 @@ export function ProductForm({ productId }: { productId?: string }) {
             )}
           </div>
 
-          <label>
+          {productId || configurationMode === "LEGACY" ? <label>
             <span>السعر</span>
             <input
               className="no-number-spin"
@@ -1230,7 +1230,7 @@ export function ProductForm({ productId }: { productId?: string }) {
               disabled={Boolean(productId && configurationMode === "NETWORK")}
             />
             {productId && configurationMode === "NETWORK" ? <small className="field-hint">يُدار السعر الأساسي لمنتج Network من محرر الشبكة فقط، ويمكن تركه null دون تحويله إلى صفر.</small> : null}
-          </label>
+          </label> : null}
 
           <label>
             <span>العملة</span>
@@ -1497,7 +1497,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
           {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}
           <b>
-            {configurationMode === "NETWORK" ? productId ? "السعر من شبكة التكوين" : "سعر تمهيدي غير معروض للعامة" : form.basePrice.trim() ? `${form.basePrice} ${form.currency}` : "لا يوجد سعر أساسي"}
+            {configurationMode === "NETWORK" ? productId ? "السعر من شبكة التكوين" : "شبكة غير مسعّرة بعد" : form.basePrice.trim() ? `${form.basePrice} ${form.currency}` : "لا يوجد سعر أساسي"}
           </b>
         </aside>
       </section>

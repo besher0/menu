@@ -17,6 +17,7 @@ import {
   ProductConfigurationConflictError,
   ProductConfigurationValidationError
 } from "./product-configuration.persistence";
+import { isUnpricedNetworkSetup } from "./network-setup-configuration";
 
 const SERIALIZABLE_RETRY_LIMIT = 3;
 
@@ -63,9 +64,11 @@ export class ProductConfigurationService {
       orderabilityState:
         mode === "LEGACY"
           ? "LEGACY"
-          : capabilityAssigned
-            ? "PUBLIC_INTEGRATION_PENDING"
-            : "ACTION_REQUIRED_CAPABILITY"
+          : !capabilityAssigned
+            ? "ACTION_REQUIRED_CAPABILITY"
+            : isUnpricedNetworkSetup(product.configurationTree)
+              ? "SETUP_INCOMPLETE"
+              : "PUBLIC_INTEGRATION_PENDING"
     };
   }
 

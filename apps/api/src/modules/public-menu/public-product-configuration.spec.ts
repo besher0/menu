@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProductConfigurationV1 } from "@menu/shared";
+import { initialNetworkSetupConfiguration } from "../products/network-setup-configuration";
 import {
   resolvePublicProductConfiguration,
   type PublicConfigurationProductRecord
@@ -43,6 +44,22 @@ function pizza(productId = "pizza"): ProductConfigurationV1 {
 }
 
 describe("public product configuration resolver", () => {
+  it("does not treat an unpriced Network setup as an orderable linked source even if availability is forced on", () => {
+    const source = product("source", initialNetworkSetupConfiguration("source"), { basePrice: null });
+    const owner = product("combo", {
+      schemaVersion: 1, productId: "combo", revision: 1, basePrice: "0",
+      groups: [{ type: "OPTIONS", id: "slots", label: "Slots", min: 1, max: 1, includedQuantity: 0, options: [{
+        id: "slot", label: "Source", price: "10", minQuantity: 1, maxQuantity: 1,
+        linkedProduct: { sourceProductId: "source", mode: "ORIGINAL" }
+      }] }]
+    });
+    const result = resolvePublicProductConfiguration({
+      restaurantId: "r1", owner, catalogProducts: [owner, source], capabilityEnabled: true
+    });
+    expect(result?.linkedProducts).toEqual([expect.objectContaining({ productId: "source", orderable: false })]);
+    expect(result?.orderable).toBe(false);
+  });
+
   it("returns a decimal-safe minimum and preview-only contract", () => {
     const owner = product("pizza", pizza());
     const result = resolvePublicProductConfiguration({

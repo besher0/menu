@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
@@ -7,6 +8,7 @@ import { ProductLibraryService } from "../media/product-library.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsQueryDto } from "./dto/list-products-query.dto";
+import { initialNetworkSetupConfiguration, isUnpricedNetworkSetup } from "./network-setup-configuration";
 
 @Injectable()
 export class ProductsService {
@@ -76,8 +78,11 @@ export class ProductsService {
     const networkSetup = dto.configurationIntent === "NETWORK_SETUP";
     if (networkSetup) {
       await this.featureFlags.assertAssignedFeature(restaurantId, "PRODUCT_CONFIGURATION");
+      if (dto.basePrice !== undefined) {
+        throw new BadRequestException("Network setup must not contain a provisional base price");
+      }
     }
-    if (dto.basePrice === undefined) {
+    if (!networkSetup && dto.basePrice === undefined) {
       throw new BadRequestException("Legacy product creation requires basePrice");
     }
     const limit = await this.featureFlags.getFeatureLimit(restaurantId, "MAX_PRODUCTS");
@@ -95,18 +100,24 @@ export class ProductsService {
     }
 
     const productSlug = await this.uniqueProductSlug(restaurantId, dto.slug || dto.name);
+    const setupProductId = networkSetup ? randomUUID() : undefined;
+    const setupConfiguration = setupProductId ? initialNetworkSetupConfiguration(setupProductId) : undefined;
 
     const product = await this.prisma.product.create({
       data: {
+        ...(setupProductId ? { id: setupProductId } : {}),
         restaurantId,
         categoryId: dto.categoryId,
         name: dto.name,
         slug: productSlug,
         description: dto.description,
-        basePrice: dto.basePrice,
-        // The Stage 2C DB constraint requires a price while the tree is null.
-        // An explicit Network setup starts hidden. Setup intent is not stored;
-        // do not treat this as a persistent activation guard.
+        basePrice: networkSetup ? null : dto.basePrice,
+        ...(setupConfiguration ? {
+          configurationTree: setupConfiguration as Prisma.InputJsonValue,
+          configurationVersion: setupConfiguration.revision
+        } : {}),
+        // One INSERT persists Network identity and null Base atomically; no
+        // priced Legacy shell is ever visible, even if creation is interrupted.
         ...(networkSetup ? { isAvailable: false } : {}),
         currency: dto.currency ?? "ل.س",
         moodKey: this.serializeMoodKeyValue(this.normalizeMoodKeysInput(dto)),
@@ -412,6 +423,14 @@ export class ProductsService {
 
     if (!product) {
       throw new NotFoundException("Product not found");
+    }
+
+    if (!product.isAvailable && isUnpricedNetworkSetup(product.configurationTree)) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: "PRODUCT_CONFIGURATION_SETUP_INCOMPLETE",
+        message: "Complete the Network configuration before making this product available."
+      });
     }
 
     await this.prisma.product.update({
