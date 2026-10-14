@@ -744,7 +744,8 @@ export function ProductForm({ productId }: { productId?: string }) {
         body: JSON.stringify({
           name: form.name,
           description: form.description,
-          ...(configurationMode === "NETWORK" || form.basePrice.trim() === "" ? {} : { basePrice: Number(form.basePrice) }),
+          ...(!productId && configurationMode === "NETWORK" ? { configurationIntent: "NETWORK_SETUP" } : {}),
+          ...((productId && configurationMode === "NETWORK") || form.basePrice.trim() === "" ? {} : { basePrice: Number(form.basePrice) }),
           currency: form.currency,
           categoryId: form.categoryId || undefined,
           moodKey: form.moodKeys[0] || undefined,
@@ -796,8 +797,18 @@ export function ProductForm({ productId }: { productId?: string }) {
       }
 
       setStatus("success");
-      setMessage("تم حفظ المنتج بنجاح.");
-      if (!configurationDirty) setTimeout(() => router.push("/dashboard/products"), 700);
+      if (!productId && configurationMode === "NETWORK") {
+        const payload = await response.json().catch(() => null);
+        const createdId = payload?.data?.id ?? payload?.id;
+        if (typeof createdId !== "string" || !createdId) {
+          throw new Error("تم إنشاء الصنف لكن لم يُرجع الخادم معرّفه. افتحه من قائمة المنتجات لإكمال الشبكة.");
+        }
+        setMessage("تم إنشاء الصنف غير متاح للعامة. أكمل الشبكة ثم فعّل التوفر يدويًا.");
+        router.push(`/dashboard/products/${encodeURIComponent(createdId)}/edit`);
+      } else {
+        setMessage("تم حفظ المنتج بنجاح.");
+        if (!configurationDirty) setTimeout(() => router.push("/dashboard/products"), 700);
+      }
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "حدث خطأ أثناء الحفظ.");
@@ -1037,8 +1048,8 @@ export function ProductForm({ productId }: { productId?: string }) {
             <ArrowRight size={18} />
             المنتجات
           </Link>
-          <h1>إضافة منتج</h1>
-          <p>الحقول هنا مطابقة لمسار API الحالي، وسيتم توسيعها لاحقًا للخيارات والإضافات والوسائط.</p>
+          <h1>{productId ? "تعديل المنتج" : "إضافة منتج"}</h1>
+          <p>{productId ? "عدّل بيانات الصنف هنا، وشبكة التكوين في المحرر أسفل الصفحة." : "أنشئ صنفًا عاديًا أو ابدأ إعداد شبكة ثم أكملها في المحرر."}</p>
         </div>
         <button className="primary-action" type="submit" disabled={status === "saving"}>
           {status === "saving" ? <Loader2 className="spin" size={22} /> : <Save size={22} />}
@@ -1048,6 +1059,14 @@ export function ProductForm({ productId }: { productId?: string }) {
 
       <section className="product-form-layout">
         <div className="product-form-card">
+          {!productId ? (
+            <fieldset className="full product-creation-mode">
+              <legend>نوع الصنف الجديد</legend>
+              <label><input type="radio" name="creation-mode" checked={configurationMode === "LEGACY"} onChange={() => setConfigurationMode("LEGACY")} /> صنف عادي بسعر أساسي</label>
+              <label><input type="radio" name="creation-mode" checked={configurationMode === "NETWORK"} onChange={() => setConfigurationMode("NETWORK")} /> إعداد شبكة تكوين (أحجام، إضافات، كومبوهات)</label>
+              {configurationMode === "NETWORK" ? <p>أدخل سعرًا تمهيديًا صريحًا لأن قاعدة البيانات تتطلب سعرًا قبل حفظ الشبكة. سيبقى الصنف غير متاح للعامة، ويمكنك جعل Base Price بقيمة null في المحرر. فعّل التوفر يدويًا بعد الحفظ.</p> : null}
+            </fieldset>
+          ) : null}
           <label className="full">
             <span>المطعم</span>
             <input value={selectedRestaurantName || selectedRestaurantId} readOnly required />
@@ -1206,10 +1225,11 @@ export function ProductForm({ productId }: { productId?: string }) {
               onChange={(event) => update("basePrice", event.target.value)}
               type="number"
               min="0"
-              required={!productId || configurationMode === "LEGACY"}
+              step="0.000001"
+              required={!productId}
               disabled={Boolean(productId && configurationMode === "NETWORK")}
             />
-            {productId && configurationMode === "NETWORK" ? <small className="field-hint">يُدار السعر الأساسي لمنتج Network من محرر الشبكة أدناه فقط.</small> : null}
+            {productId && configurationMode === "NETWORK" ? <small className="field-hint">يُدار السعر الأساسي لمنتج Network من محرر الشبكة فقط، ويمكن تركه null دون تحويله إلى صفر.</small> : null}
           </label>
 
           <label>
@@ -1477,7 +1497,7 @@ export function ProductForm({ productId }: { productId?: string }) {
           <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
           {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}
           <b>
-            {configurationMode === "NETWORK" ? "السعر من شبكة التكوين" : `${form.basePrice || "0"} ${form.currency}`}
+            {configurationMode === "NETWORK" ? productId ? "السعر من شبكة التكوين" : "سعر تمهيدي غير معروض للعامة" : form.basePrice.trim() ? `${form.basePrice} ${form.currency}` : "لا يوجد سعر أساسي"}
           </b>
         </aside>
       </section>

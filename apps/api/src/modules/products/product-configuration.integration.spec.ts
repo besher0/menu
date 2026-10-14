@@ -352,6 +352,80 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     await prisma.$disconnect();
   });
 
+  it("creates a hidden Network setup through the real Dashboard API, then saves and reloads its tree", async () => {
+    const headers = {
+      authorization: `Bearer ${ownerToken}`,
+      "x-restaurant-id": "stage3-r1",
+      "content-type": "application/json"
+    };
+    const createBody = { name: "Stage 6E Setup Pizza", basePrice: 12.5, currency: "EGP", configurationIntent: "NETWORK_SETUP" };
+    const employee = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers: { ...headers, authorization: `Bearer ${employeeToken}` }, body: JSON.stringify(createBody)
+    });
+    expect(employee.status).toBe(403);
+    expect(await employee.json()).toMatchObject({ error: "PRODUCT_CONFIGURATION_PERMISSION_DENIED" });
+
+    const missingPrice = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers, body: JSON.stringify({ ...createBody, basePrice: undefined })
+    });
+    expect(missingPrice.status).toBe(400);
+    const invalidIntent = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers, body: JSON.stringify({ ...createBody, configurationIntent: "UNKNOWN" })
+    });
+    expect(invalidIntent.status).toBe(400);
+
+    await prisma.subscriptionFeature.update({ where: { id: "stage3-feature" }, data: { enabled: false } });
+    const noCapability = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers, body: JSON.stringify(createBody)
+    });
+    expect(noCapability.status).toBe(403);
+    await prisma.subscriptionFeature.update({ where: { id: "stage3-feature" }, data: { enabled: true } });
+
+    const createdResponse = await fetch(`${httpOrigin}/dashboard/products`, {
+      method: "POST", headers, body: JSON.stringify(createBody)
+    });
+    expect(createdResponse.status).toBe(201);
+    const created = (await createdResponse.json()).data;
+    expect(created).toMatchObject({ configurationMode: "LEGACY", configurationVersion: 0, basePrice: 12.5, isAvailable: false });
+    const id = created.id as string;
+    const patchIntent = await fetch(`${httpOrigin}/dashboard/products/${id}`, {
+      method: "PATCH", headers, body: JSON.stringify({ configurationIntent: "NETWORK_SETUP", name: "Unexpected" })
+    });
+    expect(patchIntent.status).toBe(400);
+
+    const initial = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, { headers });
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toMatchObject({ data: { configurationVersion: 0, configurationTree: null, basePrice: "12.5" } });
+    const hidden = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/${id}/configuration`);
+    expect(hidden.status).toBe(404);
+
+    const tree = baseConfiguration(id);
+    const save = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
+      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 0, configuration: tree })
+    });
+    expect(save.status).toBe(200);
+    expect(await save.json()).toMatchObject({ data: { configurationVersion: 1, mode: "NETWORK", basePrice: null, isAvailable: false } });
+    const reload = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, { headers });
+    expect(await reload.json()).toMatchObject({ data: { configurationTree: tree, configurationVersion: 1, basePrice: null } });
+    const stale = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
+      method: "PUT", headers, body: JSON.stringify({ expectedVersion: 0, configuration: tree })
+    });
+    expect(stale.status).toBe(409);
+
+    const available = await fetch(`${httpOrigin}/dashboard/products/${id}/toggle-availability`, { method: "PATCH", headers });
+    expect(available.status).toBe(200);
+    const publicConfiguration = await fetch(`${httpOrigin}/public/menus/stage3-r1/products/${id}/configuration`);
+    expect(publicConfiguration.status).toBe(200);
+    expect(await publicConfiguration.json()).toMatchObject({ data: { configurationRevision: 1, previewOnly: true, orderable: true } });
+    const quote = await postQuote("stage3-r1", id, { selection: {
+      schemaVersion: 1, productId: id, configurationRevision: 1,
+      groups: [{ type: "SIZE", groupId: `${id}-sizes`, sizeChoiceId: `${id}-small` }]
+    } });
+    expect(quote.status).toBe(200);
+    expect(await quote.json()).toMatchObject({ data: { trustedTotal: "10.000001", baseIgnored: true } });
+    expect((await prisma.product.findUniqueOrThrow({ where: { id } })).basePrice).toBeNull();
+  });
+
   it("atomically creates and updates a network tree and dependency index", async () => {
     const first = await service.save("stage3-r1", "owner-atomic", {
       expectedVersion: 0,

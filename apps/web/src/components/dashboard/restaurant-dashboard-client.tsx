@@ -50,7 +50,8 @@ type Overview = {
 type Product = {
   id: string;
   name: string;
-  basePrice: number;
+  basePrice: number | null;
+  configurationMode?: "LEGACY" | "NETWORK";
   currency: string;
   isAvailable: boolean;
   isNew: boolean;
@@ -402,8 +403,9 @@ function ProductsTable() {
   }
 
   function startPriceEdit(product: Product) {
+    if (product.configurationMode === "NETWORK") return;
     setEditingPriceId(product.id);
-    setPriceDraft(String(product.basePrice));
+    setPriceDraft(product.basePrice === null ? "" : String(product.basePrice));
   }
 
   function cancelPriceEdit() {
@@ -540,7 +542,7 @@ function ProductsTable() {
                             autoFocus
                             className="inline-price-input"
                             min="0"
-                            step="0.01"
+                            step="0.000001"
                             type="number"
                             value={priceDraft}
                             onBlur={() => void savePrice(product)}
@@ -551,8 +553,8 @@ function ProductsTable() {
                             }}
                           />
                         ) : (
-                          <button className="inline-price" type="button" onDoubleClick={() => startPriceEdit(product)}>
-                            {product.basePrice} {product.currency}
+                          <button className="inline-price" type="button" onDoubleClick={() => startPriceEdit(product)} title={product.configurationMode === "NETWORK" ? "يُدار السعر من محرر الشبكة" : undefined}>
+                            {product.configurationMode === "NETWORK" ? "شبكة التكوين" : product.basePrice === null ? "بلا سعر" : `${product.basePrice} ${product.currency}`}
                           </button>
                         )}
                       </td>

@@ -45,6 +45,7 @@ export class ProductsController {
 
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateProductDto) {
+    if (dto.configurationIntent === "NETWORK_SETUP") this.assertCanManageConfiguration(request);
     return this.productsService.create(request.restaurant!.id, dto, request.user?.role === "SUPER_ADMIN");
   }
 

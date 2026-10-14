@@ -73,6 +73,10 @@ export class ProductsService {
   }
 
   async create(restaurantId: string, dto: CreateProductDto, allowAdvancedMedia = false) {
+    const networkSetup = dto.configurationIntent === "NETWORK_SETUP";
+    if (networkSetup) {
+      await this.featureFlags.assertAssignedFeature(restaurantId, "PRODUCT_CONFIGURATION");
+    }
     if (dto.basePrice === undefined) {
       throw new BadRequestException("Legacy product creation requires basePrice");
     }
@@ -100,6 +104,10 @@ export class ProductsService {
         slug: productSlug,
         description: dto.description,
         basePrice: dto.basePrice,
+        // The Stage 2C DB constraint requires a price while the tree is null.
+        // An explicit Network setup starts hidden. Setup intent is not stored;
+        // do not treat this as a persistent activation guard.
+        ...(networkSetup ? { isAvailable: false } : {}),
         currency: dto.currency ?? "ل.س",
         moodKey: this.serializeMoodKeyValue(this.normalizeMoodKeysInput(dto)),
         ingredients: dto.ingredients as Prisma.InputJsonValue | undefined,
@@ -333,6 +341,9 @@ export class ProductsService {
   }
 
   async update(restaurantId: string, id: string, dto: CreateProductDto, allowAdvancedMedia = false) {
+    if (dto.configurationIntent !== undefined) {
+      throw new BadRequestException("configurationIntent is only accepted when creating a product");
+    }
     const existing = await this.prisma.product.findFirst({
       where: { id, restaurantId, deletedAt: null },
       include: {
