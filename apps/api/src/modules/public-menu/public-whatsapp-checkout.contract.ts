@@ -93,6 +93,9 @@ export function parseWhatsappCheckoutRequest(value: unknown): WhatsappCheckoutRe
       ...(raw.expectedUnitPrice !== undefined ? { expectedUnitPrice: raw.expectedUnitPrice as string } : {}),
       ...(raw.expectedLinkedSourceRevisions !== undefined ? { expectedLinkedSourceRevisions: raw.expectedLinkedSourceRevisions as WhatsappCheckoutLine["expectedLinkedSourceRevisions"] } : {}) };
   });
+  if (!items.some((line) => line.mode === "NETWORK")) {
+    fail("LEGACY_CHECKOUT_REQUIRED", "Legacy-only carts must use the existing WhatsApp order checkout.");
+  }
   const branchSlug = optionalText(value.branchSlug, "branchSlug", 128);
   return { locale: value.locale as "ar" | "en", ...(branchSlug ? { branchSlug } : {}),
     ...parseNetworkOrderDetails(value), items };

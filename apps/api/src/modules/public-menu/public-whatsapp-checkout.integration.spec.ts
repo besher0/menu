@@ -158,17 +158,19 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     else process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY = oldKey;
   });
 
-  it("prepares Legacy-only and confirms exact Decimal prices without a stored Order", async () => {
+  it("rejects Legacy-only on both trusted endpoints before creating a draft or Order", async () => {
     const before = await prisma.order.count();
     const payload = request([legacyLine], { customerName: "Demo Customer", orderNote: "Less salt" });
     const prepared = await prepare(payload);
-    expect(prepared.status).toBe(200);
-    expect(prepared.body.draft.totalAmount).toBe("24.000002");
-    const sent = await confirm(payload, prepared.body.acceptanceToken);
-    expect(sent.status).toBe(200);
-    expect(sent.body.whatsappUrl).toContain("https://wa.me/201000000000?text=");
-    expect(decodeURIComponent(sent.body.whatsappUrl)).toContain("Legacy Salad");
-    expect(sent.body.message).toContain("24.000002 EGP");
+    expect(prepared.status).toBe(400);
+    expect(prepared.body.error).toBe("LEGACY_CHECKOUT_REQUIRED");
+    expect(prepared.body).not.toHaveProperty("acceptanceToken");
+    const mixed = await prepare(request([legacyLine, networkLine]));
+    expect(mixed.status).toBe(200);
+    const sent = await confirm(payload, mixed.body.acceptanceToken);
+    expect(sent.status).toBe(400);
+    expect(sent.body.error).toBe("LEGACY_CHECKOUT_REQUIRED");
+    expect(sent.body).not.toHaveProperty("whatsappUrl");
     expect(await prisma.order.count()).toBe(before);
   });
 
@@ -204,27 +206,27 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   });
 
   it("rejects a WhatsApp URL that exceeds the safe length before acceptance", async () => {
-    const lines = Array.from({ length: 50 }, (_, index) => ({ ...legacyLine,
+    const lines = Array.from({ length: 49 }, (_, index) => ({ ...legacyLine,
       lineId: `long-${index}`, quantity: 1, note: "Long note ".repeat(50) }));
-    const response = await prepare(request(lines));
+    const response = await prepare(request([...lines, networkLine]));
     expect(response.status).toBe(409);
     expect(response.body.error).toBe("WHATSAPP_MESSAGE_TOO_LONG");
     expect(response.body.acceptanceToken).toBeUndefined();
   });
 
   it("requires fresh acceptance after a price change and never sends the stale total", async () => {
-    const payload = request([legacyLine]);
+    const payload = request([legacyLine, networkLine]);
     const prepared = await prepare(payload);
     await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "13.000001" } });
     const stale = await confirm(payload, prepared.body.acceptanceToken);
     expect(stale.status).toBe(409);
     expect(stale.body.error).toBe("WHATSAPP_CHECKOUT_REQUIRES_ACCEPTANCE");
-    expect(stale.body.changedDraft.totalAmount).toBe("26.000002");
-    expect(stale.body.changedMessagePreview).toContain("26.000002 EGP");
+    expect(stale.body.changedDraft.totalAmount).toBe("556.00001");
+    expect(stale.body.changedMessagePreview).toContain("556.00001 EGP");
     expect(stale.body.whatsappUrl).toBeUndefined();
     const accepted = await confirm(payload, stale.body.acceptanceToken);
     expect(accepted.status).toBe(200);
-    expect(accepted.body.message).toContain("26.000002 EGP");
+    expect(accepted.body.message).toContain("556.00001 EGP");
   });
 
   it("rejects stale revision, unavailable product, missing capability, foreign tenant and client totals", async () => {
@@ -234,30 +236,32 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { isAvailable: true } });
     await prisma.subscriptionFeature.update({ where: { id: "s6e2-network" }, data: { enabled: false } });
     expect((await prepare(request([networkLine]))).status).toBe(403);
-    expect((await prepare(request([{ ...legacyLine, productSlug: "foreign" }]))).status).toBe(409);
-    expect((await prepare({ ...request([legacyLine]), totalAmount: "1" })).status).toBe(400);
-    expect((await prepare(request([legacyLine]), "s6e2-r2")).status).toBe(409);
+    await prisma.subscriptionFeature.update({ where: { id: "s6e2-network" }, data: { enabled: true } });
+    expect((await prepare(request([{ ...legacyLine, productSlug: "foreign" }, networkLine]))).status).toBe(409);
+    expect((await prepare({ ...request([legacyLine, networkLine]), totalAmount: "1" })).status).toBe(400);
+    expect((await prepare(request([legacyLine, networkLine]), "s6e2-r2")).status).toBe(409);
   });
 
   it("keeps the public feature OFF by default and refuses a missing signing key", async () => {
     delete process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT;
-    expect((await prepare(request([legacyLine]))).status).toBe(403);
+    expect((await prepare(request([networkLine]))).status).toBe(403);
     process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "1";
     delete process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY;
-    expect((await prepare(request([legacyLine]))).status).toBe(503);
+    expect((await prepare(request([networkLine]))).status).toBe(503);
     process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY = randomBytes(32).toString("hex");
   });
 
   it("rejects direct HTTP price injection, wrong token, oversized text and invalid choices", async () => {
-    const tampered = await prepare(request([{ ...legacyLine, unitPrice: "0" }]));
+    const tampered = await prepare(request([{ ...legacyLine, unitPrice: "0" }, networkLine]));
     expect(tampered.status).toBe(400);
-    const prepared = await prepare(request([legacyLine]));
-    expect((await confirm(request([legacyLine]), "v1.invalid.invalid")).status).toBe(409);
+    const prepared = await prepare(request([legacyLine, networkLine]));
+    expect(prepared.status).toBe(200);
+    expect((await confirm(request([legacyLine, networkLine]), "v1.invalid.invalid")).status).toBe(409);
     expect((await prepare(request([{ ...networkLine, selection: {
       ...pizzaSelection(), groups: [{ type: "SIZE", groupId: "sizes", sizeChoiceId: "missing" }]
     } }]))).status).toBe(400);
-    expect((await prepare(request([legacyLine], { orderNote: "x".repeat(501) }))).status).toBe(400);
-    expect((await prepare(request([legacyLine], { orderNote: "injected\nproduct" }))).status).toBe(400);
+    expect((await prepare(request([legacyLine, networkLine], { orderNote: "x".repeat(501) }))).status).toBe(400);
+    expect((await prepare(request([legacyLine, networkLine], { orderNote: "injected\nproduct" }))).status).toBe(400);
   });
 
   it("fails closed when revision, availability, linked source or capability changes after prepare", async () => {
@@ -314,10 +318,10 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   });
 
   it("rechecks quantity, notes, restaurant phone and confirmation binding", async () => {
-    const payload = request([{ ...legacyLine, quantity: 3, note: "No onion" }], { customerName: "Sample", customerPhone: "0000000000" });
+    const payload = request([{ ...legacyLine, quantity: 3, note: "No onion" }, networkLine], { customerName: "Sample", customerPhone: "0000000000" });
     const prepared = await prepare(payload);
-    expect(prepared.body.draft.totalAmount).toBe("36.000003");
-    expect((await confirm({ ...payload, items: [{ ...legacyLine, quantity: 2 }] }, prepared.body.acceptanceToken)).status).toBe(409);
+    expect(prepared.body.draft.items[0].lineTotal).toBe("36.000003");
+    expect((await confirm({ ...payload, items: [{ ...legacyLine, quantity: 2 }, networkLine] }, prepared.body.acceptanceToken)).status).toBe(409);
     const confirmed = await confirm(payload, prepared.body.acceptanceToken);
     expect(confirmed.status).toBe(200);
     expect(confirmed.body.message).toContain("No onion");
