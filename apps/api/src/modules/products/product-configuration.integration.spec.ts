@@ -659,7 +659,19 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
 
   it("protects linked sources from service soft-delete and database hard-delete", async () => {
     await expect(productsService.delete("stage3-r1", "source-original")).rejects.toBeInstanceOf(ConflictException);
-    await expect(prisma.product.delete({ where: { id: "source-original" } })).rejects.toMatchObject({ code: "P2003" });
+    let deletionError: unknown;
+    try {
+      await prisma.product.delete({ where: { id: "source-original" } });
+    } catch (error) {
+      deletionError = error;
+    }
+    const prismaCode = (deletionError as { code?: string } | undefined)?.code;
+    const message = deletionError instanceof Error ? deletionError.message : "";
+    // Prisma 5.22 may surface PostgreSQL 18's RESTRICT SQLSTATE 23001 as an
+    // unknown request error instead of P2003; both must name the same FK.
+    expect(prismaCode === "P2003" ||
+      (message.includes('code: "23001"') && message.includes("ProductConfigurationDependency_source_fkey"))).toBe(true);
+    expect(await prisma.product.findUnique({ where: { id: "source-original" } })).not.toBeNull();
   });
 
   it("protects a category containing a linked source product", async () => {
