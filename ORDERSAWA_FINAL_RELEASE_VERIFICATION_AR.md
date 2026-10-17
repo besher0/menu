@@ -2,7 +2,7 @@
 
 ## الخلاصة
 
-الميزات البرمجية الحالية موجودة ومترابطة في المصدر، وفحوص PostgreSQL 18.6 المحلية وShared/API/Web/Typecheck/Build أدناه نجحت ضمن حدودها. **هذا لا يثبت مطابقة Production `menu` ولا نجاح Restore، ولا يجيز نشرًا/ترحيلًا/تفعيلًا.** لم نتصل بقاعدة حقيقية أو Backup أو سيرفر ولم نستخدم `.env` حقيقية. لا Runtime أو Prisma Schema أو Migration رسمية عُدّلت في هذه المهمة.
+الميزات البرمجية الحالية موجودة ومترابطة في المصدر، وفحوص PostgreSQL 18.6 المحلية وShared/API/Web/Typecheck/Build أدناه نجحت ضمن حدودها. في 17 أكتوبر وصل تقرير تدقيق Production read-only جديد وأكد **5/5 Migration checksum match**، و`numeric(10,2)` للأعمدة المالية الأربع، وصفر حالات غير متوافقة في المال التاريخي المفحوص. **هذا لا يثبت تطابق DDL الكامل أو نجاح Restore، ولا يجيز نشرًا/ترحيلًا/تفعيلًا.** لم نتصل بقاعدة حقيقية أو Backup أو سيرفر ولم نستخدم `.env` حقيقية. لا Runtime أو Prisma Schema أو Migration رسمية عُدّلت في هذه المهمة.
 
 ## Source Verification — أين تعمل الميزة
 
@@ -25,6 +25,10 @@
 - نجحت Assertions Stage 6F.3: بقاء منتجات/خيارات/Orders/Analytics Legacy، Base `null` مقابل `0`، Dependency صحيحة، منع Cross-tenant/Self-link، وإدراج Legacy WhatsApp Order جديدة. نجح `Prisma migrate diff` بعد الترحيل بنتيجة فارغة. نجح Prisma Client 5.22 في قراءة/كتابة Product Legacy وNetwork version 2 وLegacy Order/Item وAnalytics؛ لم يتغير Legacy Base `12500`؛ Network Base `0` محفوظة مستقلة عن `null`.
 - Candidate DB Completeness Guard التجريبية **لم تُطبق** ولا تلزم WhatsApp العامة. قيود Stage 2C الخمسة كانت مفعلة ومتحققة؛ Stage 6C طبقت أعمدة التوافق وبنية `NETWORK_TEST` المحروسة.
 - سلوك التراجع: Stage 2C SQL في Transaction؛ الاختبار السابق في Stage 6F.3 أثبت فشلها الذري مع Legacy Base سالبة، وأن Rollback المحروس ممكن قبل وجود Tree ويُحظر بعدها. في هذه المرحلة اختُبر STOP لإعادة التطبيق؛ **لم تُجرّب استعادة Backup حقيقية ولا Rollback إنتاجية**. بعد نشوء بيانات Network، forward-fix/Restore مراجعة بدل Down عمياء.
+
+## فحص ملف Production المرفق — لا اتصال جديد
+
+فُكّ حقل `audit_report` النصي داخل `steep_shadow_51076378_production_menu_2026_10_17_18_28_47_1.json` (SHA-256 `E4152E2449BFCA986DA374B9EE7F5290053D6643A8558E4CC1D2C41754AFE5D3`). يذكر `transaction_read_only=on` وPostgreSQL 18.6 وقاعدة `menu`. طابقت أسماء/Checksums الـMigrations الخمس ملفات Git حرفيًا، وكانت جميعها مكتملة بلا rollback. الـ47 عمودًا و11 فهرسًا و36 قيدًا المفحوصة تؤكد Baseline في نطاق Product/Order/OrderItem وغياب Stage 2C/6C؛ ليست جردًا كاملًا لـ34 جدولًا. عدادات Product Base 930، Order Total 246، OrderItem Unit/Line 272 لكل منهما، مع صفر قيم سالبة/كسر SYP/>6 منازل/overflow/NULL. **لم يشمل المال المجمع `ProductOption.priceDelta`**؛ لا نعلن خلو كل Legacy Options من الكسور. لا نُدرج JSON الخام في ZIP ولا نعتبر Snapshot ضمانًا ضد تغيّر البيانات بعد الفحص. تفاصيل المطابقة وSTOP في خطة الترحيل.
 
 ## اختبارات هذه المرحلة — أعداد فعلية
 
@@ -49,6 +53,6 @@
 
 ## حدود الدليل والمخاطر
 
-الأصل الموثق من `menu` ليس Dump؛ unknown numeric typmods، History checksums، enum labels، check/index/trigger definitions، `db push` drift، أحجام البيانات والقيم السورية التاريخية. لذلك Candidate SQL **مشروطة** ومقفلة على disposable. `P2022` خطر حقيقي إذا نُشر Prisma Client الجديد قبل أعمدة Stage 6C؛ لا يفترض أن Production لديها هذه الأعمدة. Public WhatsApp flag تبقى OFF؛ Legacy فقط يجب اختباره على Restore قبل أي Deployment. Full catalog loading و`FOR SHARE` وRate Limit in-memory دين أداء/تشغيل؛ لا تُحذف الضمانات لأجل سرعة محلية. لم يُختبر PM2 أو Proxy أو Secret Store الحقيقي.
+الملف الجديد حسم typmods الأربعة وChecksums الخمس، لكن ليس Dump أو Schema كاملة؛ يبقى `db push` drift خارج نطاق 47 عمودًا/11 فهرسًا/36 قيدًا، وLegacy Option money، وتغير البيانات بعد Snapshot، وRestore/PM2 الفعلي مجهولًا. لذلك Candidate SQL **مشروطة** ومقفلة على disposable. `P2022` خطر حقيقي إذا نُشر Prisma Client الجديد قبل أعمدة Stage 6C، والتقرير يؤكد غيابها الآن. Public WhatsApp flag تبقى OFF؛ Legacy فقط يجب اختباره على Restore قبل أي Deployment. Full catalog loading و`FOR SHARE` وRate Limit in-memory دين أداء/تشغيل؛ لا تُحذف الضمانات لأجل سرعة محلية. لم يُختبر PM2 أو Proxy أو Secret Store الحقيقي.
 
 تقرير الموافقات وما يلزم من المبرمج: `ORDERSAWA_RELEASE_BLOCKERS_AND_APPROVALS_AR.md`. خطوات PM2: `ORDERSAWA_PM2_DEPLOYMENT_GUIDE_AR.md`. خطة SQL: `ORDERSAWA_PRODUCTION_MIGRATION_PLAN_AR.md`.

@@ -1,13 +1,34 @@
 # OrderSawa — خطة ترحيل قاعدة البيانات المرشحة للمراجعة (Stage 6F.4)
 
-**ليست إذنًا بتنفيذ SQL على `menu`.** لا توجد هنا SQL إنتاجية غير مشروطة: وصف القاعدة الحقيقي المرسل في Stage 6F.3 تقرير metadata مشتق من `schema.json`، لا Dump ولا تدقيق مباشر. لم تُفحص checksums، أو numeric typmods، أو drift الناتج عن `prisma db push`، أو البيانات، ولم يصل تأكيد نجاح استعادة النسخة الاحتياطية. لذلك **STOP** قبل أي DDL على القاعدة الحقيقية إلى أن تُستكمل الفحوص أدناه وتُراجع الخطة على Restore معزولة وتصدر موافقة ترحيل مستقلة.
+**ليست إذنًا بتنفيذ SQL على `menu`.** وصل في 17 أكتوبر 2026 ملف نتائج فحص Production للقراءة فقط، وحُلّل حقل `audit_report` الذي يحتوي JSON نصيًا. أكد الأنواع المالية الأساسية وChecksums الخمس وعدادات المال الأربعة أدناه، دون أن نتصل نحن بقاعدة Production. لا يغطي الملف DDL الكامل لكل جداول النظام أو بيانات Legacy Options، ونتائجه لقطة زمنية يمكن أن تتغير. لم يصل تأكيد نجاح استعادة النسخة الاحتياطية. لذلك **STOP** قبل أي DDL إلى أن تُراجع الفجوات على Restore معزولة وتصدر موافقة ترحيل مستقلة.
 
 ## المصادر والحزمة
 
 - المخطط المعتمد: `apps/api/prisma/schema.prisma` وملفا SQL الرسميان، **دون تعديل**: `apps/api/prisma/migrations/20261012000000_product_configuration_network/migration.sql` (Stage 2C) ثم `apps/api/prisma/migrations/20261013000000_network_order_test_snapshot/migration.sql` (Stage 6C).
-- تقرير الوصف المستلم ومحدوديته: `STAGE_6F_3_PRODUCTION_SCHEMA_RECONCILIATION_REPORT_AR.md` و`ORDERSAWA_DISPOSABLE_MIGRATION_VERIFICATION_AR.md`. القاعدة الموصوفة PostgreSQL 18.6 باسم `menu`، 34 جدولًا/325 عمودًا/37 FK/93 فهرسًا وخمسة أسماء Migrations مطابقة للأسماء في Git؛ **هذا لا يثبت تطابق التعريفات أو checksums**.
+- تقرير Stage 6F.3: `STAGE_6F_3_PRODUCTION_SCHEMA_RECONCILIATION_REPORT_AR.md` و`ORDERSAWA_DISPOSABLE_MIGRATION_VERIFICATION_AR.md`. أضاف مرفق 17 أكتوبر `steep_shadow_51076378_production_menu_2026_10_17_18_28_47_1.json` (SHA-256 `E4152E2449BFCA986DA374B9EE7F5290053D6643A8558E4CC1D2C41754AFE5D3`) تدقيقًا read-only لـ7 مواضع جداول و47 عمودًا و11 فهرسًا و36 قيدًا وثلاث قيم `OrderStatus` وخمس Migrations وأربعة حقول مال مجمّعة؛ لا يتضمن Dump أو جميع تعريفات القاعدة.
 - استعلام metadata للقراءة فقط: `apps/api/prisma/stage6f0-readonly-preflight.sql`. استعلام بيانات إجمالية فقط: `apps/api/prisma/stage6f4-readonly-data-prechecks.sql`. لا يشملان أسماء المطاعم/العملاء ولا أسعارًا فردية؛ يحتاج تشغيلهما على `menu` إلى إذن قراءة مستقل ودور read-only محدد.
 - أداة بروفة معزولة **وليست Production SQL**: `scripts/stage6f4-disposable-migration-candidate.sql`. ترفض أي قاعدة ليست `ordersawa_stage6f4_candidate` على loopback PostgreSQL 18، وتتحقق من Baseline اصطناعية وخمس checksums اصطناعية قبل تضمين الملفين الرسميين. **لا تُعدّل شروطها لتعمل على Production**؛ المبرمج يصوغ إجراء التنفيذ النهائي بعد مطابقة Restore الحقيقية ومراجعة منفصلة.
+
+## مطابقة نتائج Production المرفقة مع Git — 17 أكتوبر 2026
+
+| الفحص | النتيجة من JSON | الاستنتاج |
+|---|---|---|
+| PostgreSQL/الدور | `menu` على PostgreSQL `18.6 (653b019)`؛ `transaction_read_only=on` أثناء الفحص | دليل تقرير قراءة فقط؛ لم نستخدم Credentials أو نتصل نحن. |
+| الأعمدة المالية | `Product.basePrice`, `Order.totalAmount`, `OrderItem.unitPrice/totalPrice` كلها `numeric(10,2)` وNOT NULL | يطابق Baseline الاصطناعية في 6F.3/6F.4؛ Stage 2C تحولها إلى `DECIMAL(24,6)` وBase فقط إلى nullable. |
+| غياب الشبكة | لا `ProductConfigurationDependency` ولا `Product.configurationTree`/`configurationVersion` ولا أعمدة Stage 6C الأربعة | Stage 2C ثم 6C لم تُطبقا بحسب نطاق الفحص؛ Client الجديد لا يصلح قبل أعمدة Stage 6C. |
+| History | خمسة records مكتملة بلا rollback؛ كل اسم وSHA-256 checksum يطابق ملف `migration.sql` المقابل في Git **5/5** | تعارض checksums الذي كان مجهولًا في 6F.3 **غير موجود في هذه الخمسة**. لا يثبت ذلك انعدام `db push` drift خارج النطاق المفحوص، ولا يوجد Initial CREATE Migration في Git. |
+| أسعار Legacy التاريخية | 930 Product Base، 246 Order Total، 272 Unit و272 Line؛ لكل حقل: 0 NULL/سالب/كسر SYP/>6 منازل/overflow | لا مانع Decimal أو SYP مثبت في هذه الحقول **وقت Snapshot فقط**. لم يُفحص `ProductOption.priceDelta` ضمن money counts؛ افحصه Aggregate قبل التفعيل، وأعد فحص الأربع قبيل DDL. |
+| OrderStatus/Triggers | القيم الحالية `PENDING_WHATSAPP`, `SENT_TO_WHATSAPP`, `CANCELED`؛ 0 Custom Triggers في نطاق التدقيق | Stage 6C تضيف `VALIDATED_TEST` وTriggers المستقبلية، دون استبدال Legacy status. نطاق الفحص لا يثبت غياب Triggers في كل قاعدة البيانات. |
+
+**SQL المرشحة الفعلية هي ملفا Migration الرسميان المذكوران أعلاه، بالتسلسل، مع فحوص STOP وتوقيت تنفيذ معتمد بعد Restore.** لا نبتكر DDL انتقائية؛ Stage 6C الكاملة تلزم لتوافق Prisma Client الحالي وإن كان مسار WhatsApp العام لا ينشئ `NETWORK_TEST` Order. Candidate DB Completeness Guard المستقلة غير مشمولة.
+
+| Migration موجودة في Production | SHA-256 في JSON وفي ملف Git — تطابق حرفي |
+|---|---|
+| `20260719000000_add_category_visual_settings` | `A5BBCB330F71578EE49750E0C15D79DD6088500C1248359EEC432BC6713FBC1B` |
+| `20260721000000_add_product_mood_key` | `4A085CEE7B45F7E46F9BC9F24E903D1F7BBE46EC412BEEE9DD2654B7A3C61EE1` |
+| `20260721001000_add_category_icon_dimensions` | `A27E49CB39595C5D98CB6EEAF4E2D79D6A0AD921A665598E78B5BEEBBA2F4565` |
+| `20260807000000_add_product_libraries` | `579D7AEB52CFF91C99756482BD44AB1749B099EF8C15624D3FBE146F74BA18D9` |
+| `20260815000000_global_product_libraries` | `4544E53CE71008FE157B97B4D1D7883E0C532BAAD7C40CDDE2B4514FCC15C92C` |
 
 ## تصنيف التغييرات
 
@@ -21,9 +42,9 @@
 ## بوابات STOP الدنيا قبل اعتماد SQL إنتاجية
 
 1. تأكيد المبرمج أن Backup أُعيدت بنجاح داخل بيئة معزولة، وأن الاستعادة قابلة للفحص، مع زمن التراجع وصاحب القرار. مجرد إنشاء Backup لا يكفي.
-2. إذن **منفصل للقراءة فقط** من `menu`، ثم تشغيل `stage6f0-readonly-preflight.sql` و`stage6f4-readonly-data-prechecks.sql` بدور read-only مع `statement_timeout` و`lock_timeout`. احفظ مخرجات metadata والعدادات فقط، دون secrets/PII/أسعار فردية. تحقق من `format_type` الحقيقي لكل عمود مالي، قيم Enum، تعريف CHECK/FK/index/trigger، وتسلسل Schema؛ لا تفترض `numeric(10,2)` لأن التقرير لم يذكر typmod.
-3. قارن كل صف `_prisma_migrations` الفعلي: الاسم، checksum، `finished_at` و`rolled_back_at` مقابل SHA-256 لملف Git الموافق؛ لا تنقل `logs`. أي اختلاف أو Migration غير معروفة أو drift ناتج عن `db push` = **STOP**. غياب Initial CREATE Migration في Git يمنع اعتماد `migrate deploy` أو `migrate resolve` آليًا.
-4. يجب أن تكون عدادات القيم السلبية، أو التي لها أكثر من ست منازل مؤثرة، أو تتجاوز مجال `DECIMAL(24,6)`، أو أسعار SYP/`ل.س` الكسرية **صفرًا أو ذات معالجة صريحة معتمدة**. `ALTER COLUMN TYPE` قد يقرب 7 منازل بصمت؛ لا نسمح به. لا تُغيّر البيانات القديمة أو تكشف أسعارها عبر هذا الفحص.
+2. يوجد إذن/تقرير قراءة سابق في المرفق، لكن **أي إعادة فحص مباشرة من طرفنا أو المبرمج تحتاج صلاحية منفصلة وفق السياسة**. قبيل DDL أعد فحص `stage6f0-readonly-preflight.sql` و`stage6f4-readonly-data-prechecks.sql` بدور read-only مع timeouts، خصوصًا أي تغير منذ Snapshot، و`ProductOption.priceDelta` الذي لم يدخل money counts المرفقة. لا تطبع PII أو أسعارًا فردية.
+3. قارِن History قبل التنفيذ مجددًا: الـJSON الحالي أثبت **5/5 checksum match**، لكن أي Migration جديدة/تغير checksum أو drift من `db push` خارج جداول التدقيق = **STOP**. غياب Initial CREATE Migration في Git يمنع اعتماد `migrate deploy` أو `migrate resolve` آليًا.
+4. العدادات الأربع كانت صفرًا وقت الفحص؛ **أعد قياسها قبيل DDL**، وأكمل فحص Legacy Options. أي سالب/>6 منازل/overflow/كسر SYP مستجد = **STOP أو معالجة صريحة معتمدة**. `ALTER COLUMN TYPE` قد يقرب 7 منازل بصمت؛ لا نسمح به. لا تُغيّر البيانات القديمة أو تكشف أسعارها عبر الفحص.
 5. Diff metadata/DDL من Restore حقيقية مقابل Baseline المرشحة؛ تحقق من عدم وجود `configurationTree`/أعمدة Stage 6C مطبقة جزئيًا، ومن المفاتيح والفهارس/Enums والأسماء والتبعيات. أي Partial Application = **STOP** وإعداد SQL تفاضلية خاصة بعد مراجعة.
 6. بروفة على Restore معزولة من نفس Backup (أو staging مكافئة يوافق عليها المؤسس)، مستخدمة PostgreSQL 18.6 ونسخة Prisma الحالية. قِس وقت الأقفال/DDL، واختبر Legacy Order/Analytics، Network setup/Quote، Network/Mixed checkout، وRollback/forward fix. الاختبار الاصطناعي في Stage 6F.4 لا يغني عنها.
 7. راجع الإجراء النهائي ونقطة التوقف قبل التطبيق مع المؤسس؛ احصل على **موافقة Migration إنتاجية مستقلة**. لا `db push` أو `migrate deploy` أو `migrate resolve` تلقائيًا، ولا تعديل لتاريخ Migrations القديم.

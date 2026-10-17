@@ -23,7 +23,7 @@
 
 A. تأكيد نجاح Restore للـBackup بواسطة المبرمج وإثبات إمكانية استخدامها، لا مجرد وجود ملف.
 
-B. موافقة قراءة فقط مستقلة على `menu`: استعلام metadata ثم Aggregate prechecks دون PII؛ قارن history checksums/DDL/typmods مع Git. **STOP** عند drift أو بيانات غير متوافقة.
+B. راجع تقرير read-only المرفق بتاريخ 17 أكتوبر 2026: **5/5 migration checksums مطابقة** و`numeric(10,2)` للأعمدة الأربع و0 تعارض مالي في الحقول المفحوصة. لا تعُد إلى فرضية أن checksums مجهولة، لكن التقرير ليس Dump ولا يشمل Legacy Option money. أي إعادة فحص مباشرة من `menu` تحتاج إذنًا منفصلًا؛ أعد metadata/Aggregate قبل DDL ولا تعرض PII. **STOP** عند drift أو بيانات تغيرت أو غير متوافقة.
 
 C. بروفة الترحيل على Restore معزولة من القاعدة نفسها، مقارنة Prisma، وتجربة Legacy Order/Analytics وDashboard/Network/Mixed، مع خطة forward-fix/rollback.
 

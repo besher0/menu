@@ -1,14 +1,14 @@
 # OrderSawa — موانع الإصدار وسجل الموافقات المنفصلة
 
-**الحالة: Release Candidate برمجية محلية، غير معتمدة للإنتاج.** الهدف الحالي فقط منيو مطاعم إلكتروني + WhatsApp يفتحه الزبون؛ لا POS أو Kitchen أو Business/Outlet. لم نتصل بـ`menu` ولم نستخدم Backup أو ننفذ ترحيلًا/نشرًا/تفعيلًا.
+**الحالة: Release Candidate برمجية محلية، غير معتمدة للإنتاج.** الهدف الحالي فقط منيو مطاعم إلكتروني + WhatsApp يفتحه الزبون؛ لا POS أو Kitchen أو Business/Outlet. وصل تقرير تدقيق Production read-only من المبرمج في 17 أكتوبر 2026؛ حللناه دون أن نتصل نحن بـ`menu` أو نستخدم Backup أو ننفذ ترحيلًا/نشرًا/تفعيلًا.
 
 ## مانع قبل ترحيل قاعدة البيانات أو نشر Binary الجديدة
 
 | الأولوية | المانع الفعلي | الدليل/المطلوب من المبرمج |
 |---|---|---|
 | STOP | استعادة Backup غير مؤكدة | المؤسس ذكر أن Backup أُنشئت وأن Restore قيد التحقق. مطلوب إثبات استعادة وفحص Schema/بيانات في بيئة معزولة وخطة RPO/RTO/مالك التراجع. |
-| STOP | تطابق Schema/History الحقيقي مجهول | التقرير المستلم `schema.json`-derived، لا يحتوي numeric typmods/checksums/enum/تعريفات كاملة. مطلوب إذن قراءة منفصل ثم metadata/aggregate audit ومقارنة Git/Prisma؛ `db push` المستخدم سابقًا قد أحدث drift. لا `migrate resolve` أو `db push` تلقائيًا. |
-| STOP | احتمال قص/تقريب أسعار تاريخية أو فشل CHECK | عَدّاد الأسعار السلبية، >6 منازل، overflow، وSYP/`ل.س` الكسرية من SQL القراءة فقط. معالجة حالات غير صفرية تحتاج خطة/موافقة، لا تعديل صامت. |
+| STOP | Drift خارج نطاق تدقيق Production المرفق | ملف 17 أكتوبر أثبت `numeric(10,2)` و**5/5 Checksums مطابقة** وغياب Stage 2C/6C في الأعمدة المفحوصة؛ لكنه ليس Dump لجميع التعريفات، و`db push` السابق قد أحدث drift آخر. قارن Restore كاملة مع Git/Prisma، وأعد فحص History قبل DDL. لا `migrate resolve` أو `db push` تلقائيًا. |
+| STOP مشروط | أسعار تاريخية قد تتغير أو Legacy Options غير مفحوصة | عدادات أربعة حقول كانت صفرًا للكسور/السالب/>6/overflow وقت Snapshot؛ **لم يشمل الفحص `ProductOption.priceDelta`**. أعد Aggregate read-only قبيل DDL وراجع Legacy Options. أي حالة جديدة غير متوافقة تحتاج قرار معالجة، لا تعديل صامت. |
 | STOP | توافق Prisma Client مع DB | Stage 2C Product/Dependency وStage 6C أربعة Order columns لازمة للنسخة الحالية؛ غياب Stage 6C أعاد `P2022` سابقًا. جرّب Binary وLegacy Order/Analytics على Restore بعد DDL. |
 | STOP | نتيجة بروفة Restore وSQL النهائية | الاختبار الاصطناعي PG18 نجح لكنه لا يثبت `menu`. نفذ Rehearsal على Restore حقيقية أو staging مكافئة، مع مراقبة locks، diff، smoke وrollback/forward-fix. يلزم اعتماد الإجراء النهائي بعد رؤية النتائج. |
 | STOP للتفعيل العام | Secrets/PM2/Proxy/Rate | توثيق عدد API/Web processes، process IDs/paths، TLS/Proxy/IP الحقيقي، `TRUST_PROXY`، CORS، rate limiting per-process. HMAC random ≥32 byte hex متطابق على API instances في Secret Store، لا في ZIP. إن كان متعدد النسخ، راجع حماية Rate Limit؛ لا تفترض Single-instance. |
@@ -20,7 +20,7 @@
 ## بوابات الموافقة — لا تُدمج
 
 1. **إذن قراءة فقط** لقاعدة `menu`، يحدد الدور، الاستعلامات المرفقة، وقت التنفيذ والمخرجات المسموح مشاركتها. لا يجيز SQL كتابة.
-2. **موافقة بروفة Restore** بعد إثبات نجاح الاستعادة واختيار بيئة معزولة. لا تستخدم Backup داخل Codex أو ZIP.
+2. **موافقة بروفة Restore** بعد إثبات نجاح الاستعادة واختيار بيئة معزولة. لا تستخدم Backup داخل Codex أو ZIP. التقرير الجديد لا يثبت نجاح Restore.
 3. **موافقة Production Migration مستقلة** بعد عرض audit وdiff وbatches/locks والنتائج وخطة الرجوع، مع تحديد SQL النهائية/وقت الصيانة. لا تنشأ تلقائيًا من نجاح Disposable.
 4. **موافقة Deployment مستقلة** بعد إثبات schema compatibility وPM2/Proxy/Secrets، مع Flag `OFF` واختبار Legacy.
 5. **موافقة Feature Activation مستقلة** بعد Staging وLegacy/network/mixed smoke، HMAC/Rate/WhatsApp review؛ عندها فقط يمكن `ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT=1`. لا يفتح ذلك `NETWORK_TEST` أو إرسالًا آليًا.
