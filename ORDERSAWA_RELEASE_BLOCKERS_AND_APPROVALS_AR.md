@@ -2,6 +2,8 @@
 
 **الحالة: Release Candidate برمجية محلية، غير معتمدة للإنتاج.** الهدف الحالي فقط منيو مطاعم إلكتروني + WhatsApp يفتحه الزبون؛ لا POS أو Kitchen أو Business/Outlet. وصل تقرير تدقيق Production read-only من المبرمج في 17 أكتوبر 2026؛ حللناه دون أن نتصل نحن بـ`menu` أو نستخدم Backup أو ننفذ ترحيلًا/نشرًا/تفعيلًا.
 
+**تحديث إغلاق الحزمة:** لم تعد الـ69 API tests متخطاة: 206/206 على PostgreSQL 16 disposable، و37/37 لاختبارات Admin Product Configuration وTrusted WhatsApp على PostgreSQL 18.6 disposable، وBrowser ON 14 وOFF 4 checkpoints، وShared 25/Web 43/Typecheck/Build ناجحة. لا تُلغي هذه النتائج أي STOP أدناه. حارس DB التجريبي لـ`NETWORK_TEST` يرفض PG18 عمدًا، ولا يلزم WhatsApp العام الذي لا يحفظ Network Order؛ أبقِ المسارات التجريبية مغلقة على الإنتاج. فرق Migration checksums السابق كان تحويل LF→CRLF في ZIP فقط؛ ملفات Git تطابق Production 5/5، والأرشيف الجديد يُفحص byte-for-byte.
+
 ## مانع قبل ترحيل قاعدة البيانات أو نشر Binary الجديدة
 
 | الأولوية | المانع الفعلي | الدليل/المطلوب من المبرمج |

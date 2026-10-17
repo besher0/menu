@@ -54,3 +54,60 @@ H. فقط بعد موافقة تفعيل مستقلة: اضبط علم WhatsApp 
 | أي حالة | المطعم والعُملة والرقم الرسمي صحيحون؛ لا PII/Prisma internals في Logs؛ `NETWORK_TEST` محجوبة. |
 
 هذا الدليل لا يحل محل تفاصيل السيرفر الحقيقية. عليه أن يملأ placeholders، يفحص النسخة الحالية، ويعرض نتائج Restore/metadata/staging على المؤسس قبل كل موافقة.
+
+## أوامر تشغيل مرشحة للمبرمج — Linux/POSIX فقط وبعد الموافقات المحددة
+
+هذه الأوامر **تعليمات مستقبلية**؛ لم تُنفذ على السيرفر. إن لم يكن نظام السيرفر Linux/POSIX أو لم تُعرف مسارات PM2/Secret Store/Restore، **STOP** وأرسل هذه المعلومات للمؤسس بدل تعديل الأوامر تخمينًا. جميع المتغيرات بين `<...>` يحددها المبرمج من السيرفر؛ لا ترسل قيم DB/HMAC، ولا تنقل `.env` أو uploads إلى ZIP. لا تستخدم حساب Production في خطوات Restore.
+
+### 1 — فحص الحزمة والنسخة الحالية، دون تغيير الخدمة
+
+```sh
+export PACKAGE_ZIP='<ABSOLUTE_PATH_TO_ORDERSAWA_FINAL_INTEGRATION_PACKAGE.zip>'
+export CURRENT_RELEASE_DIR='<CURRENT_PM2_SOURCE_DIRECTORY>'
+export NEW_RELEASE_DIR='<NEW_EMPTY_RELEASE_DIRECTORY>'
+sha256sum "$PACKAGE_ZIP"
+unzip -t "$PACKAGE_ZIP"
+mkdir -p "$NEW_RELEASE_DIR"
+unzip -q "$PACKAGE_ZIP" -d "$NEW_RELEASE_DIR"
+pm2 ls
+pm2 describe '<ACTUAL_API_PM2_ID>'
+pm2 describe '<ACTUAL_WEB_PM2_ID>'
+git -C "$CURRENT_RELEASE_DIR" status --short --branch
+git -C "$CURRENT_RELEASE_DIR" rev-parse HEAD
+```
+
+**Expected:** SHA-256 يساوي Release Manifest المرسل بجانب ZIP، `unzip -t` بلا خطأ، PM2 يحدد المسارات والنسخ الفعلية. **PASS:** المصدر الحالي معروف ونسخته/تعديلاته موثقة، ولا يتداخل `NEW_RELEASE_DIR` مع `.env`/uploads الحية. **STOP:** hash مختلف، أرشيف ناقص، مصدر سيرفر مختلف غير مراجع، PM2 topology غير مفهومة أو Git غير موجود دون جرد بديل. **Next:** أرسل مقارنة الملفات/الاختلافات للمؤسس؛ لا تستبدلها بصمت. `.env.example` الجديدة فقط تغيّر `DOMAIN_VERIFY_BYPASS` الافتراضي إلى `false`؛ لا تغيّر `.env` الحية دون موافقة مستقلة.
+
+### 2 — بروفة على Restore منفصلة، لا على `menu`
+
+أثبت نجاح Restore أولًا بإجراء المبرمج المعتمد على قاعدة **جديدة ومعزولة** ثم أدخل URL من Secret Store دون عرضه في الأوامر أو logs. لا تستخدم حساب Production في البروفة. أدناه أوامر الفحص على Restore فقط:
+
+```sh
+cd "$NEW_RELEASE_DIR"
+read -r -s -p 'Isolated restored DB URL: ' DATABASE_URL; printf '\n'
+export DATABASE_URL
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f apps/api/prisma/stage6f0-readonly-preflight.sql
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f apps/api/prisma/stage6f4-readonly-data-prechecks.sql
+npx prisma migrate status --schema apps/api/prisma/schema.prisma
+```
+
+**Expected:** PostgreSQL 18.6، خمس migrations سابقة مكتملة ببصمات Manifest، أربعة أعمدة مالية `numeric(10,2)`، غياب Stage 2C/6C، لا drift غير متوقع، ولا قيم مالية غير متوافقة في counts الإجمالية بما فيها Legacy Options. **PASS:** تطابق الحالة الفعلية مع التقرير السابق أو توثيق فرق مفهوم ومراجع؛ لا PII أو أسعار فردية في المخرجات. **STOP:** اختلاف checksum/DDL، قيمة سالبة أو SYP كسرية أو >6 منازل/overflow، Restore غير مثبتة، أو أي خطأ `psql`/Prisma. **Next:** أرسل التقرير المُنقح للمؤسس؛ لا تُصلح بيانات أو تاريخ migrations من تلقاء نفسك.
+
+فقط إن كانت الخمس القديمة مطبقة ولا توجد تغييرات أخرى معلقة سوى Stage 2C ثم Stage 6C، جرّب على Restore المنفصلة:
+
+```sh
+npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+npx prisma migrate status --schema apps/api/prisma/schema.prisma
+npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel apps/api/prisma/schema.prisma --exit-code
+npm run prisma:generate
+npm run typecheck
+npm run build
+```
+
+**Expected:** تطبيق Migrationَي `20261012000000_product_configuration_network` و`20261013000000_network_order_test_snapshot` فقط؛ diff فارغ (exit 0)؛ build/typecheck ناجحان. **PASS:** Legacy Order/OrderItem/Analytics باقية، Product Option القديمة باقية، Product Tree/Dependency وPrisma Client تعمل، Smoke Legacy/Network/Mixed على Restore ناجح، وخطة rollback/forward-fix موثقة. **STOP:** أي migration ثالثة/فشل/Drift/P2022، بيانات قديمة تغيّرت، أو فشل اختبار؛ لا `db push` ولا `migrate resolve` ولا Candidate DB Guard. **Next:** أرسل نتائج البروفة ووقت الأقفال/التوقف للمؤسس واطلب موافقة Production Migration **مستقلة**.
+
+### 3 — تنفيذ Production بعد موافقات منفصلة فقط
+
+بعد موافقة مكتوبة على ترحيل Production وتثبيت Backup/Restore، أعِد read-only metadata/counts على `menu` بدور معتمد وبإذن القراءة المحدد، ثم بدور الترحيل الموافق عليه نفّذ **فقط** أمر Prisma الرسمي أعلاه موجّهًا إلى `menu` وفق Runbook/نافذة الصيانة الموافق عليها. **Expected/PASS:** Stage 2C و6C فقط، Prisma status متسق، diff فارغ، Legacy smoke ناجح. **STOP:** أي اختلاف عن البروفة؛ أبقِ API القديمة بعيدًا عن Schema غير المتوافقة واطلب قرار rollback/forward-fix، ولا تعدّل `_prisma_migrations` يدويًا. **Next:** موافقة Deployment منفصلة.
+
+بعد موافقة Deployment، ابنِ المصدر الجديد في مجلد مستقل كما في §2، واجعل `ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT=0` في إعدادات العملية الرسمية (ليس تعديل `.env` صامتًا)، ثم استخدم عملية التبديل/`pm2 reload '<ACTUAL_ID>' --update-env` **فقط بعد** التحقق من تعريف PM2 وعدد النسخ والـProxy. **Expected/PASS:** API/Web healthy، Legacy Checkout يحفظ Order/Analytics مرة واحدة، Network/Mixed محجوبتان، `NETWORK_TEST` محجوبة، لا P2022/5xx غير متوقع. **STOP:** خلل Legacy أو تضارب Binary/Schema؛ أعد العلم OFF، أوقف تحويل المرور أو ارجع Binary فقط إن ثبت توافقها مع Schema، وأرسل الحالة للمؤسس. **Next:** موافقة تفعيل Network/Mixed منفصلة؛ بعدها اختبر مطعمًا تجريبيًا وOfficial WhatsApp URL دون إرسال تلقائي أو بيانات عميل حقيقية، وراقب الأخطاء. لا تعني موافقة الترحيل موافقة النشر أو التفعيل.

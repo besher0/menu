@@ -56,3 +56,24 @@
 الملف الجديد حسم typmods الأربعة وChecksums الخمس، لكن ليس Dump أو Schema كاملة؛ يبقى `db push` drift خارج نطاق 47 عمودًا/11 فهرسًا/36 قيدًا، وLegacy Option money، وتغير البيانات بعد Snapshot، وRestore/PM2 الفعلي مجهولًا. لذلك Candidate SQL **مشروطة** ومقفلة على disposable. `P2022` خطر حقيقي إذا نُشر Prisma Client الجديد قبل أعمدة Stage 6C، والتقرير يؤكد غيابها الآن. Public WhatsApp flag تبقى OFF؛ Legacy فقط يجب اختباره على Restore قبل أي Deployment. Full catalog loading و`FOR SHARE` وRate Limit in-memory دين أداء/تشغيل؛ لا تُحذف الضمانات لأجل سرعة محلية. لم يُختبر PM2 أو Proxy أو Secret Store الحقيقي.
 
 تقرير الموافقات وما يلزم من المبرمج: `ORDERSAWA_RELEASE_BLOCKERS_AND_APPROVALS_AR.md`. خطوات PM2: `ORDERSAWA_PM2_DEPLOYMENT_GUIDE_AR.md`. خطة SQL: `ORDERSAWA_PRODUCTION_MIGRATION_PLAN_AR.md`.
+
+## إغلاق حزمة التسليم — إعادة تحقق 17 أكتوبر 2026
+
+أُعيدت الاختبارات على المصدر نفسه بعد تغيير `.env.example` فقط إلى `DOMAIN_VERIFY_BYPASS="false"`؛ لا تعديل Runtime/Prisma/SQL. سبب الـ69 skipped السابق كان غياب URLs لقواعد الاختبار المحروسة؛ أُنشئت قواعد مستقلة جديدة على `127.0.0.1:55440` وضُبطت جميع متغيرات `*_TEST_DATABASE_URL` مؤقتًا في عمليات الاختبار، مع Candidate DB Guard على قواعد `NETWORK_TEST` المسموح بها فقط. لا توجد `.env` حقيقية أو Production DB في هذه التجربة.
+
+| التشغيل النهائي | ناجح | فاشل | متخطى | البيئة/الملاحظة |
+|---|---:|---:|---:|---|
+| API suite كاملة | 206 | 0 | 0 | PostgreSQL 16.15 disposable، 26/26 test files؛ جميع الـ69 السابقة نُفذت. |
+| Shared | 25 | 0 | 0 | Vitest، ملفان. |
+| Web | 43 | 0 | 0 | Vitest، 9 ملفات. |
+| API Product Configuration + Trusted WhatsApp على PG18.6 | 37 | 0 | 0 | قاعدتان disposable منفصلتان؛ Prisma Client 5.22.0، Stage 2C/6C schema وCHECKs؛ تشمل Legacy Order/Analytics وSYP/Network/Mixed. |
+| Chrome Browser ON | 14 checkpoints | 0 | 0 | Next dev + Nest + PG16 disposable: Legacy Order/Analytics مرة واحدة، Network/Mixed، Pizza/Combo، قبول تغير السعر، Notes، RTL/390px، SYP. فتح `wa.me` اعترضه Runner ولم تُرسل رسالة. |
+| Chrome Browser OFF | 4 checkpoints | 0 | 0 | Legacy يحفظ Order؛ Trusted direct HTTP يرد 403؛ Network/Mixed لا يدخلان Checkout القديم. |
+| Root Typecheck | PASS | — | — | Shared/API/Web. |
+| Root Build | PASS | — | — | Nest + Next، 27 صفحة. |
+
+تجربة API كاملة على PG18 فشلت أولًا في 46 اختبارًا من `NETWORK_TEST` لأن الحارس التجريبي يرفض PostgreSQL غير 16 (`serverVersion >= 170000` في `network-order-db-guard.ts`) ويعيد 503 مقصودًا؛ 160 نجح و0 skipped في تلك المحاولة. **لا تُعدّ هذه المحاولة نجاحًا** ولا تثبت عيبًا في WhatsApp العام؛ أُعيدت المجموعة كلها على PG16 المحروسة فنجحت 206/206. اختبارات PG18 المستهدفة للوظيفة الحالية نجحت 37/37. أول تشغيل Browser استعمل Next production mode الذي يحجب `/m/...` الاختبارية، والثاني كشف CORS محليًا؛ بعد تشغيل Next dev وNest مع `WEB_ORIGIN` المحلي نجح ON/OFF أعلاه دون تعديل شيفرة. Browser results نقاط فحص Runner وليست 18 اختبارات مستقلة لكل سلوك.
+
+مقارنة الـMigrations الخمس: SHA-256 لملفات Git/working tree الأصلية يطابق 5/5 من تقرير Production. أرشيف Stage 6F.4 السابق حوّل LF إلى CRLF بسبب `core.autocrlf=true` عند إنشاء ZIP، فكانت بصمات bytes داخله مختلفة؛ إعادة LF للـZIP القديم تطابق Production 5/5. **لم نعدل الملفات الرسمية**. أُعيد بناء الأرشيف بـ`git -c core.autocrlf=false archive`، ويجب أن تؤكد Manifest النهائية تطابق bytes الخمس في ZIP الجديد مع Production قبل إرساله. لا تعديل جدول `_prisma_migrations` ولا SQL.
+
+المتبقي تشغيلًا: تأكيد Restore، مطابقة Schema/History كاملة على Restore منفصلة، فحص `ProductOption.priceDelta` الإجمالي قبل الترحيل، استعراض PM2/Proxy/Secrets/WhatsApp، موافقات منفصلة للترحيل والنشر والتفعيل. لم تُجرَ بروفة على Backup حقيقية أو أي اختبار/تغيير على Production. Candidate DB Guard خاصة بـ`NETWORK_TEST` مستقبلية وليست شرطًا لتشغيل WhatsApp العام؛ لكنها تبقى غير متوافقة مع PG18 كما صُممت، ويُحظر تفعيل تلك endpoints على Production.
