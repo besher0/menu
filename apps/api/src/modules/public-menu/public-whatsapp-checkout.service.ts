@@ -150,6 +150,10 @@ export class PublicWhatsappCheckoutService {
         && (settings as { publicUi?: { whatsappOrderingEnabled?: unknown } }).publicUi?.whatsappOrderingEnabled === false) {
         throw new ForbiddenException({ error: "WHATSAPP_ORDERING_DISABLED", message: "WhatsApp ordering is disabled for this menu." });
       }
+      if (settings && typeof settings === "object" && !Array.isArray(settings)
+        && (settings as { dashboardSettings?: { showPrices?: unknown } }).dashboardSettings?.showPrices === false) {
+        throw new ForbiddenException({ error: "WHATSAPP_PRICES_HIDDEN", message: "WhatsApp checkout is unavailable while menu prices are hidden." });
+      }
       const branches = await tx.$queryRaw<{ slug: string; name: string; whatsappPhone: string | null }[]>`
         SELECT "slug", "name", "whatsappPhone" FROM "Branch"
         WHERE "restaurantId" = ${restaurant.id} AND "isActive" = true AND "deletedAt" IS NULL

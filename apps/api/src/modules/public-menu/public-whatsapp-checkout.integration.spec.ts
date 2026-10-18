@@ -12,10 +12,11 @@ import { PublicMenuService } from "./public-menu.service";
 import { PublicWhatsappCheckoutService } from "./public-whatsapp-checkout.service";
 
 const url = process.env.WHATSAPP_CHECKOUT_TEST_DATABASE_URL;
+const disposableDatabase = url ? new URL(url) : undefined;
 if (url) {
-  const parsed = new URL(url);
-  if (parsed.hostname !== "127.0.0.1" || parsed.port !== "55440"
-    || parsed.pathname !== "/ordersawa_stage3_stage6e2_checkout") throw new Error("Disposable Stage 6E.2 database required");
+  const allowed = (disposableDatabase?.port === "55440" && disposableDatabase?.pathname === "/ordersawa_stage3_stage6e2_checkout")
+    || (disposableDatabase?.port === "55447" && disposableDatabase?.pathname === "/ordersawa_stage3_showprices_guard");
+  if (disposableDatabase?.hostname !== "127.0.0.1" || !allowed) throw new Error("Disposable checkout test database required");
 }
 const integration = url ? describe : describe.skip;
 
@@ -83,6 +84,10 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   }
   const prepare = (body: unknown, slug?: string) => post("prepare", body, slug);
   const confirm = (body: unknown, token: string, slug?: string) => post("confirm", { request: body, acceptanceToken: token }, slug);
+  const setShowPrices = (showPrices: boolean) => prisma.restaurantThemeSettings.update({
+    where: { restaurantId: "s6e2-r1" },
+    data: { settings: { ...ABO_MALEK_THEME, dashboardSettings: { showPrices }, publicUi: { whatsappOrderingEnabled: true } } }
+  });
 
   beforeAll(async () => {
     process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "1";
@@ -90,7 +95,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     await prisma.$connect();
     const identity = await prisma.$queryRaw<{ name: string; address: string; port: number }[]>`
       SELECT current_database() AS name, host(inet_server_addr()) AS address, inet_server_port() AS port`;
-    expect(identity[0]).toMatchObject({ name: "ordersawa_stage3_stage6e2_checkout", address: "127.0.0.1", port: 55440 });
+    expect(identity[0]).toMatchObject({ name: disposableDatabase?.pathname.slice(1), address: "127.0.0.1", port: Number(disposableDatabase?.port) });
     const checks = await prisma.$queryRaw<{ count: bigint }[]>`
       SELECT count(*) FROM pg_constraint WHERE conname LIKE 'Product_%check' AND convalidated`;
     expect(Number(checks[0].count)).toBeGreaterThanOrEqual(5);
@@ -142,6 +147,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   });
 
   beforeEach(async () => {
+    await setShowPrices(true);
     await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: pizza, configurationVersion: 1, isAvailable: true } });
     await prisma.product.update({ where: { id: "s6e2-source" }, data: { configurationTree: source, configurationVersion: 1, isAvailable: true } });
     await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12.000001", isAvailable: true } });
@@ -172,6 +178,61 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(sent.body.error).toBe("LEGACY_CHECKOUT_REQUIRED");
     expect(sent.body).not.toHaveProperty("whatsappUrl");
     expect(await prisma.order.count()).toBe(before);
+  });
+
+  it("rejects Network and Mixed prepare when stored menu prices are hidden without side effects", async () => {
+    const beforeOrders = await prisma.order.count();
+    const beforeEvents = await prisma.analyticsEvent.count();
+    await setShowPrices(false);
+    for (const payload of [request([networkLine]), request([legacyLine, networkLine])]) {
+      const result = await prepare(payload);
+      expect(result.status).toBe(403);
+      expect(result.body.error).toBe("WHATSAPP_PRICES_HIDDEN");
+      expect(result.body).not.toHaveProperty("acceptanceToken");
+      expect(result.body).not.toHaveProperty("messagePreview");
+      expect(result.body).not.toHaveProperty("whatsappUrl");
+    }
+    expect(await prisma.order.count()).toBe(beforeOrders);
+    expect(await prisma.analyticsEvent.count()).toBe(beforeEvents);
+  });
+
+  it("rejects an already issued Network or Mixed token after prices are hidden", async () => {
+    const beforeOrders = await prisma.order.count();
+    const beforeEvents = await prisma.analyticsEvent.count();
+    for (const payload of [request([networkLine]), request([legacyLine, networkLine])]) {
+      await setShowPrices(true);
+      const prepared = await prepare(payload);
+      expect(prepared.status).toBe(200);
+      await setShowPrices(false);
+      const result = await confirm(payload, prepared.body.acceptanceToken);
+      expect(result.status).toBe(403);
+      expect(result.body.error).toBe("WHATSAPP_PRICES_HIDDEN");
+      expect(result.body).not.toHaveProperty("whatsappUrl");
+      expect(result.body).not.toHaveProperty("messagePreview");
+    }
+    expect(await prisma.order.count()).toBe(beforeOrders);
+    expect(await prisma.analyticsEvent.count()).toBe(beforeEvents);
+  });
+
+  it("keeps Network and Mixed checkout available when prices are shown", async () => {
+    for (const payload of [request([networkLine]), request([legacyLine, networkLine])]) {
+      const prepared = await prepare(payload);
+      expect(prepared.status).toBe(200);
+      const confirmed = await confirm(payload, prepared.body.acceptanceToken);
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.whatsappUrl).toMatch(/^https:\/\/wa\.me\//);
+    }
+  });
+
+  it("leaves the Legacy-only trusted contract unchanged when prices are hidden", async () => {
+    await setShowPrices(false);
+    const payload = request([legacyLine]);
+    const prepared = await prepare(payload);
+    expect(prepared.status).toBe(400);
+    expect(prepared.body.error).toBe("LEGACY_CHECKOUT_REQUIRED");
+    const confirmed = await confirm(payload, "invalid-token");
+    expect(confirmed.status).toBe(400);
+    expect(confirmed.body.error).toBe("LEGACY_CHECKOUT_REQUIRED");
   });
 
   it("quotes Pizza size, nested sauce, included quantity and a Mixed cart", async () => {
@@ -285,6 +346,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   });
 
   it("preserves the separate Legacy WhatsApp endpoint and rejects Network there", async () => {
+    await setShowPrices(false);
     const before = await prisma.order.count();
     const beforeEvents = await prisma.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } });
     const legacyBody = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup",
