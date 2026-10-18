@@ -14,6 +14,15 @@ describe("ProductConfigurator", () => {
     expect(html).not.toContain("واتساب");
   });
 
+  it("follows the menu language while loading", () => {
+    const html = renderToStaticMarkup(
+      <ProductConfigurator restaurantSlug="demo" productId="pizza" currency="SYP" locale="en" showPrices={false} />
+    );
+    expect(html).toContain('dir="ltr"');
+    expect(html).toContain("Loading product choices");
+    expect(html).not.toContain("جارٍ تحميل");
+  });
+
   it("contains an explicit mobile layout and accessible selection controls", () => {
     const css = readFileSync(new URL("./product-configurator.module.css", import.meta.url), "utf8");
     const source = readFileSync(new URL("./product-configurator.tsx", import.meta.url), "utf8");
@@ -21,7 +30,9 @@ describe("ProductConfigurator", () => {
     expect(css).toContain("grid-template-columns: repeat(2");
     expect(source).toContain('role="radiogroup"');
     expect(source).toContain('role={radioMode ? "radiogroup"');
-    expect(source).toContain("الإضافة تستخدم Quote من الخادم");
     expect(source).toContain("getPublicProductQuote");
+    expect(source).toContain("orderingEnabled && preview.valid");
+    expect(source).toContain("product-bottom-cart-network");
+    expect(css).toContain("var(--color-primary)");
   });
 });

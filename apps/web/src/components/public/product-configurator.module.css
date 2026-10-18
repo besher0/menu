@@ -1,5 +1,5 @@
 .configurator {
-  --pc-accent: var(--primary, #7f1d1d);
+  --pc-accent: var(--color-primary);
   display: grid;
   gap: 16px;
   margin: 20px 0;

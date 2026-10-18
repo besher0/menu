@@ -7738,6 +7738,48 @@ body:has(.public-page)::-webkit-scrollbar {
   padding: 0 7px;
 }
 
+.product-bottom-cart-network {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.product-bottom-cart-network .product-cart-link {
+  border: 0;
+  cursor: pointer;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.product-bottom-cart-network .product-cart-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.product-network-cart-shortcut {
+  align-items: center;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  color: var(--color-primary);
+  display: flex;
+  height: 48px;
+  justify-content: center;
+  min-width: 48px;
+  position: relative;
+  text-decoration: none;
+}
+
+.product-network-cart-shortcut b {
+  background: var(--color-primary);
+  border-radius: 999px;
+  color: white;
+  font-size: 10px;
+  min-width: 14px;
+  padding: 1px 3px;
+  position: absolute;
+  right: -3px;
+  top: -3px;
+}
+
 .nutrition-card i img {
   border-radius: 8px;
   height: 20px;
@@ -8864,24 +8906,12 @@ body:has(.public-page)::-webkit-scrollbar {
   min-height: 48px;
 }
 
-.trusted-whatsapp-checkout {
-  position: static;
-  transform: none;
-  width: min(100%, 560px);
-  max-width: 560px;
-  margin: 20px auto 96px;
-  box-shadow: 0 8px 28px rgb(16 24 40 / 10%);
-}
-
-.trusted-whatsapp-checkout label,
 .cart-item-note {
   display: grid;
   gap: 5px;
   width: 100%;
 }
 
-.trusted-whatsapp-checkout input,
-.trusted-whatsapp-checkout textarea,
 .cart-item-note input {
   box-sizing: border-box;
   width: 100%;
@@ -8892,35 +8922,46 @@ body:has(.public-page)::-webkit-scrollbar {
   font: inherit;
 }
 
-.trusted-whatsapp-checkout .fulfillment-toggle {
+.price-update-backdrop {
+  align-items: center;
+  background: rgb(15 18 24 / 55%);
   display: flex;
-  gap: 8px;
+  inset: 0;
+  justify-content: center;
+  padding: 20px 16px;
+  position: fixed;
+  z-index: 90;
 }
 
-.trusted-whatsapp-draft {
-  border: 1px solid #d1e5d7;
-  border-radius: 12px;
-  padding: 14px;
-  overflow-wrap: anywhere;
-}
-
-.trusted-whatsapp-draft ul { padding-inline-start: 20px; }
-.trusted-whatsapp-draft li { margin-block: 8px; }
-.trusted-whatsapp-message-preview {
-  max-height: 320px;
+.price-update-dialog {
+  background: white;
+  border-radius: 22px;
+  box-shadow: 0 22px 48px rgb(0 0 0 / 28%);
+  box-sizing: border-box;
+  display: grid;
+  gap: 12px;
+  max-height: min(85vh, 640px);
+  max-width: 370px;
   overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding: 12px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.03);
-  font: inherit;
+  padding: 22px;
+  width: 100%;
 }
 
-@media (max-width: 430px) {
-  .trusted-whatsapp-checkout { width: calc(100% - 24px); padding: 16px; }
+.price-update-dialog h2,
+.price-update-dialog p { margin: 0; }
+.price-update-dialog h2 { color: var(--color-secondary); }
+.price-update-dialog ul { list-style: none; margin: 0; padding: 0; }
+.price-update-dialog li { display: flex; gap: 8px; justify-content: space-between; padding: 8px 0; }
+.price-update-dialog > strong { color: var(--color-secondary); font-size: 18px; }
+.price-update-actions { display: grid; gap: 8px; }
+.price-update-actions button {
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  min-height: 44px;
 }
+.price-update-actions button:last-child { background: var(--color-primary); color: white; }
 
 .cart-empty {
   align-items: center;

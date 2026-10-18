@@ -1,50 +1,71 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { compareMoney, multiplyMoney, sumMoney } from "@menu/shared";
 import {
   confirmPublicWhatsappCheckout, preparePublicWhatsappCheckout, PublicWhatsappCheckoutError,
   type PublicWhatsappCheckoutDraft, type PublicWhatsappCheckoutRequest
 } from "@/lib/api";
 import type { CartItem } from "./cart-model";
-import { displayCurrencyAmount } from "@/lib/currency-display";
 
 type Locale = "ar" | "en";
+type Details = {
+  customerName: string; customerPhone: string; fulfillmentType: "pickup" | "delivery";
+  deliveryArea: string; deliveryNear: string; deliveryBeside: string;
+  pickupTime: string; orderNote: string;
+};
+type PendingPrice = {
+  request: PublicWhatsappCheckoutRequest; draft: PublicWhatsappCheckoutDraft;
+  acceptanceToken: string; messagePreview: string;
+};
 
-export function TrustedWhatsappCheckout({ cart, restaurantSlug, locale, disabledReason }: {
-  cart: readonly CartItem[]; restaurantSlug: string; locale: Locale; disabledReason?: string;
+export function compareTrustedDraft(draft: PublicWhatsappCheckoutDraft, checkoutRequest: PublicWhatsappCheckoutRequest,
+  displayedTotal: string, restaurantSlug: string, locale: Locale): "INVALID" | "PRICE_CHANGED" | "SOURCE_CHANGED" | "CURRENT" {
+  if (draft.items.length !== checkoutRequest.items.length || draft.restaurantSlug !== restaurantSlug
+    || draft.locale !== locale || !draft.items.every((line, index) => {
+      const requested = checkoutRequest.items[index];
+      return line.lineId === requested.lineId && line.mode === requested.mode && line.quantity === requested.quantity;
+    })) return "INVALID";
+  const priceChanged = compareMoney(draft.totalAmount, displayedTotal) !== 0 || draft.items.some((line, index) => {
+    const requested = checkoutRequest.items[index];
+    return !requested.expectedUnitPrice || compareMoney(line.unitPrice, requested.expectedUnitPrice) !== 0
+      || compareMoney(line.lineTotal, multiplyMoney(requested.expectedUnitPrice, requested.quantity)) !== 0;
+  });
+  if (priceChanged) return "PRICE_CHANGED";
+  return draft.items.some((line) => line.changed) ? "SOURCE_CHANGED" : "CURRENT";
+}
+
+/** Checkout behavior only. CartView owns the original three-step visual shell. */
+export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, details, disabledReason }: {
+  cart: readonly CartItem[]; restaurantSlug: string; locale: Locale; details: Details; disabledReason?: string;
 }) {
-  const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("pickup");
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [deliveryArea, setDeliveryArea] = useState("");
-  const [deliveryNear, setDeliveryNear] = useState("");
-  const [deliveryBeside, setDeliveryBeside] = useState("");
-  const [pickupTime, setPickupTime] = useState("");
-  const [orderNote, setOrderNote] = useState("");
-  const [prepared, setPrepared] = useState<{ request: PublicWhatsappCheckoutRequest;
-    draft: PublicWhatsappCheckoutDraft; messagePreview: string; acceptanceToken: string } | null>(null);
+  const [pendingPrice, setPendingPrice] = useState<PendingPrice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const busyRef = useRef(false);
   const editVersion = useRef(0);
   const ar = locale === "ar";
 
-  useEffect(() => { editVersion.current += 1; setPrepared(null); }, [cart, fulfillmentType, customerName, customerPhone,
-    deliveryArea, deliveryNear, deliveryBeside, pickupTime, orderNote, locale]);
+  useEffect(() => {
+    editVersion.current += 1;
+    setPendingPrice(null);
+  }, [cart, locale, details.customerName, details.customerPhone, details.fulfillmentType,
+    details.deliveryArea, details.deliveryNear, details.deliveryBeside, details.pickupTime, details.orderNote]);
 
   function request(): PublicWhatsappCheckoutRequest {
     return {
       locale,
-      ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
-      ...(customerPhone.trim() ? { customerPhone: customerPhone.trim() } : {}),
-      fulfillmentType,
-      ...(fulfillmentType === "delivery" ? {
-        deliveryArea: deliveryArea.trim(), deliveryNear: deliveryNear.trim(), deliveryBeside: deliveryBeside.trim()
-      } : pickupTime.trim() ? { pickupTime: pickupTime.trim() } : {}),
-      ...(orderNote.trim() ? { orderNote: orderNote.trim() } : {}),
+      ...(details.customerName.trim() ? { customerName: details.customerName.trim() } : {}),
+      ...(details.customerPhone.trim() ? { customerPhone: details.customerPhone.trim() } : {}),
+      fulfillmentType: details.fulfillmentType,
+      ...(details.fulfillmentType === "delivery" ? {
+        deliveryArea: details.deliveryArea.trim(), deliveryNear: details.deliveryNear.trim(), deliveryBeside: details.deliveryBeside.trim()
+      } : details.pickupTime.trim() ? { pickupTime: details.pickupTime.trim() } : {}),
+      ...(details.orderNote.trim() ? { orderNote: details.orderNote.trim() } : {}),
       items: cart.map((item) => item.mode === "LEGACY" ? {
         mode: "LEGACY" as const, lineId: item.lineId, productSlug: item.slug,
         quantity: item.quantity, ...(item.note?.trim() ? { note: item.note.trim() } : {}),
-        ...(item.priceText ? { expectedUnitPrice: item.priceText } : {})
+        expectedUnitPrice: item.priceText ?? String(item.price)
       } : {
         mode: "NETWORK" as const, lineId: item.lineId, productId: item.productId,
         quantity: item.quantity, selection: item.selection,
@@ -55,91 +76,130 @@ export function TrustedWhatsappCheckout({ cart, restaurantSlug, locale, disabled
     };
   }
 
-  async function prepare() {
-    if (disabledReason || !cart.length || busy) return;
-    if (fulfillmentType === "delivery" && (!deliveryArea.trim() || !deliveryNear.trim() || !deliveryBeside.trim())) {
-      setError(ar ? "أدخل منطقة التوصيل والعلامة القريبة والتفاصيل." : "Enter the delivery area, nearby landmark and address detail.");
+  function handleConfirmationError(caught: unknown, checkoutRequest: PublicWhatsappCheckoutRequest, displayedTotal: string,
+    version: number, approvedDraft?: PublicWhatsappCheckoutDraft) {
+    if (editVersion.current !== version) return;
+    if (caught instanceof PublicWhatsappCheckoutError && caught.status === 409
+      && caught.changedDraft && caught.changedMessagePreview && caught.acceptanceToken) {
+      const comparison = approvedDraft
+        ? compareMoney(caught.changedDraft.totalAmount, approvedDraft.totalAmount) !== 0
+          || caught.changedDraft.items.some((line, index) => {
+            const approvedLine = approvedDraft.items[index];
+            return !approvedLine || compareMoney(line.unitPrice, approvedLine.unitPrice) !== 0;
+          }) ? "PRICE_CHANGED" : JSON.stringify(caught.changedDraft) !== JSON.stringify(approvedDraft) ? "SOURCE_CHANGED" : "CURRENT"
+        : compareTrustedDraft(caught.changedDraft, checkoutRequest, displayedTotal, restaurantSlug, locale);
+      if (comparison === "PRICE_CHANGED") {
+        setPendingPrice({ request: checkoutRequest, draft: caught.changedDraft,
+          messagePreview: caught.changedMessagePreview, acceptanceToken: caught.acceptanceToken });
+        return;
+      }
+      setError(comparison === "SOURCE_CHANGED"
+        ? ar ? "تغيرت تفاصيل أحد الأصناف. راجع اختيارات السلة وأعد المحاولة." : "Product details changed. Review your cart choices and try again."
+        : ar ? "انتهت صلاحية التحقق. راجع الطلب وأعد الإرسال." : "The verification expired. Review the order and try again.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    setPrepared(null);
-    const version = editVersion.current;
-    try {
-      const checkoutRequest = request();
-      const response = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
-      if (editVersion.current === version) setPrepared({ request: checkoutRequest, ...response });
-    } catch (caught) {
-      setError(caught instanceof PublicWhatsappCheckoutError ? caught.message : ar ? "تعذر التحقق من الطلب. حاول مجددًا." : "Could not verify the order. Try again.");
-    } finally { setBusy(false); }
+    setError(caught instanceof PublicWhatsappCheckoutError ? caught.message
+      : ar ? "لم يُفتح WhatsApp لأن التحقق فشل." : "WhatsApp was not opened because verification failed.");
   }
 
-  async function acceptAndOpen() {
-    if (!prepared || busy) return;
-    // Open a blank tab within the user's click; never populate it before server confirmation.
-    const tab = window.open("about:blank", "_blank");
-    const version = editVersion.current;
-    setBusy(true);
-    setError(null);
+  async function confirmAndOpen(checkoutRequest: PublicWhatsappCheckoutRequest, acceptanceToken: string,
+    displayedTotal: string, version: number, tab: Window | null) {
     try {
-      const result = await confirmPublicWhatsappCheckout(restaurantSlug, prepared.request, prepared.acceptanceToken);
+      const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken);
       if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");
-      if (editVersion.current !== version) {
+      if (editVersion.current !== version) { tab?.close(); return; }
+      const comparison = compareTrustedDraft(result.draft, checkoutRequest, displayedTotal, restaurantSlug, locale);
+      if (comparison !== "CURRENT") {
         tab?.close();
+        setError(ar ? "تغير الطلب أثناء التحقق. راجعه وأعد الإرسال." : "The order changed during verification. Review and retry.");
         return;
       }
       if (tab) tab.location.href = result.whatsappUrl;
       else window.location.href = result.whatsappUrl;
     } catch (caught) {
       tab?.close();
-      if (caught instanceof PublicWhatsappCheckoutError && caught.status === 409
-        && caught.changedDraft && caught.changedMessagePreview && caught.acceptanceToken) {
-        if (editVersion.current === version) setPrepared({ ...prepared, draft: caught.changedDraft,
-          messagePreview: caught.changedMessagePreview, acceptanceToken: caught.acceptanceToken });
-        setError(ar ? "تغيّر الطلب بعد المراجعة. راجع الأسعار الجديدة ثم وافق مرة أخرى." : "The order changed after review. Check the new prices and accept again.");
-      } else {
-        setPrepared(null);
-        setError(caught instanceof PublicWhatsappCheckoutError ? caught.message : ar ? "لم يُفتح WhatsApp لأن التحقق فشل." : "WhatsApp was not opened because verification failed.");
-      }
-    } finally { setBusy(false); }
+      handleConfirmationError(caught, checkoutRequest, displayedTotal, version);
+    }
   }
 
-  return <section className="cart-checkout-card trusted-whatsapp-checkout" dir={ar ? "rtl" : "ltr"}>
-    <h2>{ar ? "مراجعة طلب WhatsApp" : "Review WhatsApp order"}</h2>
-    <p>{ar ? "سنراجع الأسعار والتوفر مباشرة من المطعم قبل فتح الرسالة. لن تُرسل تلقائيًا." : "We will verify prices and availability with the restaurant before opening the message. It will not send automatically."}</p>
-    <label><span>{ar ? "اسم الزبون (اختياري)" : "Customer name (optional)"}</span>
-      <input value={customerName} maxLength={120} onChange={(event) => setCustomerName(event.target.value)} /></label>
-    <label><span>{ar ? "الهاتف (اختياري)" : "Phone (optional)"}</span>
-      <input value={customerPhone} maxLength={40} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
-    <div className="fulfillment-toggle">
-      <button type="button" className={fulfillmentType === "pickup" ? "active" : ""} onClick={() => setFulfillmentType("pickup")}>{ar ? "استلام" : "Pickup"}</button>
-      <button type="button" className={fulfillmentType === "delivery" ? "active" : ""} onClick={() => setFulfillmentType("delivery")}>{ar ? "توصيل" : "Delivery"}</button>
-    </div>
-    {fulfillmentType === "delivery" ? <>
-      <label><span>{ar ? "المنطقة" : "Area"}</span><input value={deliveryArea} maxLength={160} onChange={(event) => setDeliveryArea(event.target.value)} /></label>
-      <label><span>{ar ? "بالقرب من" : "Near"}</span><input value={deliveryNear} maxLength={160} onChange={(event) => setDeliveryNear(event.target.value)} /></label>
-      <label><span>{ar ? "تفاصيل العنوان" : "Address detail"}</span><input value={deliveryBeside} maxLength={160} onChange={(event) => setDeliveryBeside(event.target.value)} /></label>
-    </> : <label><span>{ar ? "وقت الاستلام (اختياري)" : "Pickup time (optional)"}</span>
-      <input value={pickupTime} maxLength={80} onChange={(event) => setPickupTime(event.target.value)} /></label>}
-    <label><span>{ar ? "ملاحظة الطلب (اختياري)" : "Order note (optional)"}</span>
-      <textarea value={orderNote} maxLength={500} onChange={(event) => setOrderNote(event.target.value)} /></label>
-    {disabledReason ? <p role="alert" className="cart-message">{disabledReason}</p> : null}
-    {error ? <p role="alert" className="cart-message">{error}</p> : null}
-    <button className="cart-whatsapp" type="button" disabled={Boolean(disabledReason) || !cart.length || busy} onClick={() => void prepare()}>
-      {busy ? ar ? "جارٍ التحقق..." : "Checking..." : ar ? "مراجعة الأسعار والاختيارات" : "Verify prices and choices"}
-    </button>
-    {prepared ? <div className="trusted-whatsapp-draft" role="status">
-      <h3>{ar ? "المراجعة الموثوقة" : "Verified review"}</h3>
-      <ul>{prepared.draft.items.map((line) => <li key={line.lineId}>
-        <b>{line.productName} × {line.quantity}</b> — {displayCurrencyAmount(line.lineTotal, prepared.draft.currency)}
-        {line.changed ? <em> {ar ? "(تغيّر السعر؛ راجع قبل الموافقة)" : "(price changed; review before accepting)"}</em> : null}
-      </li>)}</ul>
-      <pre className="trusted-whatsapp-message-preview" dir="auto">{prepared.messagePreview}</pre>
-      <strong>{ar ? "الإجمالي" : "Total"}: {displayCurrencyAmount(prepared.draft.totalAmount, prepared.draft.currency)}</strong>
-      <p>{ar ? "أوافق على السعر والاختيارات أعلاه، وأفتح WhatsApp لإرسال الطلب بنفسي." : "I accept the prices and choices above and will send the message myself in WhatsApp."}</p>
-      <button className="cart-whatsapp" type="button" disabled={busy} onClick={() => void acceptAndOpen()}>
-        {ar ? "أوافق وأفتح WhatsApp" : "Accept and open WhatsApp"}
-      </button>
-    </div> : null}
-  </section>;
+  async function submit(displayedTotal: string) {
+    if (disabledReason || !cart.length || busyRef.current) return;
+    if (details.fulfillmentType === "delivery"
+      && (!details.deliveryArea.trim() || !details.deliveryNear.trim() || !details.deliveryBeside.trim())) {
+      setError(ar ? "أدخل منطقة التوصيل والعلامة القريبة والتفاصيل." : "Enter the delivery area, nearby landmark and address detail.");
+      return;
+    }
+    // Reserve a tab during the click; it stays blank until both server calls succeed.
+    const tab = window.open("about:blank", "_blank");
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    setPendingPrice(null);
+    const version = editVersion.current;
+    const checkoutRequest = request();
+    try {
+      const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
+      if (editVersion.current !== version) { tab?.close(); return; }
+      const comparison = compareTrustedDraft(prepared.draft, checkoutRequest, displayedTotal, restaurantSlug, locale);
+      if (comparison === "PRICE_CHANGED") {
+        tab?.close();
+        setPendingPrice({ request: checkoutRequest, ...prepared });
+        return;
+      }
+      if (comparison !== "CURRENT") {
+        tab?.close();
+        setError(comparison === "SOURCE_CHANGED"
+          ? ar ? "تغيرت تفاصيل أحد الأصناف. راجع اختيارات السلة وأعد المحاولة." : "Product details changed. Review your cart choices and try again."
+          : ar ? "تعذر مطابقة الفاتورة مع الطلب. راجع السلة." : "The invoice does not match your order. Review the cart.");
+        return;
+      }
+      // The user's send click accepts only the total already visible in the original invoice.
+      await confirmAndOpen(checkoutRequest, prepared.acceptanceToken, displayedTotal, version, tab);
+    } catch (caught) {
+      tab?.close();
+      if (editVersion.current === version) setError(caught instanceof PublicWhatsappCheckoutError ? caught.message
+        : ar ? "تعذر التحقق من الطلب. حاول مجددًا." : "Could not verify the order. Try again.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function acceptUpdatedPrice() {
+    if (!pendingPrice || busyRef.current) return;
+    const tab = window.open("about:blank", "_blank");
+    const version = editVersion.current;
+    const { request: checkoutRequest, acceptanceToken, draft } = pendingPrice;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    setPendingPrice(null);
+    try {
+      // Confirm independently revalidates the draft and the HMAC-bound approval.
+      const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken);
+      if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");
+      if (editVersion.current !== version) { tab?.close(); return; }
+      if (JSON.stringify(result.draft) !== JSON.stringify(draft)) {
+        tab?.close();
+        setError(ar ? "تغير الطلب مرة أخرى. راجع السلة وأعد المحاولة." : "The order changed again. Review the cart and retry.");
+        return;
+      }
+      if (tab) tab.location.href = result.whatsappUrl;
+      else window.location.href = result.whatsappUrl;
+    } catch (caught) {
+      tab?.close();
+      handleConfirmationError(caught, checkoutRequest, draft.totalAmount, version, draft);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  return { busy, error, pendingPrice, submit, acceptUpdatedPrice, dismissUpdatedPrice: () => setPendingPrice(null) };
+}
+
+export function cartDisplayedTotal(cart: readonly CartItem[]): string {
+  return sumMoney(cart.map((line) => multiplyMoney(
+    line.mode === "NETWORK" ? line.acceptedQuote.total : line.priceText ?? String(line.price), line.quantity
+  )));
 }

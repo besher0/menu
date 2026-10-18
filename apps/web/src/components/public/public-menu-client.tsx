@@ -26,7 +26,7 @@ import {
   type LegacyCartItem,
   type NetworkCartItem
 } from "./cart-model";
-import { TrustedWhatsappCheckout } from "./trusted-whatsapp-checkout";
+import { cartDisplayedTotal, useTrustedWhatsappCheckout } from "./trusted-whatsapp-checkout";
 
 type PublicLanguage = "ar" | "en";
 type CategoryProductListLayout = "single" | "double";
@@ -89,6 +89,7 @@ const translations = {
     plate: "صحن",
     medium: "متوسط",
     addToCart: "إضافة إلى السلة",
+    startingAt: "ابتداءً من",
     youMayLike: "قد يعجبك أيضاً",
     newBadge: "جديد",
     home: "الرئيسية",
@@ -158,6 +159,7 @@ const translations = {
     plate: "Plate",
     medium: "Medium",
     addToCart: "Add to cart",
+    startingAt: "Starting at",
     youMayLike: "You may also like",
     newBadge: "New",
     home: "Home",
@@ -690,7 +692,9 @@ export function PublicMenuClient({
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
   );
   const requestedView = view === "home" && !hasHomeSections ? "menu" : view;
-  const activeView = requestedView;
+  const activeView = !whatsappOrderingEnabled && requestedView === "cart"
+    ? hasHomeSections ? "home" : "menu"
+    : requestedView;
   const showMenuNavItem = Boolean(data.products.length || data.categories.length);
   const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
   const isSingleMenuPage = activeView === "menu" && showMenuNavItem && !hasHomeSections;
@@ -709,10 +713,16 @@ export function PublicMenuClient({
 
   useEffect(() => {
     setCartLoaded(false);
+    if (!whatsappOrderingEnabled) {
+      setCart([]);
+      window.localStorage.removeItem(storageKey);
+      setCartLoaded(true);
+      return;
+    }
     const stored = window.localStorage.getItem(storageKey);
     setCart(restoreCartStorage(stored, data.restaurant.slug, data.restaurant.currency ?? "ل.س"));
     setCartLoaded(true);
-  }, [data.restaurant.currency, data.restaurant.slug, storageKey]);
+  }, [data.restaurant.currency, data.restaurant.slug, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(languageStorageKey);
@@ -722,7 +732,7 @@ export function PublicMenuClient({
   }, [languageStorageKey]);
 
   useEffect(() => {
-    if (!cartLoaded) {
+    if (!cartLoaded || !whatsappOrderingEnabled) {
       return;
     }
     try {
@@ -730,7 +740,7 @@ export function PublicMenuClient({
     } catch {
       // Storage can be unavailable or full; the in-memory cart remains usable.
     }
-  }, [cart, cartLoaded, data.restaurant.slug, storageKey]);
+  }, [cart, cartLoaded, data.restaurant.slug, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
     if (!cartLoaded || activeView !== "cart") return;
@@ -845,14 +855,19 @@ export function PublicMenuClient({
   const legacyCart = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY");
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string) {
+  function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string, quantity = 1) {
+    if (!showPrices || !whatsappOrderingEnabled || data.networkWhatsappCheckoutEnabled !== true
+      || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) return false;
     const lineId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `network-${Date.now()}-${Math.random()}`;
     const incoming = networkCartItemFromQuote({ product, restaurantSlug: data.restaurant.slug, quote, lineId });
     if (!incoming) return false;
+    const previous = editingLineId ? cartRef.current.find((item) => item.mode === "NETWORK" && item.lineId === editingLineId) : undefined;
+    const remainingUnits = cartRef.current.reduce((sum, item) => sum + item.quantity, 0) - (previous?.quantity ?? 0);
+    if (remainingUnits + quantity > 100) return false;
     if (editingLineId) nextLineQuoteRequest(editingLineId);
     const matched = cartRef.current.find((item) => item.mode === "NETWORK" && item.identity === incoming.identity);
     if (matched) nextLineQuoteRequest(matched.lineId);
-    setCart((current) => addOrEditNetworkCartItem(current, incoming, editingLineId));
+    setCart((current) => addOrEditNetworkCartItem(current, incoming, editingLineId, quantity));
     return true;
   }
 
@@ -1155,8 +1170,9 @@ export function PublicMenuClient({
           getCartQuantity={getCartQuantity}
           cartCount={cartCount}
           cart={cart}
-          onNetworkQuote={(quote, editingLineId) => addNetworkQuote(activeProduct, quote, editingLineId)}
+          onNetworkQuote={(quote, editingLineId, quantity) => addNetworkQuote(activeProduct, quote, editingLineId, quantity)}
           t={t}
+          language={language}
           showPrices={showPrices}
           whatsappOrderingEnabled={whatsappOrderingEnabled}
           networkWhatsappCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true && whatsappOrderingEnabled}
@@ -1197,7 +1213,7 @@ export function PublicMenuClient({
         />
       )}
 
-      {(whatsappOrderingEnabled || cart.some((item) => item.mode === "NETWORK")) && cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
+      {whatsappOrderingEnabled && cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
         <Link href={publicPath("/cart")} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
           <ShoppingCart size={20} />
           <span>{t.viewCart}</span>
@@ -1551,7 +1567,7 @@ function VertigoFeaturedProducts({
             <div>
               <b>{product.name}</b>
               {product.description ? <p>{product.description}</p> : null}
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={t.startingAt} /> : null}
             </div>
           </Link>
         ))}
@@ -2045,6 +2061,7 @@ function MenuView({
               currency={product.currency}
               priceFirst={productListLayout === "double"}
               startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"}
+              startingAtLabel={t.startingAt}
             />
           ) : null}
         </div>
@@ -2153,7 +2170,7 @@ function MenuView({
                 <div className="category-spotlight-copy">
                   <button type="button" className="category-spotlight-title-row" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                     <b>{spotlightProduct.name}</b>
-                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" priceFirst startingAt={spotlightProduct.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
+                    {showPrices ? <ProductPrice price={productPrice(spotlightProduct)} currency={spotlightProduct.currency} className="spotlight-price" priceFirst startingAt={spotlightProduct.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={t.startingAt} /> : null}
                   </button>
                   <div className="category-spotlight-detail-row">
                     <button type="button" className="category-spotlight-description-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
@@ -2229,6 +2246,7 @@ function MenuView({
         <ProductQuickViewModal
           product={selectedProduct}
           showPrices={showPrices}
+          startingAtLabel={t.startingAt}
           onClose={() => setSelectedProduct(null)}
         />
       ) : null}
@@ -2239,10 +2257,12 @@ function MenuView({
 function ProductQuickViewModal({
   product,
   showPrices,
+  startingAtLabel,
   onClose
 }: {
   product: PublicProduct;
   showPrices: boolean;
+  startingAtLabel: string;
   onClose: () => void;
 }) {
   const gallery = productImages(product);
@@ -2313,7 +2333,7 @@ function ProductQuickViewModal({
         <div className="product-quick-body">
           <div className="product-quick-title-row">
             <h2>{product.name}</h2>
-            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
+            {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={startingAtLabel} /> : null}
           </div>
           <p>{product.description}</p>
         </div>
@@ -2327,27 +2347,35 @@ function ProductPrice({
   currency,
   className = "",
   priceFirst = false,
-  startingAt = false
+  startingAt = false,
+  startingAtLabel = "ابتداءً من"
 }: {
   price: number | string | null;
   currency: string;
   className?: string;
   priceFirst?: boolean;
   startingAt?: boolean;
+  startingAtLabel?: string;
 }) {
   if (price === null) {
     return <strong className={`product-price ${className}`.trim()}><span>غير متاح</span></strong>;
   }
+  const formatted = displayCurrencyAmount(price, currency);
+  const currencySuffix = ` ${currency}`;
+  const hasCurrency = formatted.endsWith(currencySuffix);
+  const amount = hasCurrency ? formatted.slice(0, -currencySuffix.length) : formatted;
   return (
     <strong className={`product-price ${className}`.trim()}>
-      {startingAt ? <em>ابتداءً من</em> : null}
+      {startingAt ? <em>{startingAtLabel}</em> : null}
       {priceFirst ? (
         <>
-          <span>{displayCurrencyAmount(price, currency)}</span>
+          <span>{amount}</span>
+          {hasCurrency ? <small>{currency}</small> : null}
         </>
       ) : (
         <>
-          <span>{displayCurrencyAmount(price, currency)}</span>
+          {hasCurrency ? <small>{currency}</small> : null}
+          <span>{amount}</span>
         </>
       )}
     </strong>
@@ -2426,6 +2454,8 @@ function CartView({
   const [deliveryBeside, setDeliveryBeside] = useState("");
   const [orderNote, setOrderNote] = useState("");
   const [pickupTime, setPickupTime] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
@@ -2443,7 +2473,18 @@ function CartView({
   const legacySubtotal = sumMoney(subtotal);
   const deliveryFee = "0"; // Existing checkout does not apply a delivery charge.
   const total = sumMoney([legacySubtotal, deliveryFee]);
+  const trustedTotal = cartDisplayedTotal(cart);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const trustedDisabledReason = !showPrices && hasNetwork
+    ? language === "ar" ? "أسعار هذه القائمة مخفية؛ لا يمكن طلب أصناف الشبكة." : "Prices are hidden for this menu; Network products cannot be ordered."
+    : staleLegacyNetwork
+      ? language === "ar" ? "هذا الصنف تغيّر إلى شبكة خيارات. احذفه وأضفه مجددًا." : "A product changed to Network configuration. Remove and add it again."
+      : networkItems.some((item) => item.status === "CHECKING" || item.status === "INVALID" || item.status === "OFFLINE")
+        ? language === "ar" ? "راجع خيارات الأصناف المتغيرة قبل إتمام الطلب." : "Review changed configurations before checkout."
+        : undefined;
+  const trusted = useTrustedWhatsappCheckout({ cart, restaurantSlug: data.restaurant.slug, locale: language,
+    details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
+      deliveryBeside, pickupTime, orderNote }, disabledReason: trustedDisabledReason });
   const [orderNumber, setOrderNumber] = useState("001");
 
   useEffect(() => {
@@ -2488,18 +2529,18 @@ function CartView({
   }, []);
 
   useEffect(() => {
-    if (hasNetwork) setCartStep("review");
-  }, [hasNetwork]);
+    if (hasNetwork && (!useTrustedNetworkCheckout || !showPrices || !whatsappOrderingEnabled)) setCartStep("review");
+  }, [hasNetwork, useTrustedNetworkCheckout, showPrices, whatsappOrderingEnabled]);
 
   function goToConfirmStep() {
-    if (hasNetwork || !whatsappOrderingEnabled) return;
+    if ((hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) || !whatsappOrderingEnabled) return;
     window.history.pushState({ cartStep: "confirm" }, "", window.location.href);
     setCartStep("confirm");
   }
 
   function handleCheckoutAction() {
-    if (hasNetwork || !whatsappOrderingEnabled) {
-      setCheckoutError(language === "ar" ? "طلب منتجات الشبكة غير مفعل بعد. السلة للمعاينة فقط." : "Network ordering is not enabled yet. This cart is preview-only.");
+    if ((hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) || !whatsappOrderingEnabled) {
+      setCheckoutError(language === "ar" ? "إرسال هذا الطلب غير متاح حاليًا." : "This checkout is currently unavailable.");
       return;
     }
     if (cartStep === "review") {
@@ -2515,6 +2556,10 @@ function CartView({
     }
 
     setCheckoutError(null);
+    if (useTrustedNetworkCheckout) {
+      void trusted.submit(trustedTotal);
+      return;
+    }
     sendWhatsappOrder(
       fulfillment === "delivery"
         ? {
@@ -2534,9 +2579,9 @@ function CartView({
 
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
-      {!hasNetwork ? <CheckoutSteps active={cartStep} /> : null}
+      <CheckoutSteps active={cartStep} />
 
-      {cartStep === "review" || hasNetwork ? (
+      {cartStep === "review" ? (
         <>
           {cart.length ? (
             <section className="cart-page-list">
@@ -2566,7 +2611,7 @@ function CartView({
                         canEdit={data.products.some((candidate) => candidate.id === item.productId)}
                       /> : <>
                         {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
-                        {showPrices ? <ProductPrice price={multiplyMoney(item.priceText ?? String(item.price), item.quantity)} currency={item.currency} /> : null}
+          {showPrices ? <ProductPrice price={multiplyMoney(item.priceText ?? String(item.price), item.quantity)} currency={item.currency} /> : null}
                       </>}
                       {useTrustedNetworkCheckout ? <label className="cart-item-note">
                         <span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
@@ -2617,43 +2662,49 @@ function CartView({
         </>
       ) : (
         <section className={`cart-confirm-form ${fulfillment === "pickup" ? "pickup-mode" : "delivery-mode"}`}>
+          {useTrustedNetworkCheckout ? <>
+            <label><span>{language === "ar" ? "اسم الزبون (اختياري)" : "Customer name (optional)"}</span>
+              <input value={customerName} maxLength={120} onChange={(event) => setCustomerName(event.target.value)} /></label>
+            <label><span>{language === "ar" ? "الهاتف (اختياري)" : "Phone (optional)"}</span>
+              <input value={customerPhone} maxLength={40} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
+          </> : null}
           <div className="fulfillment-toggle">
             <button type="button" className={fulfillment === "delivery" ? "active" : ""} onClick={() => setFulfillment("delivery")}>
               <Truck size={18} />
-              توصيل دليفري
+              {useTrustedNetworkCheckout && language === "en" ? "Delivery" : "توصيل دليفري"}
             </button>
             <button type="button" className={fulfillment === "pickup" ? "active" : ""} onClick={() => setFulfillment("pickup")}>
               <ShoppingBag size={18} />
-              استلام من المطعم
+              {useTrustedNetworkCheckout && language === "en" ? "Pickup from restaurant" : "استلام من المطعم"}
             </button>
           </div>
           {cartStep === "confirm" && fulfillment === "delivery" ? (
             <>
               <label>
-                <span>المنطقة</span>
+                <span>{useTrustedNetworkCheckout && language === "en" ? "Area" : "المنطقة"}</span>
                 <input value={deliveryArea} onChange={(event) => setDeliveryArea(event.target.value)} placeholder="حلب الجديدة" />
               </label>
               <label>
-                <span>قريب من</span>
+                <span>{useTrustedNetworkCheckout && language === "en" ? "Near" : "قريب من"}</span>
                 <input value={deliveryNear} onChange={(event) => setDeliveryNear(event.target.value)} placeholder="مشفى الشهباء" />
               </label>
               <label>
-                <span>جانب</span>
+                <span>{useTrustedNetworkCheckout && language === "en" ? "Address details" : "جانب"}</span>
                 <input value={deliveryBeside} onChange={(event) => setDeliveryBeside(event.target.value)} placeholder="صيدلية باسل" />
               </label>
               <label>
-                <span>ملاحظة للطلب</span>
+                <span>{useTrustedNetworkCheckout && language === "en" ? "Order note" : "ملاحظة للطلب"}</span>
                 <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="ملاحظة" />
               </label>
             </>
           ) : (
             <>
               <label>
-                <span>ملاحظة</span>
+                <span>{useTrustedNetworkCheckout && language === "en" ? "Order note" : "ملاحظة"}</span>
                 <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="ملاحظة" />
               </label>
               <label>
-                <span>وقت الاستلام</span>
+                <span>{useTrustedNetworkCheckout && language === "en" ? "Pickup time" : "وقت الاستلام"}</span>
                 <input value={pickupTime} onChange={(event) => setPickupTime(event.target.value)} placeholder="اسرع وقت" />
               </label>
             </>
@@ -2661,29 +2712,22 @@ function CartView({
         </section>
       )}
 
-      {useTrustedNetworkCheckout ? <TrustedWhatsappCheckout
-        cart={cart} restaurantSlug={data.restaurant.slug} locale={language}
-        disabledReason={staleLegacyNetwork
-          ? language === "ar" ? "هذا الصنف تغيّر إلى شبكة خيارات. احذفه وأضفه مجددًا." : "A product changed to Network configuration. Remove and add it again."
-          : networkItems.some((item) => item.status !== "CURRENT")
-            ? language === "ar" ? "راجع خيارات الأصناف المتغيرة قبل إتمام الطلب." : "Review changed configurations before checkout."
-            : undefined}
-      /> : hasNetwork ? <section className="network-cart-gate" role="status">
+      {hasNetwork && (!useTrustedNetworkCheckout || !showPrices) ? <section className="network-cart-gate" role="status">
         <b>{language === "ar" ? "سلة الشبكة للمعاينة فقط" : "Network cart is preview-only"}</b>
         {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
-        <p>{language === "ar"
-          ? "السعر Quote حالي قابل للتغير. إرسال طلب أو واتساب لمنتجات الشبكة غير مفعل حتى اكتمال إعادة التحقق قبل الطلب."
-          : "Quotes are current estimates. Network checkout and WhatsApp orders remain disabled until order revalidation is complete."}</p>
+        <p>{!showPrices ? trustedDisabledReason : language === "ar"
+          ? "إرسال أصناف الشبكة غير متاح حاليًا. يمكنك مراجعة اختياراتك دون إرسال طلب."
+          : "Network checkout is unavailable. You can review choices without sending an order."}</p>
         {networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
       </section> : whatsappOrderingEnabled ? <section className="cart-checkout-card">
         <div className="cart-checkout-meta">
           <span>{t.selectedItems} <b>{cartCount}</b></span>
-          <span>{t.orderNumber}: {orderNumber}</span>
+          {!hasNetwork ? <span>{t.orderNumber}: {orderNumber}</span> : null}
         </div>
         <dl>
           <div>
             <dt>{t.subtotal}</dt>
-            <dd>{displayCurrencyAmount(legacySubtotal, data.restaurant.currency ?? "ل.س")}</dd>
+            <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : legacySubtotal, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
           {fulfillment === "delivery" ? (
           <div>
@@ -2693,21 +2737,36 @@ function CartView({
           ) : null}
           <div>
             <dt />
-            <dd>{displayCurrencyAmount(total, data.restaurant.currency ?? "ل.س")}</dd>
+            <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : total, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
         </dl>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
+        {useTrustedNetworkCheckout && trustedDisabledReason ? <p className="cart-message">{trustedDisabledReason}</p> : null}
+        {useTrustedNetworkCheckout && trusted.error ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
         <button
           type="button"
           className="cart-whatsapp"
           onClick={handleCheckoutAction}
-          disabled={!cart.length || orderSubmitting}
+          disabled={!cart.length || orderSubmitting || trusted.busy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason))}
         >
-          {orderSubmitting ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
-          {orderSubmitting ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
+          {orderSubmitting || trusted.busy ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
+          {orderSubmitting || trusted.busy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
         </button>
       </section> : <section className="network-cart-gate" role="status">{language === "ar" ? "إرسال الطلب غير متاح لهذه القائمة حاليًا." : "Ordering is unavailable for this menu."}</section>}
+      {trusted.pendingPrice ? <div className="price-update-backdrop" role="presentation">
+        <div className="price-update-dialog" role="dialog" aria-modal="true" aria-labelledby="price-update-title" dir={language === "ar" ? "rtl" : "ltr"}
+          onKeyDown={(event) => { if (event.key === "Escape") { trusted.dismissUpdatedPrice(); setCartStep("review"); } }}>
+          <h2 id="price-update-title">{language === "ar" ? "تم تحديث الأسعار" : "Prices have been updated"}</h2>
+          <p>{language === "ar" ? "راجع الإجمالي الجديد قبل المتابعة." : "Review the new total before continuing."}</p>
+          <ul>{trusted.pendingPrice.draft.items.map((line) => <li key={line.lineId}><span dir="auto">{line.productName} × {line.quantity}</span><b>{displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency)}</b></li>)}</ul>
+          <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
+          <div className="price-update-actions">
+            <button type="button" autoFocus onClick={() => { trusted.dismissUpdatedPrice(); setCartStep("review"); }}>{language === "ar" ? "العودة لمراجعة السلة" : "Review cart"}</button>
+            <button type="button" disabled={trusted.busy} onClick={() => void trusted.acceptUpdatedPrice()}>{language === "ar" ? "أوافق وأفتح WhatsApp" : "Accept and open WhatsApp"}</button>
+          </div>
+        </div>
+      </div> : null}
     </main>
   );
 }
@@ -2726,14 +2785,24 @@ function NetworkCartDetails({
   const ar = language === "ar";
   const statusText = {
     CHECKING: ar ? "جارٍ إعادة التحقق من السعر والتكوين..." : "Rechecking price and configuration...",
-    CURRENT: ar ? "سعر Quote حالي، غير مضمون حتى إرسال الطلب" : "Current quote; not guaranteed until checkout",
+    CURRENT: ar ? "السعر الحالي قابل للتغير حتى إرسال الطلب" : "The current price may change until checkout",
     CHANGED: ar ? "تغير السعر أو مصدر مرتبط. اختياراتك لم تتغير." : "Price or linked source changed. Your selections are unchanged.",
     INVALID: ar ? "لم يعد هذا التكوين صالحًا؛ راجع اختياراتك." : "This configuration is no longer valid; review your choices.",
     OFFLINE: ar ? "تعذر الاتصال للتحقق؛ السعر المحفوظ غير موثوق." : "Cannot verify online; the saved price is not trusted."
   }[item.status];
+  const issueMessage = (code: string) => {
+    const messages: Record<string, [string, string]> = {
+      SIZE_REQUIRED: ["اختر حجمًا لهذا الصنف.", "Choose a size for this product."],
+      GROUP_MIN_NOT_MET: ["أكمل الاختيارات المطلوبة.", "Complete the required choices."],
+      OPTION_MAX_EXCEEDED: ["قلّل كمية أحد الخيارات.", "Reduce an option quantity."],
+      LINKED_PRODUCT_UNAVAILABLE: ["أحد الأصناف المرتبطة غير متاح.", "A linked product is unavailable."],
+      PRODUCT_UNAVAILABLE: ["هذا الصنف غير متاح حاليًا.", "This product is currently unavailable."]
+    };
+    return messages[code]?.[ar ? 0 : 1] ?? (ar ? "راجع اختيارات هذا الصنف." : "Review this product's choices.");
+  };
   const lines = item.acceptedQuote.priceBreakdown;
   return <div className="network-cart-details" dir={ar ? "rtl" : "ltr"}>
-    <span className="network-cart-badge">{ar ? "تكوين شبكة" : "Network configuration"} · r{item.configurationRevision}</span>
+    <span className="network-cart-badge">{ar ? "اختيارات الصنف" : "Product choices"}</span>
     <ul className="network-cart-selections">
       {lines.filter((line) => line.kind !== "BASE").map((line, index) => <li key={`${line.path}-${index}`}>
         <span>{line.kind === "SIZE" ? (ar ? "الحجم: " : "Size: ") : line.sourceProductId ? (ar ? "مرتبط: " : "Linked: ") : ""}{line.label}</span>
@@ -2751,7 +2820,7 @@ function NetworkCartDetails({
       <span>{ar ? "السعر الجديد المقترح" : "New proposed quote"}</span>
       <b>{displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency)}</b>
     </div> : null}
-    {item.issues.length ? <ul className="network-cart-issues">{item.issues.slice(0, 4).map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.code}{ar ? " — يتطلب مراجعة" : " — needs review"}</li>)}</ul> : null}
+    {item.issues.length ? <ul className="network-cart-issues">{[...new Set(item.issues.slice(0, 4).map((issue) => issueMessage(issue.code)))].map((message) => <li key={message}>{message}</li>)}</ul> : null}
     <div className="network-cart-actions">
       {canEdit ? <button type="button" onClick={onEdit}>{ar ? "تعديل التكوين" : "Edit configuration"}</button>
         : <span>{ar ? "الصنف غير متاح في القائمة الحالية؛ يمكنك حذفه من السلة." : "Product unavailable in this menu; you can remove it from the cart."}</span>}
@@ -2791,6 +2860,7 @@ function ProductView({
   cart,
   onNetworkQuote,
   t,
+  language,
   showPrices,
   whatsappOrderingEnabled,
   networkWhatsappCheckoutEnabled,
@@ -2804,8 +2874,9 @@ function ProductView({
   getCartQuantity: (slug: string) => number;
   cartCount: number;
   cart: CartItem[];
-  onNetworkQuote: (quote: PublicProductQuoteResponse, editingLineId?: string) => boolean;
+  onNetworkQuote: (quote: PublicProductQuoteResponse, editingLineId?: string, quantity?: number) => boolean;
   t: PublicTranslations;
+  language: PublicLanguage;
   showPrices: boolean;
   whatsappOrderingEnabled: boolean;
   networkWhatsappCheckoutEnabled: boolean;
@@ -3032,22 +3103,9 @@ function ProductView({
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
-          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
+          {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={t.startingAt} /> : null}
         </div>
         <p className="product-description" title={product.description ?? undefined}>{product.description}</p>
-
-        {isNetworkProduct(product) && product.id ? (
-          <ProductConfigurator
-            restaurantSlug={data.restaurant.slug}
-            productId={product.id}
-            currency={product.currency}
-            cartHref={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)}
-            initialSelection={editingItem?.selection}
-            editingLineId={editingItem?.lineId}
-            onNetworkQuote={onNetworkQuote}
-            checkoutEnabled={networkWhatsappCheckoutEnabled}
-          />
-        ) : null}
 
         {ingredients.length ? (
           <>
@@ -3092,9 +3150,30 @@ function ProductView({
           </>
         ) : null}
 
+        {isNetworkProduct(product) && product.id ? (
+          <ProductConfigurator
+            restaurantSlug={data.restaurant.slug}
+            productId={product.id}
+            currency={product.currency}
+            cartHref={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)}
+            initialSelection={editingItem?.selection}
+            editingLineId={editingItem?.lineId}
+            initialQuantity={editingItem?.quantity}
+            maxQuantity={Math.max(0, 100 - cartCount + (editingItem?.quantity ?? 0))}
+            cartCount={cartCount}
+            onNetworkQuote={onNetworkQuote}
+            checkoutEnabled={networkWhatsappCheckoutEnabled}
+            orderingEnabled={whatsappOrderingEnabled && networkWhatsappCheckoutEnabled && showPrices}
+            showPrices={showPrices}
+            locale={language}
+            showBottomBar={!isVertigo}
+          />
+        ) : null}
+
         {isVertigo ? (
           <VertigoRelatedProducts
             title={t.youMayLike}
+            startingAtLabel={t.startingAt}
             products={related}
             restaurantSlug={data.restaurant.slug}
             showPrices={showPrices}
@@ -3137,6 +3216,7 @@ function ProductView({
 
 function VertigoRelatedProducts({
   title,
+  startingAtLabel,
   products,
   restaurantSlug,
   showPrices,
@@ -3144,6 +3224,7 @@ function VertigoRelatedProducts({
   useSubdomainRoutes
 }: {
   title: string;
+  startingAtLabel: string;
   products: PublicProduct[];
   restaurantSlug: string;
   showPrices: boolean;
@@ -3174,7 +3255,7 @@ function VertigoRelatedProducts({
               {product.description ? (
                 <p className="vertigo-related-description" dir="auto">{product.description}</p>
               ) : null}
-              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
+              {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="vertigo-related-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={startingAtLabel} /> : null}
             </div>
           </Link>
         ))}
@@ -3340,7 +3421,7 @@ function ProductRail({
               }}
             >
               <ProductImageMedia product={product} />
-        {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} /> : null}
+        {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={t.startingAt} /> : null}
         <b>{product.name}</b>
             </Link>
             {onAddToCart && hasLegacyOrderPrice(product) ? (

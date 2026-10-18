@@ -82,6 +82,18 @@ describe("versioned public cart model", () => {
     expect(first.selection.groups[0]).toMatchObject({ sizeChoiceId: "medium" });
   });
 
+  it("adds the selected draft quantity without merging different configurations", () => {
+    const first = item();
+    const different = item(selection("large"), "300", 1, "line-large");
+    const cart = addOrEditNetworkCartItem([first], different, undefined, 3);
+    expect(cart).toHaveLength(2);
+    expect(cart[0]).toMatchObject({ lineId: first.lineId, quantity: 1 });
+    expect(cart[1]).toMatchObject({ lineId: different.lineId, quantity: 3 });
+    const edited = addOrEditNetworkCartItem(cart, { ...different, lineId: "replacement" }, different.lineId, 2);
+    expect(edited.find((line) => line.lineId === different.lineId)).toMatchObject({ quantity: 2 });
+    expect(addOrEditNetworkCartItem(cart, different, undefined, 99)).toEqual(cart);
+  });
+
   it("restores old Legacy arrays including explicit zero and safely rejects null price/corrupt entries", () => {
     const restored = restoreCartStorage(JSON.stringify([
       { slug: "zero", name: "Zero", quantity: 2, price: 0, currency: "EGP" },

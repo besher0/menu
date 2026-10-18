@@ -191,11 +191,13 @@ export function networkCartItemFromQuote(args: {
   };
 }
 
-export function addOrEditNetworkCartItem(cart: readonly CartItem[], incoming: NetworkCartItem, editingLineId?: string): CartItem[] {
+export function addOrEditNetworkCartItem(cart: readonly CartItem[], incoming: NetworkCartItem, editingLineId?: string, selectedQuantity?: number): CartItem[] {
   const previous = editingLineId ? cart.find((item) => item.lineId === editingLineId && item.mode === "NETWORK") as NetworkCartItem | undefined : undefined;
-  const amount = previous?.quantity ?? incoming.quantity;
+  const amount = selectedQuantity ?? previous?.quantity ?? incoming.quantity;
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 100) return [...cart];
   const other = editingLineId ? cart.filter((item) => item.lineId !== editingLineId) : [...cart];
   const matched = other.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.identity === incoming.identity);
+  if (other.reduce((sum, item) => sum + item.quantity, 0) + amount > 100) return [...cart];
   if (matched) return other.map((item) => item.lineId === matched.lineId ? {
     ...matched, quantity: matched.quantity + amount, acceptedQuote: incoming.acceptedQuote,
     proposedQuote: undefined, status: "CURRENT", issues: []
