@@ -25,6 +25,7 @@ import {
   buildOptionInstance,
   canAddOptionInstance,
   calculatePublicPreview,
+  changeSizeSelection,
   linkedConfiguration,
   LatestQuoteGate,
   updateOptionGroup
@@ -107,6 +108,7 @@ function SelectionGroups({
   showPrices,
   createId,
   onChange,
+  onSelectionProblem,
   depth = 0
 }: {
   configuration: ProductConfigurationV1;
@@ -117,6 +119,7 @@ function SelectionGroups({
   showPrices: boolean;
   createId: (prefix: string) => string;
   onChange: (selection: ProductSelectionV1) => void;
+  onSelectionProblem: (label: string) => void;
   depth?: number;
 }) {
   return <div className={styles.groups} data-depth={depth}>{configuration.groups.map((group) => {
@@ -136,16 +139,11 @@ function SelectionGroups({
             className={selected?.sizeChoiceId === size.id ? styles.selected : ""}
             disabled={size.available === false}
             key={size.id}
-            onClick={() => onChange(replaceGroup(selection, {
-              type: "SIZE",
-              groupId: group.id,
-              sizeChoiceId: size.id,
-              children: buildInitialSelection(
-                { ...configuration, groups: size.children ?? [] },
-                sources,
-                createId
-              ).groups
-            }))}
+            onClick={() => {
+              const result = changeSizeSelection(selection, group, size.id, sources, createId);
+              if (result.selection) onChange(result.selection);
+              else onSelectionProblem(result.error);
+            }}
           >
             <span dir="auto">{size.label}</span>
             {showPrices ? <strong>{displayCurrencyAmount(size.price, currency)}</strong> : null}
@@ -162,6 +160,7 @@ function SelectionGroups({
             createId={createId}
             depth={depth + 1}
             onChange={(nested) => onChange(replaceGroup(selection, { ...selected, children: nested.groups }))}
+            onSelectionProblem={onSelectionProblem}
           />
         </div> : null}
       </section>;
@@ -179,6 +178,7 @@ function SelectionGroups({
       createId={createId}
       depth={depth}
       onChange={onChange}
+      onSelectionProblem={onSelectionProblem}
     />;
   })}</div>;
 }
@@ -193,7 +193,8 @@ function OptionGroup({
   showPrices,
   createId,
   depth,
-  onChange
+  onChange,
+  onSelectionProblem
 }: {
   group: Extract<ConfigurationGroup, { type: "OPTIONS" }>;
   configuration: ProductConfigurationV1;
@@ -205,6 +206,7 @@ function OptionGroup({
   createId: (prefix: string) => string;
   depth: number;
   onChange: (selection: ProductSelectionV1) => void;
+  onSelectionProblem: (label: string) => void;
 }) {
   const selected = groupSelection(selection, group.id) as OptionGroupSelection | undefined;
   const instances = selected?.instances ?? [];
@@ -302,6 +304,7 @@ function OptionGroup({
                   onChange={(nested) => setInstances(instances.map((item) => item.instanceId === instance.instanceId
                     ? { ...item, children: nested.groups }
                     : item))}
+                  onSelectionProblem={onSelectionProblem}
                 />
               </div> : null}
               {linked && instance.linkedSelection ? <div className={styles.linkedSelection}>
@@ -318,6 +321,7 @@ function OptionGroup({
                   onChange={(linkedSelection) => setInstances(instances.map((item) => item.instanceId === instance.instanceId
                     ? { ...item, linkedSelection }
                     : item))}
+                  onSelectionProblem={onSelectionProblem}
                 />
               </div> : null}
             </div>;
@@ -465,19 +469,23 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       showPrices={showPrices}
       createId={createId}
       onChange={(next) => { quoteGate.current.invalidate(); setQuoteBusy(false); setContinueMessage(null); setQuoteAdded(false); setSelection(next); }}
+      onSelectionProblem={(label) => setContinueMessage(say(locale,
+        `لا يمكن نقل اختيار «${label}» إلى الحجم الجديد. صحّح الاختيار أولًا ثم حاول مجددًا.`,
+        `The choice “${label}” is not valid for the new size. Adjust it first, then try again.`))}
     />
 
     {showPrices ? <aside className={styles.summary} aria-live="polite">
       <div className={styles.summaryTitle}><span>{say(locale, "ملخص السعر", "Price summary")}</span></div>
       {preview.valid && preview.total !== null ? <>
-        <ul>{summarizeConfigurationPriceLines(preview.lines, envelope.productName, draftQuantity).map((line, index) => <li key={`${line.label}-${index}`}>
+        <ul>{summarizeConfigurationPriceLines(preview.lines, envelope.productName).map((line, index) => <li key={`${line.label}-${index}`}>
           <span dir="auto">{line.label}{line.included ? say(locale, " · مشمول", " · Included") : ""}</span>
           {line.chargedAmount !== undefined ? <b>{line.included ? say(locale, "مشمول", "Included") : displayCurrencyAmount(line.chargedAmount, currency)}</b> : null}
         </li>)}</ul>
         {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)
           ? <p className={styles.hint}>{say(locale, "فرق عرض الأسعار", "Displayed price difference")}: {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)}</p> : null}
-        {draftQuantity > 1 ? <div className={styles.unitPrice}><span>{say(locale, "سعر القطعة", "Price per item")}</span><b>{displayCurrencyAmount(preview.total, currency)}</b></div> : null}
-        <div className={styles.total}><span>{draftQuantity > 1 ? say(locale, `إجمالي ${draftQuantity} قطع`, `Total for ${draftQuantity} items`) : say(locale, "الإجمالي", "Total")}</span><strong>{displayCurrencyAmount(multiplyMoney(preview.total, draftQuantity), currency)}</strong></div>
+        <div className={styles.unitPrice}><span>{say(locale, "سعر القطعة مع الإضافات", "Price per item with choices")}</span><b>{displayCurrencyAmount(preview.total, currency)}</b></div>
+        <div className={styles.unitPrice}><span>{say(locale, "الكمية", "Quantity")}</span><b>× {draftQuantity}</b></div>
+        <div className={styles.total}><span>{say(locale, "الإجمالي", "Total")}</span><strong>{displayCurrencyAmount(multiplyMoney(preview.total, draftQuantity), currency)}</strong></div>
       </> : <div className={styles.errors}>
         <b>{say(locale, "لا يمكن عرض سعر نهائي بعد", "A final price is not available yet")}</b>
         <ul>{preview.issues.slice(0, 8).map((issue, index) => <li key={`${issue.code}-${index}`}>{issueText(issue.code, issue.message, locale)}</li>)}</ul>

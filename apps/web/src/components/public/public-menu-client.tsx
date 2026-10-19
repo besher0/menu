@@ -10,6 +10,7 @@ import { multiplyMoney, sumMoney } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator } from "./product-configurator";
+import { networkCartChoiceLabels } from "./cart-presentation";
 import {
   acceptNetworkRecheck,
   addOrEditNetworkCartItem,
@@ -2802,16 +2803,14 @@ function NetworkCartDetails({
   };
   const lines = item.acceptedQuote.priceBreakdown;
   return <div className="network-cart-details" dir={ar ? "rtl" : "ltr"}>
-    <span className="network-cart-badge">{item.quantity > 1 ? ar ? "اختيارات كل قطعة" : "Choices for each item" : ar ? "اختيارات الصنف" : "Product choices"}</span>
     <ul className="network-cart-selections">
-      {lines.filter((line) => line.kind !== "BASE" && !(line.kind === "SIZE" && networkCartSizeSuffix(item) && !line.path.includes(".linked") && !line.path.includes(".children"))).map((line, index) => <li key={`${line.path}-${index}`} className={line.path.includes(".children") || line.path.includes(".linked") ? "network-cart-nested-choice" : undefined}>
+      {networkCartChoiceLabels(lines).map((line, index) => <li key={`${line.label}-${index}`} className={line.nested ? "network-cart-nested-choice" : undefined}>
         <span dir="auto">{line.label}</span>
-        <small>{line.included ? ar ? "مشمول" : "Included" : displayCurrencyAmount(line.chargedAmount, item.currency)}</small>
       </li>)}
     </ul>
-    <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p>
+    {item.status !== "CURRENT" ? <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p> : null}
     {showPrices ? <div className="network-cart-price">
-      <span>{item.status === "CURRENT" ? (ar ? "السعر الحالي" : "Current quote") : (ar ? "آخر سعر وافقت عليه" : "Last accepted quote")}</span>
+      <span>{item.status === "CURRENT" ? (ar ? "إجمالي الصنف" : "Item total") : (ar ? "آخر سعر وافقت عليه" : "Last accepted quote")}</span>
       <b>{displayCurrencyAmount(multiplyMoney(item.acceptedQuote.total, item.quantity), item.currency)}</b>
     </div> : null}
     {item.status === "CHANGED" && item.proposedQuote && showPrices ? <div className="network-cart-price changed">

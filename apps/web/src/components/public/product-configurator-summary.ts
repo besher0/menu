@@ -5,14 +5,14 @@ export type DisplayPriceLine = { label: string; chargedAmount?: string; included
 
 /** Presentation only: retain every trusted charge, and never merge branched instances. */
 export function summarizeConfigurationPriceLines(
-  lines: readonly PriceLine[], productName: string, quantity: number
+  lines: readonly PriceLine[], productName: string
 ): DisplayPriceLine[] {
   const rootSizes = lines.filter((line) => line.kind === "SIZE"
     && !line.path.includes(".linked") && !line.path.includes(".children"));
   const primarySize = rootSizes.length === 1 ? rootSizes[0] : null;
   const base = lines.find((line) => line.kind === "BASE");
   const result: DisplayPriceLine[] = [{
-    label: `${quantity} × ${productName}${primarySize ? ` — ${primarySize.label}` : ""}`,
+    label: `1 × ${productName}${primarySize ? ` — ${primarySize.label}` : ""}`,
     chargedAmount: primarySize?.chargedAmount ?? base?.chargedAmount,
     included: false
   }];

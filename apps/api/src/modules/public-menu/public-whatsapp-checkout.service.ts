@@ -136,7 +136,6 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
     } else {
       output.push(`${index + 1}. ${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
       if (line.note) output.push(`${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}`);
-      output.push(`${ar ? "سعر الوحدة" : "Unit price"}: ${formatCurrencyAmount(line.unitPrice, draft.currency)}`);
       output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
     }
     output.push("━━━━━━━━━━━━━━", "");
@@ -144,8 +143,9 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
   if (sumMoney(draft.items.map((item) => item.lineTotal)) !== draft.totalAmount) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
   const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.totalAmount, draft.currency);
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
   output.push(...details.footer);
+  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
+  output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
   return output.join("\n");
 }
 

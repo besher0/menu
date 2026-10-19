@@ -7,6 +7,7 @@ import {
   buildOptionInstance,
   canAddOptionInstance,
   calculatePublicPreview,
+  changeSizeSelection,
   LatestQuoteGate,
   updateOptionGroup
 } from "./product-configurator-model";
@@ -84,6 +85,97 @@ function envelope(configuration: ProductConfigurationV1): PublicProductConfigura
 }
 
 describe("public product configurator model", () => {
+  it("keeps olives, cheese, nested choices and stable instances through Small → Large → Medium → Small", () => {
+    const configuration = pizzaMargheritaDemo("pizza", 4);
+    const sizeGroup = configuration.groups[0];
+    if (sizeGroup.type !== "SIZE") throw new Error("Missing size group");
+    const small = sizeGroup.sizes[0];
+    const toppings = small.children?.[0];
+    if (!toppings || toppings.type !== "OPTIONS") throw new Error("Missing toppings");
+    const cheese = toppings.options[0];
+    const olives = toppings.options[1];
+    const sources = new Map();
+    const createId = ids();
+    let selection = buildInitialSelection(configuration, sources, createId);
+    const cheeseInstance = buildOptionInstance(cheese, sources, createId);
+    const nested = cheese.children?.[0];
+    if (!nested || nested.type !== "OPTIONS") throw new Error("Missing nested group");
+    cheeseInstance.children = [{ type: "OPTIONS", groupId: nested.id,
+      instances: [buildOptionInstance(nested.options[0], sources, createId)] }];
+    const instances = [buildOptionInstance(olives, sources, createId), buildOptionInstance(olives, sources, createId), cheeseInstance];
+    selection = { ...selection, groups: selection.groups.map((group) => group.type === "SIZE"
+      ? { ...group, children: [{ type: "OPTIONS", groupId: toppings.id, instances }] } : group) };
+    for (const [sizeId, expectedTotal] of [
+      ["demo-size-large", "188.5"], ["demo-size-medium", "146"], ["demo-size-small", "111"]
+    ] as const) {
+      const changed = changeSizeSelection(selection, sizeGroup, sizeId, sources, createId);
+      expect(changed.error).toBeUndefined();
+      selection = changed.selection!;
+      const selectedSize = selection.groups[0];
+      if (selectedSize.type !== "SIZE") throw new Error("Missing selection");
+      const selectedToppings = selectedSize.children?.[0];
+      if (selectedToppings?.type !== "OPTIONS") throw new Error("Missing selected toppings");
+      expect(selectedToppings.instances.map((entry) => entry.instanceId)).toEqual(instances.map((entry) => entry.instanceId));
+      expect(selectedToppings.instances[2].children?.[0].type).toBe("OPTIONS");
+      expect(calculatePublicPreview(envelope(configuration), "restaurant", selection)).toMatchObject({ valid: true, total: expectedTotal });
+    }
+  });
+
+  it("blocks an incompatible size without silently discarding selected units", () => {
+    const configuration = pizzaMargheritaDemo("pizza", 1);
+    const sizeGroup = configuration.groups[0];
+    if (sizeGroup.type !== "SIZE") throw new Error("Missing size group");
+    const toppings = sizeGroup.sizes[0].children?.[0];
+    if (!toppings || toppings.type !== "OPTIONS") throw new Error("Missing toppings");
+    const sources = new Map();
+    const createId = ids();
+    const initial = buildInitialSelection(configuration, sources, createId);
+    const selection = { ...initial, groups: initial.groups.map((group) => group.type === "SIZE"
+      ? { ...group, children: [{ type: "OPTIONS" as const, groupId: toppings.id,
+        instances: [buildOptionInstance(toppings.options[1], sources, createId), buildOptionInstance(toppings.options[1], sources, createId)] }] }
+      : group) };
+    const large = sizeGroup.sizes[2];
+    const targetToppings = large.children?.[0];
+    if (!targetToppings || targetToppings.type !== "OPTIONS") throw new Error("Missing target toppings");
+    targetToppings.options[1].maxQuantity = 1;
+    expect(changeSizeSelection(selection, sizeGroup, large.id, sources, createId)).toEqual({ error: "زيتون" });
+    expect((selection.groups[0] as { sizeChoiceId: string }).sizeChoiceId).toBe("demo-size-small");
+    targetToppings.options[1].maxQuantity = 2;
+    targetToppings.options[1].available = false;
+    expect(changeSizeSelection(selection, sizeGroup, large.id, sources, createId)).toEqual({ error: "زيتون" });
+  });
+
+  it("keeps an independent linked selection inside a size-specific option branch", () => {
+    const source = pizzaMargheritaDemo("linked-pizza", 2);
+    const configuration: ProductConfigurationV1 = {
+      schemaVersion: 1, productId: "parent", revision: 1, basePrice: null,
+      groups: [{ type: "SIZE", id: "parent-size", label: "الوجبة", sizes: ["small", "large"].map((name) => ({
+        id: name, label: name, price: name === "small" ? "80" : "120", children: [{
+          type: "OPTIONS" as const, id: `linked-group-${name}`, label: "المكوّن", min: 1, max: 1, includedQuantity: 0,
+          options: [{ id: `linked-choice-${name}`, label: "بيتزا", price: "0", minQuantity: 1, maxQuantity: 1,
+            linkedProduct: { sourceProductId: "linked-pizza", mode: "ORIGINAL" as const } }]
+        }]
+      })) }]
+    };
+    const response = envelope(configuration);
+    response.linkedProducts = [{ productId: "linked-pizza", slug: "linked-pizza", name: "بيتزا",
+      mode: "NETWORK", available: true, orderable: true, configuration: source }];
+    const sources = new Map(response.linkedProducts.map((entry) => [entry.productId, entry]));
+    const createId = ids();
+    const selection = buildInitialSelection(configuration, sources, createId);
+    const group = configuration.groups[0];
+    if (group.type !== "SIZE") throw new Error("Missing parent size");
+    const old = selection.groups[0];
+    if (old.type !== "SIZE" || old.children?.[0].type !== "OPTIONS") throw new Error("Missing linked choice");
+    const originalInstance = old.children[0].instances[0];
+    const changed = changeSizeSelection(selection, group, "large", sources, createId);
+    const next = changed.selection?.groups[0];
+    if (next?.type !== "SIZE" || next.children?.[0].type !== "OPTIONS") throw new Error("Missing mapped choice");
+    expect(next.children[0].instances[0].instanceId).toBe(originalInstance.instanceId);
+    expect(next.children[0].instances[0].linkedSelection).toEqual(originalInstance.linkedSelection);
+    expect(calculatePublicPreview(response, "restaurant", changed.selection!)).toMatchObject({ valid: true, total: "120" });
+  });
+
   it("uses full Size price and a Size-specific option override", () => {
     const configuration = pizzaMargheritaDemo("pizza", 4);
     const sourceMap = new Map();

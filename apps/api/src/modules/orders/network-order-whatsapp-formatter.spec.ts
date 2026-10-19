@@ -42,21 +42,24 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(message).toContain("بيتزا مارغريتا");
     expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
     expect(message).not.toContain("الحجم:");
-    expect(message).toContain("جبنة إضافية⁩ × 1 — 0 EGP");
-    expect(message).toContain("جبنة إضافية⁩ × 2 — 30.000001 EGP للوحدة");
+    expect(message).toContain("جبنة إضافية⁩ × 1");
+    expect(message).toContain("جبنة إضافية⁩ × 2");
     expect(message).toContain("صوص حار");
-    expect(message).toContain("زيتون⁩ × 1 — 0 EGP");
+    expect(message).toContain("زيتون⁩ × 1");
+    expect(message).not.toMatch(/جبنة إضافية⁩ × \d+ —|زيتون⁩ × \d+ —|سعر الوحدة|مشمول|مجاني/);
     expect(message).not.toMatch(/📏 الأحجام — كبير/);
     expect(message).not.toMatch(/مشمول|مجاني/);
-    expect(message).toContain("سعر الوحدة: 265.000004 EGP");
+    expect(message).toContain("إجمالي الصنف: 530.000008 EGP");
     expect(message).toContain("إجمالي الطلب: 530.000008 EGP");
     expect(message.indexOf("الصوصات")).toBeGreaterThan(message.indexOf("جبنة إضافية"));
   });
 
-  it("uses the stored size-specific charged amount, not the default option price", () => {
+  it("validates the stored size-specific charge while omitting individual option prices", () => {
     const snapshot = buildNetworkWhatsappDemo("pizza", "en");
     expect((snapshot.items[0].configurationTree.groups[1] as any).options[0].price).toBe("20");
-    expect(formatNetworkOrderWhatsappMessage(snapshot)).toContain("30.000001 EGP each");
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message).toContain("Line total: 530.000008 EGP");
+    expect(message).not.toContain("30.000001 EGP each");
   });
 
   it("renders English LTR labels and exact persisted amounts", () => {
@@ -91,7 +94,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(message).not.toMatch(/مشمول|مجاني|\.00 SYP/);
   });
 
-  it("shows a zero-priced linked size as zero currency without changing totals", () => {
+  it("keeps a zero-priced linked size visible without a misleading individual price", () => {
     const snapshot = copy(buildNetworkWhatsappDemo("combo", "ar")) as any;
     const item = snapshot.items[0];
     const size = item.priceBreakdown.find((line: any) => line.kind === "SIZE" && line.path.includes(".linked"));
@@ -102,7 +105,8 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     item.lineTotal = item.unitPrice;
     snapshot.totalAmount = item.unitPrice;
     const message = formatNetworkOrderWhatsappMessage(snapshot);
-    expect(message).toContain("0 EGP");
+    expect(message).toContain("📏 ⁨أحجام البيتزا⁩ — ⁨كبير⁩");
+    expect(message).not.toContain("0 EGP");
     expect(message).not.toMatch(/📏.*مجاني/);
     expect(message).toContain(`إجمالي الطلب: ${item.unitPrice} EGP`);
   });

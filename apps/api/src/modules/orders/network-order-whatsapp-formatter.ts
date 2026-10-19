@@ -80,7 +80,6 @@ class LineRenderer {
 
   constructor(
     private readonly locale: Locale,
-    private readonly currency: string,
     private readonly priceLines: PriceLine[],
     private readonly sources: StoredSource[]
   ) {}
@@ -107,20 +106,13 @@ class LineRenderer {
     return line;
   }
 
-  private priceSuffix(line: PriceLine): string {
-    const w = words[this.locale];
-    if (compareMoney(line.chargedAmount, "0") === 0) return formatCurrencyAmount("0", this.currency);
-    return `${formatCurrencyAmount(line.chargedAmount, this.currency)} ${w.each}`;
-  }
-
   render(configuration: ProductConfigurationV1, selection: ProductSelectionV1, headingSizeGroupId?: string) {
     if (configuration.productId !== selection.productId || configuration.revision !== selection.configurationRevision) {
       throw new NetworkOrderSnapshotFormatError("SNAPSHOT_REVISION_MISMATCH", "$selection", "Configuration and selection differ.");
     }
     const base = this.priceLines.find((line) => line.kind === "BASE");
     if (base) {
-      const entry = this.price("$configuration.basePrice", "BASE", configuration.productId);
-      this.rendered.push(`${words[this.locale].base}: ${this.priceSuffix(entry)}`);
+      this.price("$configuration.basePrice", "BASE", configuration.productId);
     }
     this.groups(configuration.groups, selection.groups, "$selection.groups", 0, headingSizeGroupId);
     if (this.usedLines.size !== this.priceLines.length) {
@@ -156,10 +148,10 @@ class LineRenderer {
         const sizes = array(groupNode.sizes, `${groupPath}.sizes`) as Array<{ id: string; label: string; children?: ConfigurationGroup[] }>;
         const size = sizes.find((entry) => entry.id === groupSelection.sizeChoiceId);
         if (!size) throw new NetworkOrderSnapshotFormatError("UNKNOWN_SIZE", groupPath, "Selected size has no historical label.");
-        const entry = this.price(groupPath, "SIZE", size.id);
+        this.price(groupPath, "SIZE", size.id);
         const sizeLabel = display(nonempty(size.label, `${groupPath}.${size.id}.label`), `${groupPath}.${size.id}.label`);
         if (!(depth === 0 && groupId === headingSizeGroupId)) {
-          this.rendered.push(`${pad}📏 ${groupLabel} — ${sizeLabel} (${this.priceSuffix(entry)})`);
+          this.rendered.push(`${pad}📏 ${groupLabel} — ${sizeLabel}`);
         }
         this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1);
       } else if (groupNode.type === "OPTIONS") {
@@ -185,9 +177,9 @@ class LineRenderer {
         this.rendered.push(`${pad}➕ ${groupLabel} (${requirement}):`);
         const instanceIds = new Set<string>();
         const optionCounts = new Map<string, number>();
-        const leafUnits = new Map<string, { label: string; suffix: string; count: number }>();
+        const leafUnits = new Map<string, { label: string; count: number }>();
         const flushLeafUnits = () => {
-          for (const unit of leafUnits.values()) this.rendered.push(`${pad}  • ${unit.label} × ${unit.count} — ${unit.suffix}`);
+          for (const unit of leafUnits.values()) this.rendered.push(`${pad}  • ${unit.label} × ${unit.count}`);
           leafUnits.clear();
         };
         for (const [index, instance] of instances.entries()) {
@@ -205,17 +197,16 @@ class LineRenderer {
           const instancePath = `${groupPath}.${instanceId}`;
           const entry = this.price(instancePath, "OPTION", option.id, option.linkedProduct?.sourceProductId);
           const label = display(nonempty(option.label, `${instancePath}.label`), `${instancePath}.label`);
-          const suffix = this.priceSuffix(entry);
           const hasBranches = Boolean((record.children?.length ?? 0) || option.linkedProduct);
           if (!hasBranches) {
             const key = `${option.id}\u0000${entry.included}\u0000${entry.chargedAmount}\u0000${entry.amount}`;
             const prior = leafUnits.get(key);
             if (prior) prior.count += 1;
-            else leafUnits.set(key, { label, suffix, count: 1 });
+            else leafUnits.set(key, { label, count: 1 });
             continue;
           }
           flushLeafUnits();
-          this.rendered.push(`${pad}  • ${label} × 1 — ${suffix}`);
+          this.rendered.push(`${pad}  • ${label} × 1`);
           this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
           if (option.linkedProduct) {
             const sourceId = option.linkedProduct.sourceProductId;
@@ -338,7 +329,7 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
     return size ? [{ groupId: group.id, label: display(nonempty(size.label, `${path}.size.label`), `${path}.size.label`) }] : [];
   });
   const sizeSuffix = topLevelSizes.length === 1 ? ` — ${topLevelSizes[0].label}` : "";
-  const renderer = new LineRenderer(locale, currency, priceLines, sources);
+  const renderer = new LineRenderer(locale, priceLines, sources);
   const renderedChoices = renderer.render(configuration, selection, topLevelSizes.length === 1 ? topLevelSizes[0].groupId : undefined);
   const lines = [`${index + 1}. ${count} × ${name}${sizeSuffix}`, ...renderedChoices];
   if (item.note !== undefined) {
@@ -349,7 +340,6 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   }
   const reconciliation = currencyDisplayReconciliation(priceLines.map((entry) => entry.chargedAmount), unitPrice, currency);
   if (reconciliation) lines.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  lines.push(`${words[locale].unit}: ${formatCurrencyAmount(unitPrice, currency)}`);
   lines.push(`${words[locale].line}: ${formatCurrencyAmount(lineTotal, currency)}`);
   return { lines, lineTotal };
 }
@@ -380,8 +370,8 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
   }
   const reconciliation = currencyDisplayReconciliation(lineTotals, total, currency);
   if (reconciliation) output.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency)}`);
   output.push(...details.footer);
+  output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency)}`);
   return output.join("\n");
 }
 

@@ -10,7 +10,7 @@ function option(instanceId: string, amount = "5", included = false): PriceLine {
 
 describe("customer price summary presentation", () => {
   it("starts with the actual product and selected size, groups matching leaf units, and keeps charges Decimal-safe", () => {
-    const rows = summarizeConfigurationPriceLines([size, option("a"), option("b"), option("c")], "بيتزا مارغريتا", 1);
+    const rows = summarizeConfigurationPriceLines([size, option("a"), option("b"), option("c")], "بيتزا مارغريتا");
     expect(rows).toEqual([
       { label: "1 × بيتزا مارغريتا — صغير", chargedAmount: "100", included: false },
       { label: "3 × زيتون", chargedAmount: "15", included: false }
@@ -21,9 +21,9 @@ describe("customer price summary presentation", () => {
     const branched = option("nested");
     const child: PriceLine = { ...option("child"), path: `${branched.path}.children.sauce.child`, nodeId: "sauce", label: "رانش" };
     const linked = { ...option("linked"), sourceProductId: "source-pizza" };
-    const rows = summarizeConfigurationPriceLines([option("a"), option("b", "5", true), option("c", "7"), branched, child, linked], "بيتزا", 2);
+    const rows = summarizeConfigurationPriceLines([option("a"), option("b", "5", true), option("c", "7"), branched, child, linked], "بيتزا");
     expect(rows.map((row) => row.label)).toEqual([
-      "2 × بيتزا", "1 × زيتون", "1 × زيتون", "1 × زيتون", "1 × زيتون", "1 × رانش", "1 × زيتون"
+      "1 × بيتزا", "1 × زيتون", "1 × زيتون", "1 × زيتون", "1 × زيتون", "1 × رانش", "1 × زيتون"
     ]);
     expect(rows.map((row) => row.chargedAmount)).toEqual([undefined, "5", "0", "7", "5", "5", "5"]);
   });

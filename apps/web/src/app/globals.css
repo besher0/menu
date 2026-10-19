@@ -8658,8 +8658,8 @@ body:has(.public-page)::-webkit-scrollbar {
   direction: ltr;
   display: grid;
   gap: 4px;
-  grid-template-columns: 34px minmax(0, 1fr) 142px;
-  height: 94px;
+  grid-template-columns: 34px minmax(0, 1fr) clamp(88px, 28vw, 142px);
+  height: auto;
   justify-self: stretch;
   max-width: 100%;
   min-height: 94px;
@@ -8672,11 +8672,11 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .cart-page-item > img,
 .cart-page-item > .product-image-placeholder {
-  align-self: stretch;
+  align-self: center;
   display: block;
   grid-column: 3;
   grid-row: 1;
-  height: 100%;
+  height: 94px;
   max-width: 100%;
   object-fit: cover;
   object-position: center;
@@ -8723,9 +8723,8 @@ body:has(.public-page)::-webkit-scrollbar {
   font-weight: 900;
   line-height: 1.1;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .cart-page-copy p {
@@ -8735,10 +8734,9 @@ body:has(.public-page)::-webkit-scrollbar {
   line-height: 1.45;
   margin: 0;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   unicode-bidi: plaintext;
-  white-space: nowrap;
+  white-space: normal;
   width: 100%;
 }
 
@@ -12334,22 +12332,22 @@ body {
 }
 
 .network-cart-item {
-  align-items: start;
+  align-items: center;
   height: auto;
   min-height: 94px;
 }
 
 .network-cart-item > img,
 .network-cart-item > .product-image-placeholder {
-  align-self: start;
+  align-self: center;
   height: 94px;
 }
 
 .network-cart-item .cart-page-stepper {
-  align-self: start;
+  align-self: center;
   grid-column: 1;
   grid-row: 1;
-  margin-block-start: 12px;
+  margin-block-start: 0;
 }
 
 .network-cart-details {
@@ -12445,7 +12443,7 @@ body {
 @media (max-width: 640px) {
   .network-cart-item {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr) clamp(88px, 28vw, 142px);
   }
 
   .network-cart-item .cart-page-copy {

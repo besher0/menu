@@ -27,7 +27,8 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
     expect(message).toContain("جبنة إضافية");
     expect(message).toContain("صوص حار");
-    expect(message).toContain("جبنة إضافية⁩ × 1 — 0 EGP");
+    expect(message).toContain("جبنة إضافية⁩ × 1");
+    expect(message).not.toMatch(/جبنة إضافية⁩ × 1 —|مشمول|مجاني|سعر الوحدة/);
     expect(message).not.toMatch(/📏 الأحجام — كبير/);
     expect(message).not.toContain("الحجم:");
     expect(message).not.toContain("Configuration Revision");

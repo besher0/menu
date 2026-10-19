@@ -8,6 +8,7 @@ import {
   type OptionChoice,
   type OptionGroupSelection,
   type OptionSelectionInstance,
+  type SizeGroup,
   type PriceResult,
   type ProductConfigurationContext,
   type ProductConfigurationV1,
@@ -127,6 +128,91 @@ export function buildInitialSelection(
     configurationRevision: configuration.revision,
     groups: buildGroups(configuration.groups, sources, idFactory)
   };
+}
+
+type SizeChangeResult = { selection: ProductSelectionV1; error?: never } | { error: string; selection?: never };
+
+/** Preserve selected branches when size-specific groups use different node IDs. Never discard an unmatched choice. */
+export function changeSizeSelection(
+  selection: ProductSelectionV1,
+  group: SizeGroup,
+  targetSizeId: string,
+  sources: ReadonlyMap<string, PublicLinkedConfigurationSource>,
+  idFactory: InstanceIdFactory
+): SizeChangeResult {
+  const old = selection.groups.find((entry): entry is SizeGroupSelection => entry.type === "SIZE" && entry.groupId === group.id);
+  const target = group.sizes.find((size) => size.id === targetSizeId);
+  if (!target || target.available === false) return { error: group.label };
+  if (old?.sizeChoiceId === targetSizeId) return { selection };
+  const previous = group.sizes.find((size) => size.id === old?.sizeChoiceId);
+  const failure = { label: "" };
+
+  function counterpart<T extends { id: string; label: string }>(item: T, choices: readonly T[]): T | undefined {
+    const byId = choices.find((choice) => choice.id === item.id);
+    if (byId) return byId;
+    const byLabel = choices.filter((choice) => choice.label === item.label);
+    return byLabel.length === 1 ? byLabel[0] : undefined;
+  }
+
+  function merge(
+    oldDefinitions: readonly ConfigurationGroup[],
+    newDefinitions: readonly ConfigurationGroup[],
+    oldSelections: readonly GroupSelection[],
+    defaults: readonly GroupSelection[]
+  ): GroupSelection[] | null {
+    const merged = [...defaults];
+    for (const oldSelection of oldSelections) {
+      const oldDefinition = oldDefinitions.find((entry) => entry.id === oldSelection.groupId);
+      if (!oldDefinition || oldDefinition.type !== oldSelection.type) { failure.label = oldSelection.groupId; return null; }
+      const newDefinition = counterpart(oldDefinition, newDefinitions.filter((entry) => entry.type === oldDefinition.type));
+      if (!newDefinition || newDefinition.type !== oldSelection.type || newDefinition.available === false) {
+        failure.label = oldDefinition.label; return null;
+      }
+      let mapped: GroupSelection;
+      if (oldSelection.type === "SIZE" && oldDefinition.type === "SIZE" && newDefinition.type === "SIZE") {
+        const oldSize = oldDefinition.sizes.find((entry) => entry.id === oldSelection.sizeChoiceId);
+        const newSize = oldSize && counterpart(oldSize, newDefinition.sizes);
+        if (!oldSize || !newSize || newSize.available === false) { failure.label = oldDefinition.label; return null; }
+        const childDefaults = buildGroups(newSize.children ?? [], sources, idFactory);
+        const children = merge(oldSize.children ?? [], newSize.children ?? [], oldSelection.children ?? [], childDefaults);
+        if (!children) return null;
+        mapped = { ...oldSelection, groupId: newDefinition.id, sizeChoiceId: newSize.id, children };
+      } else if (oldSelection.type === "OPTIONS" && oldDefinition.type === "OPTIONS" && newDefinition.type === "OPTIONS") {
+        if (newDefinition.max !== null && oldSelection.instances.length > newDefinition.max) {
+          failure.label = newDefinition.label; return null;
+        }
+        const counts = new Map<string, number>();
+        const instances: OptionSelectionInstance[] = [];
+        for (const instance of oldSelection.instances) {
+          const oldOption = oldDefinition.options.find((entry) => entry.id === instance.optionId);
+          const newOption = oldOption && counterpart(oldOption, newDefinition.options);
+          if (!oldOption || !newOption || newOption.available === false
+            || oldOption.linkedProduct?.sourceProductId !== newOption.linkedProduct?.sourceProductId
+            || oldOption.linkedProduct?.mode !== newOption.linkedProduct?.mode) {
+            failure.label = oldOption?.label ?? oldDefinition.label; return null;
+          }
+          const count = (counts.get(newOption.id) ?? 0) + 1;
+          if (count > newOption.maxQuantity) { failure.label = newOption.label; return null; }
+          counts.set(newOption.id, count);
+          const childDefaults = buildGroups(newOption.children ?? [], sources, idFactory);
+          const children = merge(oldOption.children ?? [], newOption.children ?? [], instance.children ?? [], childDefaults);
+          if (!children) return null;
+          instances.push({ ...instance, optionId: newOption.id, children });
+        }
+        mapped = { ...oldSelection, groupId: newDefinition.id, instances };
+      } else { failure.label = oldDefinition.label; return null; }
+      const index = merged.findIndex((entry) => entry.groupId === mapped.groupId);
+      if (index >= 0) merged[index] = mapped;
+      else merged.push(mapped);
+    }
+    return merged;
+  }
+
+  const defaults = buildGroups(target.children ?? [], sources, idFactory);
+  const children = merge(previous?.children ?? [], target.children ?? [], old?.children ?? [], defaults);
+  if (!children) return { error: failure.label || group.label };
+  const next: SizeGroupSelection = { type: "SIZE", groupId: group.id, sizeChoiceId: targetSizeId, children };
+  return { selection: replaceGroupSelection(selection, next) };
 }
 
 export function replaceGroupSelection(selection: ProductSelectionV1, group: GroupSelection | null) {
