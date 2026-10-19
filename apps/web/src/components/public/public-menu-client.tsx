@@ -2600,7 +2600,7 @@ function CartView({
                       </span>
                     )}
                     <div className="cart-page-copy">
-                      <b>{item.name}</b>
+                      <b dir="auto">{item.quantity} × {item.name}{item.mode === "NETWORK" ? networkCartSizeSuffix(item) : ""}</b>
                       {item.mode === "NETWORK" ? <NetworkCartDetails
                         item={item}
                         language={language}
@@ -2619,7 +2619,7 @@ function CartView({
                       </label> : null}
                     </div>
                     <div className="cart-page-stepper" aria-label={item.name}>
-                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity + 1)} aria-label={`+ ${item.name}`}>
+                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity + 1)} disabled={hasNetwork && cartCount >= 100} aria-label={`+ ${item.name}`}>
                         <Plus size={14} />
                       </button>
                       <strong>{item.quantity}</strong>
@@ -2802,13 +2802,11 @@ function NetworkCartDetails({
   };
   const lines = item.acceptedQuote.priceBreakdown;
   return <div className="network-cart-details" dir={ar ? "rtl" : "ltr"}>
-    <span className="network-cart-badge">{ar ? "اختيارات الصنف" : "Product choices"}</span>
+    <span className="network-cart-badge">{item.quantity > 1 ? ar ? "اختيارات كل قطعة" : "Choices for each item" : ar ? "اختيارات الصنف" : "Product choices"}</span>
     <ul className="network-cart-selections">
-      {lines.filter((line) => line.kind !== "BASE").map((line, index) => <li key={`${line.path}-${index}`}>
-        <span>{line.kind === "SIZE" ? (ar ? "الحجم: " : "Size: ") : line.sourceProductId ? (ar ? "مرتبط: " : "Linked: ") : ""}{line.label}</span>
-        {line.included ? <small>{ar ? "مشمول" : "Included"}</small> : null}
-        {line.path.includes(".children") || line.path.includes(".linked") ? <small>{ar ? "خيار متداخل" : "Nested"}</small> : null}
-        {line.instanceId ? <small>{ar ? "وحدة مستقلة" : "Independent unit"}</small> : null}
+      {lines.filter((line) => line.kind !== "BASE" && !(line.kind === "SIZE" && networkCartSizeSuffix(item) && !line.path.includes(".linked") && !line.path.includes(".children"))).map((line, index) => <li key={`${line.path}-${index}`} className={line.path.includes(".children") || line.path.includes(".linked") ? "network-cart-nested-choice" : undefined}>
+        <span dir="auto">{line.label}</span>
+        <small>{line.included ? ar ? "مشمول" : "Included" : displayCurrencyAmount(line.chargedAmount, item.currency)}</small>
       </li>)}
     </ul>
     <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p>
@@ -2828,6 +2826,11 @@ function NetworkCartDetails({
       {(item.status === "OFFLINE" || item.status === "INVALID") ? <button type="button" onClick={onRetry}>{ar ? "إعادة التحقق" : "Retry quote"}</button> : null}
     </div>
   </div>;
+}
+
+function networkCartSizeSuffix(item: NetworkCartItem): string {
+  const topSizes = item.acceptedQuote.priceBreakdown.filter((line) => line.kind === "SIZE" && !line.path.includes(".linked") && !line.path.includes(".children"));
+  return topSizes.length === 1 ? ` — ${topSizes[0].label}` : "";
 }
 
 function CheckoutSteps({ active }: { active: "review" | "confirm" }) {

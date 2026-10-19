@@ -40,11 +40,14 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
   it("renders Arabic Pizza size, nested sauce, included highest-priced cheese, quantity, free option and six decimals", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("pizza", "ar"));
     expect(message).toContain("بيتزا مارغريتا");
-    expect(message).toContain("الحجم:");
-    expect(message).toContain("جبنة إضافية⁩ × 1 — مشمول");
+    expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
+    expect(message).not.toContain("الحجم:");
+    expect(message).toContain("جبنة إضافية⁩ × 1 — 0 EGP");
     expect(message).toContain("جبنة إضافية⁩ × 2 — 30.000001 EGP للوحدة");
     expect(message).toContain("صوص حار");
-    expect(message).toContain("زيتون⁩ × 1 — مجاني");
+    expect(message).toContain("زيتون⁩ × 1 — 0 EGP");
+    expect(message).not.toMatch(/📏 الأحجام — كبير/);
+    expect(message).not.toMatch(/مشمول|مجاني/);
     expect(message).toContain("سعر الوحدة: 265.000004 EGP");
     expect(message).toContain("إجمالي الطلب: 530.000008 EGP");
     expect(message.indexOf("الصوصات")).toBeGreaterThan(message.indexOf("جبنة إضافية"));
@@ -68,18 +71,27 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("combo", "ar"));
     expect(message).toContain("كومبو عائلي");
     expect(message).toContain("(مطلوب)");
-    expect(message).toContain("اختيارات المكوّن 1");
-    expect(message).toContain("اختيارات المكوّن 2");
-    expect(message).toContain("اختيارات المكوّن 3");
+    expect(message).toContain("↳ \u2068بيتزا المصدر\u2069");
     expect(message).not.toContain("ORIGINAL");
     expect(message).not.toContain("CUSTOM");
     expect(message).toContain("كبير");
     expect(message).toContain("وسط");
     expect(message).toContain("43 EGP");
-    expect(message.indexOf("اختيارات المكوّن 1")).toBeLessThan(message.indexOf("اختيارات المكوّن 2"));
+    expect(message.match(/↳ \u2068بيتزا المصدر\u2069/g)).toHaveLength(3);
+    expect(message).not.toContain("اختيارات المكوّن");
   });
 
-  it("describes a zero-priced linked size as no extra size charge, without changing totals", () => {
+  it("formats integer SYP without fractions and keeps repeated linked selections distinct", () => {
+    const snapshot = copy(buildNetworkWhatsappDemo("combo", "ar")) as any;
+    snapshot.currency = "SYP";
+    snapshot.items[0].currency = "SYP";
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message).toContain("إجمالي الطلب: 43 SYP");
+    expect(message.match(/↳ ⁨بيتزا المصدر⁩/g)).toHaveLength(3);
+    expect(message).not.toMatch(/مشمول|مجاني|\.00 SYP/);
+  });
+
+  it("shows a zero-priced linked size as zero currency without changing totals", () => {
     const snapshot = copy(buildNetworkWhatsappDemo("combo", "ar")) as any;
     const item = snapshot.items[0];
     const size = item.priceBreakdown.find((line: any) => line.kind === "SIZE" && line.path.includes(".linked"));
@@ -90,8 +102,8 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     item.lineTotal = item.unitPrice;
     snapshot.totalAmount = item.unitPrice;
     const message = formatNetworkOrderWhatsappMessage(snapshot);
-    expect(message).toContain("دون تكلفة إضافية للحجم");
-    expect(message).not.toMatch(/الحجم:.*مجاني/);
+    expect(message).toContain("0 EGP");
+    expect(message).not.toMatch(/📏.*مجاني/);
     expect(message).toContain(`إجمالي الطلب: ${item.unitPrice} EGP`);
   });
 
@@ -104,6 +116,14 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(message).toContain("First pizza");
     expect(message).not.toContain(currentProduct.name);
     expect(message).not.toContain(currentProduct.price);
+  });
+
+  it("uses an unusual merchant size name directly without an invented Size prefix", () => {
+    const snapshot = copy(buildNetworkWhatsappDemo("pizza", "ar")) as any;
+    snapshot.items[0].configurationTree.groups[0].sizes[1].label = "بغل";
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068بغل\u2069");
+    expect(message).not.toContain("حجم بغل");
   });
 
   it("keeps mixed Arabic/English, emoji and characters but flattens injected newlines and formatting", () => {

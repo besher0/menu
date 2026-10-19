@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronDown, Loader2, Minus, Plus, RotateCcw, ShoppingBag } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
+import { multiplyMoney } from "@menu/shared";
 import type {
   ConfigurationGroup,
   GroupSelection,
@@ -29,6 +30,7 @@ import {
   updateOptionGroup
 } from "./product-configurator-model";
 import styles from "./product-configurator.module.css";
+import { summarizeConfigurationPriceLines } from "./product-configurator-summary";
 import { displayCurrencyAmount, displayRoundingDifference } from "@/lib/currency-display";
 
 type Props = {
@@ -221,7 +223,12 @@ function OptionGroup({
         <b dir="auto">{group.label}</b>
         <span className={group.min > 0 ? styles.required : styles.optional}>{group.min > 0 ? say(locale, "مطلوب", "Required") : say(locale, "اختياري", "Optional")}</span>
       </div>
-      <small>{say(locale, "المحدد", "Selected")} {instances.length} · {say(locale, "الحد", "Limit")} {group.min}–{group.max ?? 100}{group.includedQuantity ? ` · ${say(locale, "المشمول", "Included")} ${group.includedQuantity}` : ""}</small>
+      {group.max === 1 ? <small>{group.min > 0 ? say(locale, "اختر خيارًا واحدًا", "Choose one option") : say(locale, "اختر خيارًا واحدًا كحد أقصى", "Choose up to one option")}</small>
+        : group.max !== null && group.min === group.max ? <small>{say(locale, `اختر ${group.min} خيارات`, `Choose ${group.min} options`)}</small>
+        : group.max !== null ? <small>{group.min > 0
+          ? say(locale, `اختر من ${group.min} إلى ${group.max} خيارات`, `Choose ${group.min} to ${group.max} options`)
+          : say(locale, `اختر حتى ${group.max} خيارات`, `Choose up to ${group.max} options`)}</small>
+          : group.min > 0 ? <small>{say(locale, `اختر ${group.min} خيارات على الأقل`, `Choose at least ${group.min} options`)}</small> : null}
     </header>
     <div className={styles.options} role={radioMode ? "radiogroup" : "group"} aria-label={group.label}>
       {group.options.map((option) => {
@@ -278,10 +285,10 @@ function OptionGroup({
             <b dir="auto">{source?.name ?? say(locale, "مصدر غير متاح", "Source unavailable")}</b>
             {source && !source.orderable ? <small>{say(locale, "غير قابل للطلب حاليًا", "Currently unavailable")}</small> : null}
           </div> : null}
-          {optionInstances.map((instance, index) => {
+          {optionInstances.map((instance) => {
             const linked = linkedConfiguration(option, sources);
+            if (!(option.children?.length ?? 0) && !(linked && instance.linkedSelection)) return null;
             return <div className={styles.instance} key={instance.instanceId}>
-              {optionInstances.length > 1 ? <div className={styles.instanceTitle}>{say(locale, "الوحدة", "Item")} {index + 1} · {say(locale, "تكوين مستقل", "Separate choices")}</div> : null}
               {(option.children?.length ?? 0) > 0 ? <div className={styles.nested}>
                 <SelectionGroups
                   configuration={{ ...configuration, groups: option.children ?? [] }}
@@ -400,15 +407,6 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
   if (error) return <section className={styles.state} dir={locale === "ar" ? "rtl" : "ltr"}><AlertTriangle size={22} /><b>{locale === "ar" ? error : "Could not load this product's choices."}</b></section>;
   if (!envelope || !selection || !preview) return <section className={styles.state} dir={locale === "ar" ? "rtl" : "ltr"}><Loader2 className={styles.spin} size={22} /><b>{say(locale, "جارٍ تحميل خيارات الصنف...", "Loading product choices...")}</b></section>;
 
-  function reset() {
-    quoteGate.current.invalidate();
-    setQuoteBusy(false);
-    idCounter.current = 0;
-    setContinueMessage(null);
-    setQuoteAdded(false);
-    setSelection(buildInitialSelection(envelope!.configuration, sources, createId));
-  }
-
   async function continuePreview() {
     if (!preview?.valid || preview.total === null) {
       setContinueMessage(say(locale, "أكمل الاختيارات المطلوبة وصحّح الأخطاء أولًا.", "Complete the required choices first."));
@@ -452,7 +450,6 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     <section className={styles.configurator} dir={locale === "ar" ? "rtl" : "ltr"} data-testid="public-product-configurator">
     <header className={styles.heading}>
       <div><span>{say(locale, "تخصيص الصنف", "Customize product")}</span><h2 dir="auto">{envelope.productName}</h2></div>
-      <button type="button" onClick={reset}><RotateCcw size={15} /> {say(locale, "إعادة الضبط", "Reset")}</button>
     </header>
 
     {!envelope.orderable ? <div className={styles.unavailable}><AlertTriangle size={18} /><div><b>{say(locale, "التكوين غير قابل للطلب حاليًا", "This configuration is currently unavailable")}</b></div></div> : null}
@@ -471,16 +468,16 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     />
 
     {showPrices ? <aside className={styles.summary} aria-live="polite">
-      <div className={styles.summaryTitle}><span>{say(locale, "ملخص السعر", "Price summary")}</span><small>{say(locale, "معاينة فقط", "Preview only")}</small></div>
+      <div className={styles.summaryTitle}><span>{say(locale, "ملخص السعر", "Price summary")}</span></div>
       {preview.valid && preview.total !== null ? <>
-        <div className={styles.total}><span>{say(locale, "الإجمالي الحالي", "Current total")}</span><strong>{displayCurrencyAmount(preview.total, currency)}</strong></div>
-        <ul>{preview.lines.map((line, index) => <li key={`${line.path}-${index}`}>
-          <span dir="auto">{line.label}{line.included ? say(locale, " · مشمول", " · Included") : ""}{line.instanceId ? say(locale, " · وحدة مستقلة", " · Separate item") : ""}</span>
-          <b>{displayCurrencyAmount(line.chargedAmount, currency)}</b>
+        <ul>{summarizeConfigurationPriceLines(preview.lines, envelope.productName, draftQuantity).map((line, index) => <li key={`${line.label}-${index}`}>
+          <span dir="auto">{line.label}{line.included ? say(locale, " · مشمول", " · Included") : ""}</span>
+          {line.chargedAmount !== undefined ? <b>{line.included ? say(locale, "مشمول", "Included") : displayCurrencyAmount(line.chargedAmount, currency)}</b> : null}
         </li>)}</ul>
         {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)
-          ? <p className={styles.hint}>{say(locale, "فرق عرض التقريب", "Display rounding difference")}: {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)}</p> : null}
-        {preview.baseIgnored ? <p className={styles.hint}>{say(locale, "تم تجاهل السعر الأساسي لأن التكوين يحتوي على أحجام كاملة السعر.", "The base price is not used because sizes have full prices.")}</p> : null}
+          ? <p className={styles.hint}>{say(locale, "فرق عرض الأسعار", "Displayed price difference")}: {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)}</p> : null}
+        {draftQuantity > 1 ? <div className={styles.unitPrice}><span>{say(locale, "سعر القطعة", "Price per item")}</span><b>{displayCurrencyAmount(preview.total, currency)}</b></div> : null}
+        <div className={styles.total}><span>{draftQuantity > 1 ? say(locale, `إجمالي ${draftQuantity} قطع`, `Total for ${draftQuantity} items`) : say(locale, "الإجمالي", "Total")}</span><strong>{displayCurrencyAmount(multiplyMoney(preview.total, draftQuantity), currency)}</strong></div>
       </> : <div className={styles.errors}>
         <b>{say(locale, "لا يمكن عرض سعر نهائي بعد", "A final price is not available yet")}</b>
         <ul>{preview.issues.slice(0, 8).map((issue, index) => <li key={`${issue.code}-${index}`}>{issueText(issue.code, issue.message, locale)}</li>)}</ul>
@@ -498,13 +495,13 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       {cartHref && quoteAdded && !showBottomBar ? <a href={cartHref}>{say(locale, "عرض السلة", "View cart")}</a> : null}
     </div>
     </section>
-    {showBottomBar ? <div className="product-bottom-cart product-bottom-cart-network" dir={locale === "ar" ? "rtl" : "ltr"}>
+    {showBottomBar ? <div className="product-bottom-cart product-bottom-cart-network" dir="ltr">
       <div className="quantity-control" aria-label={say(locale, "كمية التكوين الجاري", "Current configuration quantity")}>
-        <button type="button" onClick={() => setDraftQuantity((value) => Math.max(1, value - 1))} disabled={draftQuantity <= 1} aria-label={say(locale, "إنقاص الكمية", "Decrease quantity")}><Minus size={16} /></button>
-        <strong>{draftQuantity}</strong>
         <button type="button" onClick={() => setDraftQuantity((value) => Math.min(maxQuantity, value + 1))} disabled={draftQuantity >= maxQuantity} aria-label={say(locale, "زيادة الكمية", "Increase quantity")}><Plus size={16} /></button>
+        <strong>{draftQuantity}</strong>
+        <button type="button" onClick={() => setDraftQuantity((value) => Math.max(1, value - 1))} disabled={draftQuantity <= 1} aria-label={say(locale, "إنقاص الكمية", "Decrease quantity")}><Minus size={16} /></button>
       </div>
-      <button type="button" className="product-cart-link" onClick={() => void continuePreview()} disabled={!canAdd}>
+      <button type="button" className="product-cart-link" dir={locale === "ar" ? "rtl" : "ltr"} onClick={() => void continuePreview()} disabled={!canAdd}>
         {quoteBusy ? <Loader2 size={18} className={styles.spin} /> : <ShoppingBag size={18} />}
         <span>{editingLineId ? say(locale, "حفظ التكوين", "Save choices") : say(locale, "إضافة إلى السلة", "Add to cart")}</span>
       </button>

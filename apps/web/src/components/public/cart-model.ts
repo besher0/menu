@@ -76,6 +76,10 @@ export function putLegacyCartItem(cart: readonly CartItem[], product: PublicProd
 
 export function updateCartLineQuantity(cart: readonly CartItem[], lineId: string, quantity: number): CartItem[] {
   if (!Number.isSafeInteger(quantity)) return [...cart];
+  const line = cart.find((item) => item.lineId === lineId);
+  if (!line) return [...cart];
+  if (quantity > 0 && cart.some((item) => item.mode === "NETWORK")
+    && cart.reduce((sum, item) => sum + item.quantity, 0) - line.quantity + quantity > 100) return [...cart];
   return cart.map((item) => item.lineId === lineId ? { ...item, quantity } : item).filter((item) => item.quantity > 0);
 }
 

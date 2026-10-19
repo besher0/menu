@@ -60,14 +60,12 @@ function display(value: string, path: string, maxLength = 200): string {
 }
 
 const words = {
-  ar: { title: "🧾 طلب OrderSawa — معاينة", size: "الحجم", required: "مطلوب", optional: "اختياري",
-    linked: "اختيارات المكوّن", linkedSizeNoExtra: "دون تكلفة إضافية للحجم", included: "مشمول", free: "مجاني",
+  ar: { title: "🧾 طلب OrderSawa", required: "مطلوب", optional: "اختياري",
     unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي",
     restaurant: "المطعم", customer: "اسم الزبون", phone: "هاتف الزبون", fulfillment: "طريقة الاستلام",
     pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "بالقرب من", beside: "بجانب",
     pickupTime: "موعد الاستلام", orderNote: "ملاحظات الطلب", itemNote: "ملاحظة الصنف" },
-  en: { title: "🧾 OrderSawa order — preview", size: "Size", required: "required", optional: "optional",
-    linked: "Component choices", linkedSizeNoExtra: "no extra charge for this size", included: "included", free: "free",
+  en: { title: "🧾 OrderSawa order", required: "required", optional: "optional",
     unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price",
     restaurant: "Restaurant", customer: "Customer", phone: "Customer phone", fulfillment: "Fulfillment",
     pickup: "Pickup", delivery: "Delivery", area: "Area", near: "Near", beside: "Beside",
@@ -79,7 +77,6 @@ type StoredSource = { productId: string; productName: string; mode: "NETWORK" | 
 class LineRenderer {
   readonly rendered: string[] = [];
   private readonly usedLines = new Set<number>();
-  private linkedOrdinal = 0;
 
   constructor(
     private readonly locale: Locale,
@@ -110,14 +107,13 @@ class LineRenderer {
     return line;
   }
 
-  private priceSuffix(line: PriceLine, linkedSize = false): string {
+  private priceSuffix(line: PriceLine): string {
     const w = words[this.locale];
-    if (line.included) return w.included;
-    if (compareMoney(line.chargedAmount, "0") === 0) return linkedSize ? w.linkedSizeNoExtra : w.free;
+    if (compareMoney(line.chargedAmount, "0") === 0) return formatCurrencyAmount("0", this.currency);
     return `${formatCurrencyAmount(line.chargedAmount, this.currency)} ${w.each}`;
   }
 
-  render(configuration: ProductConfigurationV1, selection: ProductSelectionV1) {
+  render(configuration: ProductConfigurationV1, selection: ProductSelectionV1, headingSizeGroupId?: string) {
     if (configuration.productId !== selection.productId || configuration.revision !== selection.configurationRevision) {
       throw new NetworkOrderSnapshotFormatError("SNAPSHOT_REVISION_MISMATCH", "$selection", "Configuration and selection differ.");
     }
@@ -126,14 +122,14 @@ class LineRenderer {
       const entry = this.price("$configuration.basePrice", "BASE", configuration.productId);
       this.rendered.push(`${words[this.locale].base}: ${this.priceSuffix(entry)}`);
     }
-    this.groups(configuration.groups, selection.groups, "$selection.groups", 0);
+    this.groups(configuration.groups, selection.groups, "$selection.groups", 0, headingSizeGroupId);
     if (this.usedLines.size !== this.priceLines.length) {
       throw new NetworkOrderSnapshotFormatError("UNUSED_PRICE_LINE", "$priceBreakdown", "Historical price lines do not match selected nodes.");
     }
     return this.rendered;
   }
 
-  private groups(groupsValue: unknown, selectionsValue: unknown, prefix: string, depth: number, linkedContext = false) {
+  private groups(groupsValue: unknown, selectionsValue: unknown, prefix: string, depth: number, headingSizeGroupId?: string) {
     if (depth > 24) throw new NetworkOrderSnapshotFormatError("SNAPSHOT_DEPTH_LIMIT", prefix, "Nested selection is too deep.");
     const groups = array(groupsValue, `${prefix}.configuration`) as ConfigurationGroup[];
     const selections = array(selectionsValue, prefix) as GroupSelection[];
@@ -162,8 +158,10 @@ class LineRenderer {
         if (!size) throw new NetworkOrderSnapshotFormatError("UNKNOWN_SIZE", groupPath, "Selected size has no historical label.");
         const entry = this.price(groupPath, "SIZE", size.id);
         const sizeLabel = display(nonempty(size.label, `${groupPath}.${size.id}.label`), `${groupPath}.${size.id}.label`);
-        this.rendered.push(`${pad}📏 ${groupLabel} — ${words[this.locale].size}: ${sizeLabel} (${this.priceSuffix(entry, linkedContext)})`);
-        this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1, linkedContext);
+        if (!(depth === 0 && groupId === headingSizeGroupId)) {
+          this.rendered.push(`${pad}📏 ${groupLabel} — ${sizeLabel} (${this.priceSuffix(entry)})`);
+        }
+        this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1);
       } else if (groupNode.type === "OPTIONS") {
         if (groupSelection && groupSelection.type !== "OPTIONS") {
           throw new NetworkOrderSnapshotFormatError("GROUP_TYPE_MISMATCH", groupPath, "Selection type differs from historical group.");
@@ -218,7 +216,7 @@ class LineRenderer {
           }
           flushLeafUnits();
           this.rendered.push(`${pad}  • ${label} × 1 — ${suffix}`);
-          this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2, linkedContext);
+          this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
           if (option.linkedProduct) {
             const sourceId = option.linkedProduct.sourceProductId;
             const source = this.sources.find((candidate) => candidate.productId === sourceId);
@@ -235,10 +233,9 @@ class LineRenderer {
               || (mode === "ORIGINAL" && source.mode !== "NETWORK")) {
               throw new NetworkOrderSnapshotFormatError("LINKED_SNAPSHOT_IDENTITY_MISMATCH", instancePath, "Linked snapshot identity or revision differs.");
             }
-            const count = ++this.linkedOrdinal;
             const linkedName = display(nonempty(source.productName, `${instancePath}.linkedName`), `${instancePath}.linkedName`);
-            this.rendered.push(`${pad}    ↳ ${words[this.locale].linked} ${count}: ${linkedName}`);
-            this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3, true);
+            this.rendered.push(`${pad}    ↳ ${linkedName}`);
+            this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3);
           } else if (record.linkedSelection) {
             throw new NetworkOrderSnapshotFormatError("UNEXPECTED_LINKED_SELECTION", instancePath, "Non-linked option has a linked selection.");
           }
@@ -335,8 +332,15 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
     object(entry, `${path}.priceBreakdown[${lineIndex}]`) as PriceLine);
   const sources = array(item.linkedSources, `${path}.linkedSources`).map((entry, sourceIndex) =>
     object(entry, `${path}.linkedSources[${sourceIndex}]`) as StoredSource);
+  const topLevelSizes = configuration.groups.filter((group) => group.type === "SIZE").flatMap((group) => {
+    const selected = selection.groups.find((choice) => choice.type === "SIZE" && choice.groupId === group.id);
+    const size = selected?.type === "SIZE" ? group.sizes.find((choice) => choice.id === selected.sizeChoiceId) : undefined;
+    return size ? [{ groupId: group.id, label: display(nonempty(size.label, `${path}.size.label`), `${path}.size.label`) }] : [];
+  });
+  const sizeSuffix = topLevelSizes.length === 1 ? ` — ${topLevelSizes[0].label}` : "";
   const renderer = new LineRenderer(locale, currency, priceLines, sources);
-  const lines = [`${index + 1}. ${name} × ${count}`, ...renderer.render(configuration, selection)];
+  const renderedChoices = renderer.render(configuration, selection, topLevelSizes.length === 1 ? topLevelSizes[0].groupId : undefined);
+  const lines = [`${index + 1}. ${count} × ${name}${sizeSuffix}`, ...renderedChoices];
   if (item.note !== undefined) {
     lines.push(`${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}`);
   }

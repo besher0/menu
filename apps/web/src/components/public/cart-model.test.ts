@@ -146,6 +146,18 @@ describe("versioned public cart model", () => {
     expect(putLegacyCartItem(updated, legacyProduct, 0, null, 0)).toEqual([network]);
   });
 
+  it("changes only the selected Network line, enforces the existing 100-unit cart limit, and removes at zero", () => {
+    const small = item(selection("small"), "200", 1, "line-small");
+    const large = item(selection("large"), "300", 1, "line-large");
+    const cart = [small, large];
+    const increased = updateCartLineQuantity(cart, small.lineId, 2);
+    expect(increased).toMatchObject([{ lineId: "line-small", quantity: 2 }, { lineId: "line-large", quantity: 1 }]);
+    expect(increased[1]).toBe(large);
+    expect(updateCartLineQuantity(increased, small.lineId, 100)).toEqual(increased);
+    expect(updateCartLineQuantity(increased, small.lineId, 0)).toEqual([large]);
+    expect(cart).toMatchObject([{ quantity: 1 }, { quantity: 1 }]);
+  });
+
   it("blocks old checkout when Network exists or a stored Legacy line became Network", () => {
     const legacy = restoreCartStorage(JSON.stringify([{ slug: "water", name: "Water", price: 0, quantity: 1 }]), "restaurant-a", "EGP");
     expect(cartNeedsPreviewGate(legacy, [{ id: "water", slug: "water", name: "Water", basePrice: 0, currency: "EGP" }])).toBe(false);

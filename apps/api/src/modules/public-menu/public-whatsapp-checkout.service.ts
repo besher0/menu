@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { currencyDisplayReconciliation, formatCurrencyAmount, validateCurrencyAmount } from "@menu/shared";
-import { compareMoney, createConfigurationSnapshot, multiplyMoney, sumMoney, type PriceLine, type ProductConfigurationContext, type ProductSelectionV1 } from "@menu/shared";
+import { compareMoney, createConfigurationSnapshot, createSelectionKey, multiplyMoney, sumMoney, type PriceLine, type ProductConfigurationContext, type ProductSelectionV1 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { sha256, stableJson } from "../orders/network-order-contract";
 import {
@@ -77,6 +77,49 @@ function verifyToken(key: Buffer, token: string, restaurantId: string, digest: s
   }
 }
 
+/** Presentation-only grouping: a new line is retained whenever any trusted choice, note or price differs. */
+function groupedMessageLines(items: TrustedLine[]): TrustedLine[] {
+  const grouped: TrustedLine[] = [];
+  const byKey = new Map<string, TrustedLine>();
+  for (const line of items) {
+    if (line.mode === "NETWORK") {
+      if (!line.display) throw new Error("NETWORK_DRAFT_DISPLAY_MISSING");
+      const checked = formatNetworkSnapshotLine(line.display, line.display.locale, line.display.currency, grouped.length);
+      if (compareMoney(checked.lineTotal, line.lineTotal) !== 0) throw new Error("NETWORK_DRAFT_LINE_MISMATCH");
+    }
+    if (compareMoney(multiplyMoney(line.unitPrice, line.quantity), line.lineTotal) !== 0) {
+      throw new Error("WHATSAPP_DRAFT_LINE_MISMATCH");
+    }
+    const display = line.display;
+    const key = stableJson({
+      mode: line.mode, productId: line.productId, productName: line.productName,
+      note: line.note ?? null, unitPrice: line.unitPrice,
+      ...(line.mode === "NETWORK" && display ? {
+        configurationRevision: line.configurationRevision,
+        selectionKey: createSelectionKey(display.canonicalSelection),
+        linkedSourceRevisions: line.linkedSourceRevisions,
+        configurationTree: display.configurationTree,
+        linkedSources: display.linkedSources,
+        priceBreakdown: display.priceBreakdown.map(({ path: _path, instanceId: _instanceId, ...price }) => price)
+      } : {})
+    });
+    const previous = byKey.get(key);
+    if (previous && previous.quantity + line.quantity <= 100) {
+      previous.quantity += line.quantity;
+      previous.lineTotal = sumMoney([previous.lineTotal, line.lineTotal]);
+      if (previous.display) {
+        previous.display.quantity = previous.quantity;
+        previous.display.lineTotal = previous.lineTotal;
+      }
+    } else {
+      const copy: TrustedLine = { ...line, ...(display ? { display: { ...display } } : {}) };
+      grouped.push(copy);
+      byKey.set(key, copy);
+    }
+  }
+  return grouped;
+}
+
 /** The message is assembled only from this request's trusted database-backed draft. */
 export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
   const ar = draft.locale === "ar";
@@ -84,14 +127,14 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
   const output = [ar ? "🧾 طلب جديد — OrderSawa" : "🧾 New order — OrderSawa", ...details.header];
   if (draft.branchName) output.push(`${ar ? "الفرع" : "Branch"}: ${formatWhatsappDisplayText(draft.branchName, "$branchName")}`);
   output.push("");
-  for (const [index, line] of draft.items.entries()) {
+  for (const [index, line] of groupedMessageLines(draft.items).entries()) {
     if (line.mode === "NETWORK") {
       if (!line.display) throw new Error("NETWORK_DRAFT_DISPLAY_MISSING");
       const rendered = formatNetworkSnapshotLine(line.display, draft.locale, draft.currency, index);
       if (rendered.lineTotal !== line.lineTotal) throw new Error("NETWORK_DRAFT_LINE_MISMATCH");
       output.push(...rendered.lines);
     } else {
-      output.push(`${index + 1}. ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)} × ${line.quantity}`);
+      output.push(`${index + 1}. ${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
       if (line.note) output.push(`${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}`);
       output.push(`${ar ? "سعر الوحدة" : "Unit price"}: ${formatCurrencyAmount(line.unitPrice, draft.currency)}`);
       output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
