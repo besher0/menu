@@ -689,13 +689,16 @@ export class PublicMenuService {
       input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: ${input.pickupTime}` : null,
       "",
       "العناصر:",
-      ...input.items.flatMap((item, index) => [
-        `${index + 1}- ${item.quantity}x ${item.name}`,
-        item.options.length ? `الإضافات: ${item.options.join(", ")}` : null,
-        item.note ? `ملاحظة: ${item.note}` : null,
-        input.showPrices ? `السعر: ${item.totalPrice.toFixed(2)} ${input.currency}` : null,
-        ""
-      ]),
+      input.showPrices ? "الاسم | الكمية | الصنف | الملاحظة | السعر" : "الاسم | الكمية | الصنف | الملاحظة",
+      "────────────────",
+      ...input.items.map((item) => [
+        item.name,
+        String(item.quantity),
+        item.options.length ? item.options.join(", ") : "—",
+        item.note || "—",
+        ...(input.showPrices ? [`${item.totalPrice.toFixed(2)} ${input.currency}`] : [])
+      ].join(" | ")),
+      "────────────────",
       input.showPrices ? `الإجمالي: ${input.totalAmount.toFixed(2)} ${input.currency}` : null,
       input.orderNote ? "" : null,
       input.orderNote ? "ملاحظة الطلب:" : null,
