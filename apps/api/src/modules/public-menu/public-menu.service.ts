@@ -176,7 +176,8 @@ export class PublicMenuService {
         isActive: true,
         isAvailable: true,
         deletedAt: null
-      }
+      },
+      include: { category: { select: { name: true } } }
     });
 
     if (products.length !== productSlugs.length) {
@@ -191,6 +192,7 @@ export class PublicMenuService {
       return {
         product,
         name: product.name,
+        categoryName: product.category?.name ?? "—",
         quantity: item.quantity,
         unitPrice,
         totalPrice,
@@ -666,6 +668,7 @@ export class PublicMenuService {
     currency: string;
     items: Array<{
       name: string;
+      categoryName: string;
       quantity: number;
       unitPrice: number;
       totalPrice: number;
@@ -694,7 +697,7 @@ export class PublicMenuService {
       ...input.items.map((item) => [
         item.name,
         String(item.quantity),
-        item.options.length ? item.options.join(", ") : "—",
+        item.categoryName,
         item.note || "—",
         ...(input.showPrices ? [`${item.totalPrice.toFixed(2)} ${input.currency}`] : [])
       ].join(" | ")),
