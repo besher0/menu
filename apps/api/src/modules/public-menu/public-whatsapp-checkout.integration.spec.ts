@@ -37,7 +37,9 @@ const source = { schemaVersion: 1, productId: "s6e2-source", revision: 1, basePr
   ] }] };
 const combo = { schemaVersion: 1, productId: "s6e2-combo", revision: 1, basePrice: "0",
   groups: [{ type: "OPTIONS", id: "slots", label: "Slots", min: 3, max: 3, includedQuantity: 0, options: [
-    { id: "original", label: "First pizza", price: "10", maxQuantity: 2,
+    { id: "original", label: "First pizza", price: "10", maxQuantity: 1,
+      linkedProduct: { sourceProductId: "s6e2-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
+    { id: "second-original", label: "Second pizza", price: "10", maxQuantity: 1,
       linkedProduct: { sourceProductId: "s6e2-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
     { id: "custom", label: "Extra pizza", price: "3", maxQuantity: 1,
       linkedProduct: { sourceProductId: "s6e2-source", mode: "CUSTOM", customConfiguration: {
@@ -54,11 +56,11 @@ const pizzaSelection = (revision = 1) => ({ schemaVersion: 1, productId: "s6e2-p
 ] });
 const comboSelection = () => ({ schemaVersion: 1, productId: "s6e2-combo", configurationRevision: 1, groups: [{
   type: "OPTIONS", groupId: "slots", instances: [
-    { instanceId: "first", optionId: "original", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
+    { instanceId: "z-first", optionId: "original", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
       groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: "source-small" }] } },
-    { instanceId: "second", optionId: "original", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
+    { instanceId: "z-second", optionId: "second-original", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
       groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: "source-large" }] } },
-    { instanceId: "third", optionId: "custom", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
+    { instanceId: "a-third", optionId: "custom", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
       groups: [{ type: "SIZE", groupId: "custom-sizes", sizeChoiceId: "custom-one" }] } }
   ]
 }] });
@@ -148,7 +150,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
 
   beforeEach(async () => {
     await setShowPrices(true);
-    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: pizza, configurationVersion: 1, isAvailable: true } });
+    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { name: "Pizza Margherita", configurationTree: pizza, configurationVersion: 1, isAvailable: true } });
     await prisma.product.update({ where: { id: "s6e2-source" }, data: { configurationTree: source, configurationVersion: 1, isAvailable: true } });
     await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12.000001", isAvailable: true } });
     await prisma.subscriptionFeature.update({ where: { id: "s6e2-network" }, data: { enabled: true } });
@@ -253,6 +255,48 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(sent.body.message).toContain("554.00001 EGP");
   });
 
+  it("renders Network-only and Mixed HTTP messages in Arabic and English without repeated sizes or option prices", async () => {
+    for (const locale of ["ar", "en"] as const) {
+      for (const lines of [[networkLine], [legacyLine, networkLine]]) {
+        const payload = request(lines, { locale, customerName: "Synthetic Customer" });
+        const prepared = await prepare(payload);
+        expect(prepared.status).toBe(200);
+        const confirmed = await confirm(payload, prepared.body.acceptanceToken);
+        expect(confirmed.status).toBe(200);
+        const message = confirmed.body.message as string;
+        expect(message).toContain("2 × ⁨Pizza Margherita⁩ — ⁨Medium⁩");
+        expect(message).not.toMatch(/\d+\. 2 ×|📏 ⁨Sizes⁩ — ⁨Medium⁩/);
+        expect(message).not.toMatch(/Cheese⁩ × \d+ —|BBQ⁩ × \d+ —|included|مشمول|مجاني/);
+        expect(message).toContain("Cheese");
+        expect(message).toContain("BBQ");
+        expect(message).toContain("554.00001 EGP".replace("554.00001", lines.length === 1 ? "530.000008" : "554.00001"));
+        expect(decodeURIComponent((confirmed.body.whatsappUrl as string).split("?text=")[1])).toBe(message);
+      }
+    }
+  });
+
+  it("uses stored Arabic product and option names in the confirmed HTTP message", async () => {
+    const arabicPizza = JSON.parse(JSON.stringify(pizza)) as typeof pizza;
+    arabicPizza.groups[0].label = "الأحجام";
+    arabicPizza.groups[0].sizes[1].label = "وسط";
+    arabicPizza.groups[1].label = "الإضافات";
+    arabicPizza.groups[1].options[0].label = "جبنة إضافية";
+    arabicPizza.groups[1].options[0].children[0].label = "الصوصات";
+    arabicPizza.groups[1].options[0].children[0].options[0].label = "صوص حار";
+    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { name: "بيتزا مارغريتا", configurationTree: arabicPizza } });
+    for (const lines of [[networkLine], [legacyLine, networkLine]]) {
+      const payload = request(lines, { customerName: "زبون تجريبي" });
+      const prepared = await prepare(payload);
+      expect(prepared.status).toBe(200);
+      const confirmed = await confirm(payload, prepared.body.acceptanceToken);
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.message).toContain("2 × ⁨بيتزا مارغريتا⁩ — ⁨وسط⁩");
+      expect(confirmed.body.message).toContain("جبنة إضافية");
+      expect(confirmed.body.message).toContain("صوص حار");
+      expect(confirmed.body.message).not.toMatch(/📏 ⁨الأحجام⁩ — ⁨وسط⁩|مجاني|مشمول/);
+    }
+  });
+
   it("formats repeated ORIGINAL and CUSTOM linked instances independently", async () => {
     const payload = request([comboLine]);
     const prepared = await prepare(payload);
@@ -264,15 +308,32 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(sent.body.message).toContain("Source Pizza");
     expect(sent.body.message).toContain("Small");
     expect(sent.body.message).toContain("Large");
+    expect(sent.body.message.indexOf("First pizza")).toBeLessThan(sent.body.message.indexOf("Extra pizza"));
+    expect(sent.body.message.indexOf("First pizza")).toBeLessThan(sent.body.message.indexOf("Second pizza"));
+    expect(sent.body.message.indexOf("Second pizza")).toBeLessThan(sent.body.message.indexOf("Extra pizza"));
+    expect(sent.body.message.match(/↳ ⁨Source Pizza⁩/g)).toHaveLength(3);
   });
 
-  it("rejects a WhatsApp URL that exceeds the safe length before acceptance", async () => {
+  it("keeps identical trusted lines grouped beneath the WhatsApp URL limit", async () => {
     const lines = Array.from({ length: 49 }, (_, index) => ({ ...legacyLine,
       lineId: `long-${index}`, quantity: 1, note: "Long note ".repeat(50) }));
+    const response = await prepare(request([...lines, networkLine]));
+    expect(response.status).toBe(200);
+    expect(response.body.messagePreview.match(/Legacy Salad/g)).toHaveLength(1);
+    expect(response.body.messagePreview).toContain("49 × ⁨Legacy Salad⁩");
+    expect(response.body.acceptanceToken).toBeDefined();
+  });
+
+  it("rejects a genuinely long ungroupable WhatsApp URL before acceptance", async () => {
+    const lines = Array.from({ length: 49 }, (_, index) => ({ ...legacyLine,
+      lineId: `long-${index}`, quantity: 1, note: `${"Long note ".repeat(48)}${index}` }));
+    const before = await prisma.order.count();
     const response = await prepare(request([...lines, networkLine]));
     expect(response.status).toBe(409);
     expect(response.body.error).toBe("WHATSAPP_MESSAGE_TOO_LONG");
     expect(response.body.acceptanceToken).toBeUndefined();
+    expect(response.body.whatsappUrl).toBeUndefined();
+    expect(await prisma.order.count()).toBe(before);
   });
 
   it("requires fresh acceptance after a price change and never sends the stale total", async () => {

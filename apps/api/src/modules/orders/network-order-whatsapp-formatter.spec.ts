@@ -42,10 +42,10 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(message).toContain("بيتزا مارغريتا");
     expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
     expect(message).not.toContain("الحجم:");
-    expect(message).toContain("جبنة إضافية⁩ × 1");
-    expect(message).toContain("جبنة إضافية⁩ × 2");
+    expect(message).toContain("1 × ⁨جبنة إضافية⁩");
+    expect(message).toContain("2 × ⁨جبنة إضافية⁩");
     expect(message).toContain("صوص حار");
-    expect(message).toContain("زيتون⁩ × 1");
+    expect(message).toContain("1 × ⁨زيتون⁩");
     expect(message).not.toMatch(/جبنة إضافية⁩ × \d+ —|زيتون⁩ × \d+ —|سعر الوحدة|مشمول|مجاني/);
     expect(message).not.toMatch(/📏 الأحجام — كبير/);
     expect(message).not.toMatch(/مشمول|مجاني/);
@@ -82,6 +82,25 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(message).toContain("43 EGP");
     expect(message.match(/↳ \u2068بيتزا المصدر\u2069/g)).toHaveLength(3);
     expect(message).not.toContain("اختيارات المكوّن");
+  });
+
+  it("renders combo options in historical menu order even when instance IDs sort oppositely", () => {
+    const snapshot = copy(buildNetworkWhatsappDemo("combo", "ar")) as any;
+    const item = snapshot.items[0];
+    const instances = item.canonicalSelection.groups[0].instances;
+    instances[0].instanceId = "z-first";
+    instances[1].instanceId = "z-second";
+    instances[2].instanceId = "a-custom";
+    for (const line of item.priceBreakdown) {
+      line.path = line.path.replace("pizza-1", "z-first").replace("pizza-2", "z-second").replace("pizza-3", "a-custom");
+    }
+    instances.sort((a: any, b: any) => a.instanceId.localeCompare(b.instanceId));
+    const beforeTotal = item.lineTotal;
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message.indexOf("بيتزا أولى")).toBeLessThan(message.indexOf("بيتزا إضافية"));
+    expect(message.match(/↳ ⁨بيتزا المصدر⁩/g)).toHaveLength(3);
+    expect(item.lineTotal).toBe(beforeTotal);
+    expect(snapshot.totalAmount).toBe(beforeTotal);
   });
 
   it("formats integer SYP without fractions and keeps repeated linked selections distinct", () => {

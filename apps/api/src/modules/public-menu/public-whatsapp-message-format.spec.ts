@@ -25,9 +25,10 @@ describe("trusted public WhatsApp message presentation", () => {
   it("shows actual Arabic size, included and nested choices, then exact total", () => {
     const message = formatTrustedWhatsappDraft(demoDraft("pizza", "ar"));
     expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
+    expect(message).not.toContain("1. 2 ×");
     expect(message).toContain("جبنة إضافية");
     expect(message).toContain("صوص حار");
-    expect(message).toContain("جبنة إضافية⁩ × 1");
+    expect(message).toContain("1 × ⁨جبنة إضافية⁩");
     expect(message).not.toMatch(/جبنة إضافية⁩ × 1 —|مشمول|مجاني|سعر الوحدة/);
     expect(message).not.toMatch(/📏 الأحجام — كبير/);
     expect(message).not.toContain("الحجم:");
@@ -71,6 +72,7 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message.match(/Pizza Margherita/g)).toHaveLength(2);
     expect(message).toContain("No onion");
     expect(message).toContain("1 × \u2068Juice\u2069");
+    expect(message).not.toContain("3. 1 ×");
     expect(message).toContain("Order total: 1070.000016 EGP");
   });
 

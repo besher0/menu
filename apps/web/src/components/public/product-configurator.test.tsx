@@ -49,5 +49,7 @@ describe("ProductConfigurator", () => {
     expect(source).not.toContain("إعادة الضبط");
     expect(source.indexOf("preview.lines.map")).toBeLessThan(source.indexOf("styles.total"));
     expect(source).toContain("multiplyMoney(preview.total, draftQuantity)");
+    expect(source).toContain("displayCurrencyAmount(line.chargedAmount, currency)");
+    expect(source).not.toContain('line.included ? say(locale, "مشمول", "Included")');
   });
 });

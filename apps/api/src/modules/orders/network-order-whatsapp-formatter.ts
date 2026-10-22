@@ -179,10 +179,16 @@ class LineRenderer {
         const optionCounts = new Map<string, number>();
         const leafUnits = new Map<string, { label: string; count: number }>();
         const flushLeafUnits = () => {
-          for (const unit of leafUnits.values()) this.rendered.push(`${pad}  • ${unit.label} × ${unit.count}`);
+          for (const unit of leafUnits.values()) this.rendered.push(`${pad}  • ${unit.count} × ${unit.label}`);
           leafUnits.clear();
         };
-        for (const [index, instance] of instances.entries()) {
+        // Canonical selections are sorted by technical instanceId for signatures.
+        // Presentation follows the historical option order instead, without
+        // changing the signed selection, paths, or monetary breakdown.
+        const displayInstances = [...instances].sort((left, right) =>
+          options.findIndex((option) => option.id === left.optionId)
+          - options.findIndex((option) => option.id === right.optionId));
+        for (const [index, instance] of displayInstances.entries()) {
           const record = object(instance, `${groupPath}.instances[${index}]`) as OptionSelectionInstance;
           const instanceId = nonempty(record.instanceId, `${groupPath}.instances[${index}].instanceId`);
           if (instanceIds.has(instanceId)) throw new NetworkOrderSnapshotFormatError("DUPLICATE_INSTANCE", groupPath, instanceId);
@@ -206,7 +212,7 @@ class LineRenderer {
             continue;
           }
           flushLeafUnits();
-          this.rendered.push(`${pad}  • ${label} × 1`);
+          this.rendered.push(`${pad}  • 1 × ${label}`);
           this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
           if (option.linkedProduct) {
             const sourceId = option.linkedProduct.sourceProductId;
@@ -300,7 +306,7 @@ export function formatNetworkOrderDetails(value: unknown, locale: Locale) {
   return renderOrderDetails(value, locale);
 }
 
-export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, currency: string, index: number): { lines: string[]; lineTotal: string } {
+export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, currency: string, index: number, numbered = true): { lines: string[]; lineTotal: string } {
   const path = `$snapshot.items[${index}]`;
   const item = object(rawItem, path);
   if (item.snapshotVersion !== 1 || item.mode !== "NETWORK" || item.locale !== locale || item.currency !== currency) {
@@ -331,7 +337,7 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   const sizeSuffix = topLevelSizes.length === 1 ? ` — ${topLevelSizes[0].label}` : "";
   const renderer = new LineRenderer(locale, priceLines, sources);
   const renderedChoices = renderer.render(configuration, selection, topLevelSizes.length === 1 ? topLevelSizes[0].groupId : undefined);
-  const lines = [`${index + 1}. ${count} × ${name}${sizeSuffix}`, ...renderedChoices];
+  const lines = [`${numbered ? `${index + 1}. ` : ""}${count} × ${name}${sizeSuffix}`, ...renderedChoices];
   if (item.note !== undefined) {
     lines.push(`${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}`);
   }

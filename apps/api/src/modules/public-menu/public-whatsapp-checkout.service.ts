@@ -130,11 +130,11 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
   for (const [index, line] of groupedMessageLines(draft.items).entries()) {
     if (line.mode === "NETWORK") {
       if (!line.display) throw new Error("NETWORK_DRAFT_DISPLAY_MISSING");
-      const rendered = formatNetworkSnapshotLine(line.display, draft.locale, draft.currency, index);
+      const rendered = formatNetworkSnapshotLine(line.display, draft.locale, draft.currency, index, false);
       if (rendered.lineTotal !== line.lineTotal) throw new Error("NETWORK_DRAFT_LINE_MISMATCH");
       output.push(...rendered.lines);
     } else {
-      output.push(`${index + 1}. ${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
+      output.push(`${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
       if (line.note) output.push(`${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}`);
       output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
     }

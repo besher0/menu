@@ -478,8 +478,8 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       <div className={styles.summaryTitle}><span>{say(locale, "ملخص السعر", "Price summary")}</span></div>
       {preview.valid && preview.total !== null ? <>
         <ul>{summarizeConfigurationPriceLines(preview.lines, envelope.productName).map((line, index) => <li key={`${line.label}-${index}`}>
-          <span dir="auto">{line.label}{line.included ? say(locale, " · مشمول", " · Included") : ""}</span>
-          {line.chargedAmount !== undefined ? <b>{line.included ? say(locale, "مشمول", "Included") : displayCurrencyAmount(line.chargedAmount, currency)}</b> : null}
+          <span dir="auto">{line.label}</span>
+          {line.chargedAmount !== undefined ? <b>{displayCurrencyAmount(line.chargedAmount, currency)}</b> : null}
         </li>)}</ul>
         {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)
           ? <p className={styles.hint}>{say(locale, "فرق عرض الأسعار", "Displayed price difference")}: {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)}</p> : null}

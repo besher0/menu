@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PriceLine } from "@menu/shared";
+import { calculatePrice, sumMoney, type PriceLine } from "@menu/shared";
+import { includedQuantityDemo } from "../dashboard/product-configuration/demos";
 import { summarizeConfigurationPriceLines } from "./product-configurator-summary";
 
 const size: PriceLine = { kind: "SIZE", path: "$selection.groups.sizes", nodeId: "small", label: "صغير", amount: "100", chargedAmount: "100", included: false };
@@ -26,5 +27,24 @@ describe("customer price summary presentation", () => {
       "1 × بيتزا", "1 × زيتون", "1 × زيتون", "1 × زيتون", "1 × زيتون", "1 × رانش", "1 × زيتون"
     ]);
     expect(rows.map((row) => row.chargedAmount)).toEqual([undefined, "5", "0", "7", "5", "5", "5"]);
+  });
+
+  it("keeps real included-unit charges as zero and reconciles the summary with the Shared quote", () => {
+    const configuration = includedQuantityDemo("included", 1);
+    const selection = { schemaVersion: 1 as const, productId: "included", configurationRevision: 1, groups: [{
+      type: "OPTIONS" as const, groupId: "demo-included-toppings", instances: [
+        { instanceId: "m", optionId: "demo-included-mushroom" },
+        { instanceId: "c", optionId: "demo-included-cheese" },
+        { instanceId: "l", optionId: "demo-included-meat" }
+      ]
+    }] };
+    const quote = calculatePrice(configuration, selection, { catalogId: "demo", linkedProducts: new Map() });
+    expect(quote.valid).toBe(true);
+    expect(quote.total).toBe("115");
+    const rows = summarizeConfigurationPriceLines(quote.lines, "بيتزا");
+    expect(rows.filter((row) => row.included).map((row) => [row.label, row.chargedAmount])).toEqual([
+      ["1 × مشروم", "0"], ["1 × لحم", "0"]
+    ]);
+    expect(sumMoney(rows.map((row) => row.chargedAmount ?? "0"))).toBe(quote.total);
   });
 });
