@@ -2,6 +2,13 @@ import type { PriceLine } from "@menu/shared";
 
 export type CartChoiceLabel = { label: string; nested: boolean };
 
+/** The Network card has its own quantity stepper; show only the product and its top-level size. */
+export function networkCartHeading(item: { name: string; acceptedQuote: { priceBreakdown: readonly PriceLine[] } }): string {
+  const topSizes = item.acceptedQuote.priceBreakdown.filter((line) => line.kind === "SIZE"
+    && !line.path.includes(".linked") && !line.path.includes(".children"));
+  return `${item.name}${topSizes.length === 1 ? ` — ${topSizes[0].label}` : ""}`;
+}
+
 /** Compact presentation of the accepted, per-unit breakdown; amounts remain in the trusted quote. */
 export function networkCartChoiceLabels(lines: readonly PriceLine[]): CartChoiceLabel[] {
   const rootSizes = lines.filter((line) => line.kind === "SIZE"

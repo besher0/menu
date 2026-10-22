@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronDown, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
 import { multiplyMoney } from "@menu/shared";
 import type {
   ConfigurationGroup,
@@ -129,7 +129,6 @@ function SelectionGroups({
       return <section className={styles.group} key={group.id} data-group-type="SIZE">
         <header className={styles.groupHeader}>
           <div><b dir="auto">{group.label}</b><span className={styles.required}>{say(locale, "مطلوب", "Required")}</span></div>
-          <small>{say(locale, "اختر حجمًا واحدًا", "Choose one size")}</small>
         </header>
         <div className={styles.sizeGrid} role="radiogroup" aria-label={group.label}>
           {group.sizes.map((size) => <button
@@ -246,6 +245,7 @@ function OptionGroup({
         });
         const canRemove = count > (option.minQuantity ?? 0);
         const source = option.linkedProduct ? sources.get(option.linkedProduct.sourceProductId) : null;
+        const sourceNameAlreadyShown = Boolean(source && option.label.includes(source.name));
         const priceHint = option.priceOverrides?.length ? say(locale, "يتغير حسب الحجم", "Varies by size") : option.price;
 
         function add() {
@@ -282,14 +282,14 @@ function OptionGroup({
               <button type="button" onClick={add} disabled={!canAdd} aria-label={`${say(locale, "زيادة", "Increase")} ${option.label}`}><Plus size={14} /></button>
             </div> : null}
           </div>
-          {option.linkedProduct ? <div className={styles.linkedMeta}>
-            <span>{option.linkedProduct.mode === "ORIGINAL" ? say(locale, "اختيارات الصنف", "Product choices") : say(locale, "تخصيص الوجبة", "Meal choices")}</span>
-            <b dir="auto">{source?.name ?? say(locale, "مصدر غير متاح", "Source unavailable")}</b>
+          {option.linkedProduct && (!sourceNameAlreadyShown || source?.orderable === false) ? <div className={styles.linkedMeta}>
+            {!sourceNameAlreadyShown ? <b dir="auto">{source?.name ?? say(locale, "مصدر غير متاح", "Source unavailable")}</b> : null}
             {source && !source.orderable ? <small>{say(locale, "غير قابل للطلب حاليًا", "Currently unavailable")}</small> : null}
           </div> : null}
           {optionInstances.map((instance) => {
             const linked = linkedConfiguration(option, sources);
-            if (!(option.children?.length ?? 0) && !(linked && instance.linkedSelection)) return null;
+            const hasLinkedChoices = Boolean(linked?.groups.length && instance.linkedSelection);
+            if (!(option.children?.length ?? 0) && !hasLinkedChoices) return null;
             return <div className={styles.instance} key={instance.instanceId}>
               {(option.children?.length ?? 0) > 0 ? <div className={styles.nested}>
                 <SelectionGroups
@@ -307,8 +307,7 @@ function OptionGroup({
                   onSelectionProblem={onSelectionProblem}
                 />
               </div> : null}
-              {linked && instance.linkedSelection ? <div className={styles.linkedSelection}>
-                <div className={styles.linkedHeading}><ChevronDown size={15} /><b dir="auto">{say(locale, "اختيارات", "Choices for")} {source?.name ?? option.label}</b></div>
+              {hasLinkedChoices && linked && instance.linkedSelection ? <div className={styles.linkedSelection}>
                 <SelectionGroups
                   configuration={linked}
                   selection={instance.linkedSelection}
@@ -432,8 +431,8 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
         return;
       }
       setContinueMessage(editingLineId
-        ? say(locale, "حُفظ التكوين المعدّل في السلة. السعر الحالي قابل للتغير.", "The updated choices were saved. The quote may change.")
-        : say(locale, "أُضيف التكوين إلى السلة بسعر حالي قابل للتغير.", "The configured item was added. The quote may change."));
+        ? say(locale, "حُفظت الاختيارات في السلة.", "Choices saved in the cart.")
+        : say(locale, "أُضيف الصنف إلى السلة.", "Item added to the cart."));
       setQuoteAdded(true);
       setStaleEdit(false);
     } catch (error) {
@@ -453,7 +452,7 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
   return <>
     <section className={styles.configurator} dir={locale === "ar" ? "rtl" : "ltr"} data-testid="public-product-configurator">
     <header className={styles.heading}>
-      <div><span>{say(locale, "تخصيص الصنف", "Customize product")}</span><h2 dir="auto">{envelope.productName}</h2></div>
+      <h2>{say(locale, "تخصيص الصنف", "Customize product")}</h2>
     </header>
 
     {!envelope.orderable ? <div className={styles.unavailable}><AlertTriangle size={18} /><div><b>{say(locale, "التكوين غير قابل للطلب حاليًا", "This configuration is currently unavailable")}</b></div></div> : null}
@@ -490,15 +489,14 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
         <b>{say(locale, "لا يمكن عرض سعر نهائي بعد", "A final price is not available yet")}</b>
         <ul>{preview.issues.slice(0, 8).map((issue, index) => <li key={`${issue.code}-${index}`}>{issueText(issue.code, issue.message, locale)}</li>)}</ul>
       </div>}
-    </aside> : <p className={styles.hint}>{say(locale, "الأسعار مخفية لهذه القائمة؛ يمكنك استعراض الخيارات دون إضافتها للسلة.", "Prices are hidden for this menu. You may browse choices but cannot add this item to the cart.")}</p>}
+    </aside> : null}
 
     <div className={styles.previewGate}>
       {!showBottomBar ? <button type="button" onClick={() => void continuePreview()} disabled={!canAdd}>
         {quoteBusy ? say(locale, "جارٍ التحقق من السعر...", "Checking the price...") : editingLineId ? say(locale, "حفظ التكوين في السلة", "Save cart choices") : say(locale, "إضافة إلى السلة", "Add to cart")}
       </button> : null}
-      <p>{!showPrices ? say(locale, "لا يمكن طلب صنف أخفيت أسعاره.", "A product with hidden prices cannot be ordered.")
-        : checkoutEnabled ? say(locale, "ستُراجع الأسعار والتوفر مجددًا قبل فتح WhatsApp.", "Prices and availability will be checked again before opening WhatsApp.")
-          : say(locale, "الخيارات للعرض فقط؛ إرسال طلب الشبكة غير متاح حاليًا.", "Choices are for browsing only; Network checkout is unavailable.")}</p>
+      {!showPrices ? <p>{say(locale, "أسعار هذه القائمة مخفية؛ لا يمكن إضافة الصنف للسلة.", "Prices are hidden for this menu; this item cannot be added to the cart.")}</p>
+        : !checkoutEnabled || !orderingEnabled ? <p>{say(locale, "لا يمكن طلب هذا الصنف حاليًا.", "This item cannot be ordered right now.")}</p> : null}
       {continueMessage ? <strong>{continueMessage}</strong> : null}
       {cartHref && quoteAdded && !showBottomBar ? <a href={cartHref}>{say(locale, "عرض السلة", "View cart")}</a> : null}
     </div>

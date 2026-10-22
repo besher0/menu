@@ -13,8 +13,7 @@
 .groupHeader,
 .optionRow,
 .summaryTitle,
-.total,
-.linkedHeading {
+.total {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -26,13 +25,8 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.heading span {
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
 .heading h2 {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--color-text-first);
   font-family: var(--font-heading, inherit);
   font-size: 14px;
@@ -72,7 +66,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card, 18px);
   background: var(--color-surface);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-text) 7%, transparent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 }
 
 .groupHeader {
@@ -106,7 +100,6 @@
 
 .required,
 .optional,
-.linkedMeta span,
 .summaryTitle small {
   padding: 3px 8px;
   border-radius: 999px;
@@ -183,7 +176,7 @@
 
 .options {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .option {
@@ -227,7 +220,7 @@
   color: var(--color-surface);
 }
 
-.optionSelected .optionLabel i {
+.optionSelected > .optionRow .optionLabel i {
   border-color: var(--pc-accent);
   background: var(--pc-accent);
 }
@@ -292,12 +285,6 @@
   overflow-wrap: anywhere;
 }
 
-.linkedMeta span {
-  direction: ltr;
-  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-primary));
-  color: var(--color-text);
-}
-
 .linkedMeta small {
   margin-inline-start: auto;
   color: var(--color-error);
@@ -307,27 +294,23 @@
   margin: 0 10px 10px;
 }
 
-.instanceTitle,
-.linkedHeading {
-  margin-block-end: 8px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .nested,
 .linkedSelection {
   min-width: 0;
   padding: 11px;
-  border-inline-start: 3px solid var(--color-secondary);
+  border-inline-start: 2px solid var(--color-secondary);
   border-radius: var(--radius-button, 12px);
-  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-secondary));
+  background: var(--color-surface);
+}
+
+.nested .group,
+.linkedSelection .group {
+  box-shadow: none;
 }
 
 .linkedSelection {
   margin-block-start: 9px;
   border-inline-start-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-primary));
 }
 
 .summary {

@@ -10,7 +10,7 @@ import { multiplyMoney, sumMoney } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator } from "./product-configurator";
-import { networkCartChoiceLabels } from "./cart-presentation";
+import { networkCartChoiceLabels, networkCartHeading } from "./cart-presentation";
 import {
   acceptNetworkRecheck,
   addOrEditNetworkCartItem,
@@ -2601,7 +2601,7 @@ function CartView({
                       </span>
                     )}
                     <div className="cart-page-copy">
-                      <b dir="auto">{item.quantity} × {item.name}{item.mode === "NETWORK" ? networkCartSizeSuffix(item) : ""}</b>
+                      <b dir="auto">{item.mode === "NETWORK" ? networkCartHeading(item) : <>{item.quantity} × {item.name}</>}</b>
                       {item.mode === "NETWORK" ? <NetworkCartDetails
                         item={item}
                         language={language}
@@ -2716,9 +2716,7 @@ function CartView({
       {hasNetwork && (!useTrustedNetworkCheckout || !showPrices) ? <section className="network-cart-gate" role="status">
         <b>{language === "ar" ? "سلة الشبكة للمعاينة فقط" : "Network cart is preview-only"}</b>
         {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
-        <p>{!showPrices ? trustedDisabledReason : language === "ar"
-          ? "إرسال أصناف الشبكة غير متاح حاليًا. يمكنك مراجعة اختياراتك دون إرسال طلب."
-          : "Network checkout is unavailable. You can review choices without sending an order."}</p>
+        {!showPrices ? <p>{trustedDisabledReason}</p> : null}
         {networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
       </section> : whatsappOrderingEnabled ? <section className="cart-checkout-card">
         <div className="cart-checkout-meta">
@@ -2825,11 +2823,6 @@ function NetworkCartDetails({
       {(item.status === "OFFLINE" || item.status === "INVALID") ? <button type="button" onClick={onRetry}>{ar ? "إعادة التحقق" : "Retry quote"}</button> : null}
     </div>
   </div>;
-}
-
-function networkCartSizeSuffix(item: NetworkCartItem): string {
-  const topSizes = item.acceptedQuote.priceBreakdown.filter((line) => line.kind === "SIZE" && !line.path.includes(".linked") && !line.path.includes(".children"));
-  return topSizes.length === 1 ? ` — ${topSizes[0].label}` : "";
 }
 
 function CheckoutSteps({ active }: { active: "review" | "confirm" }) {

@@ -52,4 +52,21 @@ describe("ProductConfigurator", () => {
     expect(source).toContain("displayCurrencyAmount(line.chargedAmount, currency)");
     expect(source).not.toContain('line.included ? say(locale, "مشمول", "Included")');
   });
+
+  it("removes repeated Network headings and routine checkout explanation while preserving safeguards", () => {
+    const source = readFileSync(new URL("./product-configurator.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("ستُراجع الأسعار والتوفر مجددًا قبل فتح WhatsApp");
+    expect(source).not.toContain("<h2 dir=\"auto\">{envelope.productName}</h2>");
+    expect(source).not.toContain("اختر حجمًا واحدًا");
+    expect(source).toContain("!checkoutEnabled || !orderingEnabled");
+    expect(source).toContain("أسعار هذه القائمة مخفية؛ لا يمكن إضافة الصنف للسلة");
+    expect(source).toContain("multiplyMoney(preview.total, draftQuantity)");
+    expect(source).toContain("preview.issues.slice(0, 8)");
+    expect(source).toContain("option.label.includes(source.name)");
+    expect(source).toContain("linked?.groups.length && instance.linkedSelection");
+    expect(source).not.toContain("styles.linkedHeading");
+    const css = readFileSync(new URL("./product-configurator.module.css", import.meta.url), "utf8");
+    expect(css).toContain(".optionSelected > .optionRow .optionLabel i");
+    expect(css).not.toContain(".optionSelected .optionLabel i");
+  });
 });
