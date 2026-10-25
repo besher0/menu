@@ -60,6 +60,19 @@ export function shouldUseTrustedWhatsappCheckout(cart: readonly CartItem[], netw
 }
 
 const CART_STORAGE_VERSION = 2 as const;
+const CHECKOUT_LINE_ID = /^[A-Za-z0-9:_-]{1,128}$/;
+let networkLineSequence = 0;
+
+/** A cart line ID is an opaque local identifier, not a pricing or security token. */
+export function createNetworkCartLineId(existingIds: readonly string[] = []): string {
+  const used = new Set(existingIds);
+  let lineId: string;
+  do {
+    networkLineSequence += 1;
+    lineId = `network-${Date.now().toString(36)}-${networkLineSequence.toString(36)}-${Math.random().toString(36).slice(2) || "0"}`;
+  } while (used.has(lineId));
+  return lineId;
+}
 
 export function putLegacyCartItem(cart: readonly CartItem[], product: PublicProduct, price: number, imageUrl: string | null, quantity: number): CartItem[] {
   if (!Number.isSafeInteger(quantity) || quantity < 0 || !Number.isFinite(price) || price < 0) return [...cart];
@@ -301,13 +314,27 @@ export function restoreCartStorage(text: string | null, restaurantSlug: string, 
     const oldItems = Array.isArray(parsed) ? parsed : null;
     const versionedItems = object(parsed) && parsed.version === CART_STORAGE_VERSION && parsed.restaurantSlug === restaurantSlug && Array.isArray(parsed.items)
       ? parsed.items : null;
-    return (oldItems ?? versionedItems ?? []).slice(0, 200).flatMap((raw) => {
+    const restored = (oldItems ?? versionedItems ?? []).slice(0, 200).flatMap((raw) => {
       const item = oldItems
         ? object(raw) && raw.mode === "NETWORK" ? null : restoreLegacy(raw, currency)
         : object(raw) && raw.mode === "NETWORK"
           ? restoreNetwork(raw, restaurantSlug, currency)
           : object(raw) && raw.mode === "LEGACY" ? restoreLegacy(raw, currency) : null;
       return item ? [item] : [];
+    });
+    // Older HTTP-origin carts used Math.random() verbatim, including a dot. Give
+    // each invalid/duplicate Network line a fresh ID without merging selections.
+    const reserved = restored.map((item) => item.lineId);
+    const seen = new Set<string>();
+    return restored.map((item) => {
+      if (item.mode !== "NETWORK" || (CHECKOUT_LINE_ID.test(item.lineId) && !seen.has(item.lineId))) {
+        seen.add(item.lineId);
+        return item;
+      }
+      const lineId = createNetworkCartLineId(reserved);
+      reserved.push(lineId);
+      seen.add(lineId);
+      return { ...item, lineId };
     });
   } catch {
     return [];

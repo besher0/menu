@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSelectionKey, type ProductSelectionV1 } from "@menu/shared";
 import type { PublicProduct, PublicProductQuoteResponse } from "@/lib/api";
 import {
@@ -6,6 +6,7 @@ import {
   addOrEditNetworkCartItem,
   applyNetworkRecheck,
   cartNeedsPreviewGate,
+  createNetworkCartLineId,
   networkCartItemFromQuote,
   putLegacyCartItem,
   restoreCartStorage,
@@ -112,6 +113,37 @@ describe("versioned public cart model", () => {
     expect((restored[0] as typeof first).selection).toEqual(first.selection);
     expect(restoreCartStorage(serializeCartStorage([first], "restaurant-a"), "restaurant-b", "EGP")).toEqual([]);
     expect(restoreCartStorage(serializeCartStorage([first], "restaurant-a"), "restaurant-a", "USD")).toEqual([]);
+  });
+
+  it("generates checkout-compatible Network IDs even when clock and random output repeat", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1792936393075);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.7452965834847075);
+    try {
+      const first = createNetworkCartLineId();
+      const second = createNetworkCartLineId([first]);
+      expect(first).toMatch(/^[A-Za-z0-9:_-]{1,128}$/);
+      expect(second).toMatch(/^[A-Za-z0-9:_-]{1,128}$/);
+      expect(second).not.toBe(first);
+    } finally {
+      clock.mockRestore();
+      random.mockRestore();
+    }
+  });
+
+  it("repairs old dotted and duplicate IDs without losing or merging independent configurations", () => {
+    const first = { ...item(selection("small"), "200", 1, "network-1-0.123"), quantity: 3, note: "first" };
+    const second = { ...item(selection("large"), "300", 1, "network-1-0.123"), quantity: 2, note: "second" };
+    const third = item(selection("medium"), "280", 1, "valid-id");
+    const restored = restoreCartStorage(serializeCartStorage([first, second, third], "restaurant-a"), "restaurant-a", "EGP");
+    expect(restored).toHaveLength(3);
+    expect(new Set(restored.map((line) => line.lineId)).size).toBe(3);
+    expect(restored.every((line) => /^[A-Za-z0-9:_-]{1,128}$/.test(line.lineId))).toBe(true);
+    expect(restored.map((line) => line.quantity)).toEqual([3, 2, 1]);
+    expect(restored.map((line) => line.mode === "NETWORK" ? line.note : undefined)).toEqual(["first", "second", undefined]);
+    expect(restored.map((line) => line.mode === "NETWORK" ? line.identity : "")).toEqual([first.identity, second.identity, third.identity]);
+    expect(restored[2].lineId).toBe("valid-id");
+    const reloaded = restoreCartStorage(serializeCartStorage(restored, "restaurant-a"), "restaurant-a", "EGP");
+    expect(reloaded.map((line) => line.lineId)).toEqual(restored.map((line) => line.lineId));
   });
 
   it("shows changed prices or sources without automatic acceptance, then accepts only the same re-quoted proposal", () => {

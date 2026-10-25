@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.next-preview-demo/
 dist/
 coverage/
 .vitest-cache/

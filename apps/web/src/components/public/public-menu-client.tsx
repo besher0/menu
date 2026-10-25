@@ -16,6 +16,7 @@ import {
   addOrEditNetworkCartItem,
   applyNetworkRecheck,
   cartNeedsPreviewGate,
+  createNetworkCartLineId,
   networkCartItemFromQuote,
   putLegacyCartItem,
   restoreCartStorage,
@@ -859,7 +860,7 @@ export function PublicMenuClient({
   function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string, quantity = 1) {
     if (!showPrices || !whatsappOrderingEnabled || data.networkWhatsappCheckoutEnabled !== true
       || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) return false;
-    const lineId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `network-${Date.now()}-${Math.random()}`;
+    const lineId = createNetworkCartLineId(cartRef.current.map((item) => item.lineId));
     const incoming = networkCartItemFromQuote({ product, restaurantSlug: data.restaurant.slug, quote, lineId });
     if (!incoming) return false;
     const previous = editingLineId ? cartRef.current.find((item) => item.mode === "NETWORK" && item.lineId === editingLineId) : undefined;

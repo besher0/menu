@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  ...(process.env.ORDERSAWA_PREVIEW_DIST_DIR ? { distDir: process.env.ORDERSAWA_PREVIEW_DIST_DIR } : {}),
   reactStrictMode: true,
   transpilePackages: ["@menu/shared"],
   allowedDevOrigins: [
