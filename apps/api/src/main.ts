@@ -7,6 +7,7 @@ import { join } from "path";
 import express from "express";
 import { AppModule } from "./app.module";
 import { ApiResponseInterceptor } from "./common/api-response.interceptor";
+import { PublicMenuCacheInvalidationInterceptor } from "./common/public-menu-cache-invalidation.interceptor";
 import { readPositiveInt, readStringList } from "./common/security/env";
 import { rateLimitMiddleware } from "./common/security/rate-limit.middleware";
 import { securityHeadersMiddleware } from "./common/security/security-headers.middleware";
@@ -119,7 +120,7 @@ async function bootstrap() {
       forbidUnknownValues: true
     })
   );
-  app.useGlobalInterceptors(new ApiResponseInterceptor());
+  app.useGlobalInterceptors(new PublicMenuCacheInvalidationInterceptor(), new ApiResponseInterceptor());
   const uploadsDir = join(process.cwd(), "uploads");
   if (!existsSync(uploadsDir)) {
     mkdirSync(uploadsDir, { recursive: true });
