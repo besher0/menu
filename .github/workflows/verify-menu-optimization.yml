@@ -1,0 +1,24 @@
+name: Verify menu optimization
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [perf/neon-query-optimization]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run build -w @menu/shared
+      - run: npm run typecheck -w @menu/api
+      - run: npm run typecheck -w @menu/web
+      - run: npm run test -w @menu/api
