@@ -100,15 +100,13 @@ export class PublicMenuService {
   }
 
   async products(restaurantSlug: string) {
-    const restaurant = await this.findPublicRestaurant(restaurantSlug);
-    const features = await this.featureFlags.listFeatures(restaurant.id);
-    return restaurant.products.map((product) => this.serializeProduct(product, features, restaurant.currency));
+    const data = await this.menu(restaurantSlug, undefined, false);
+    return data.products;
   }
 
   async theme(restaurantSlug: string) {
-    const restaurant = await this.findPublicRestaurant(restaurantSlug);
-    const features = await this.featureFlags.listFeatures(restaurant.id);
-    return this.serializePublicThemeSettings(restaurant.themeSettings?.settings, features);
+    const data = await this.menu(restaurantSlug, undefined, false);
+    return data.theme;
   }
 
   async track(
