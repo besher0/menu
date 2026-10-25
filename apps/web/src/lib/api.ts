@@ -184,7 +184,10 @@ export function isPublicMenuNotFoundError(error: unknown) {
 async function apiGet<T>(path: string): Promise<T> {
   try {
     const response = await fetch(`${API_URL}${path}`, {
-      cache: "no-store"
+      next: {
+        revalidate: 60,
+        tags: ["public-menu"]
+      }
     });
 
     if (!response.ok) {
@@ -207,8 +210,8 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function getPublicMenu(slug: string, options: { track?: boolean } = {}): Promise<PublicMenuData> {
-  const track = options.track === false ? "?track=0" : "";
-  return apiGet<PublicMenuData>(`/public/menus/${slug}${track}`);
+  void options;
+  return apiGet<PublicMenuData>(`/public/menus/${encodeURIComponent(slug)}?track=0`);
 }
 
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {

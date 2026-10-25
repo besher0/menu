@@ -8,15 +8,15 @@ export class PublicMenuController {
   constructor(@Inject(PublicMenuService) private readonly publicMenuService: PublicMenuService) {}
 
   @Get("by-host/current")
-  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+  @Header("Cache-Control", "public, max-age=0, s-maxage=60, stale-while-revalidate=300")
   menuByHost(@Req() request: Request, @Query("track") track?: string) {
-    return this.publicMenuService.menuByHost(request.headers.host, request.headers["user-agent"], track !== "0");
+    return this.publicMenuService.menuByHost(request.headers.host, request.headers["user-agent"], track === "1");
   }
 
   @Get(":restaurantSlug")
-  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+  @Header("Cache-Control", "public, max-age=0, s-maxage=60, stale-while-revalidate=300")
   menu(@Param("restaurantSlug") restaurantSlug: string, @Req() request: Request, @Query("track") track?: string) {
-    return this.publicMenuService.menu(restaurantSlug, request.headers["user-agent"], track !== "0");
+    return this.publicMenuService.menu(restaurantSlug, request.headers["user-agent"], track === "1");
   }
 
   @Get(":restaurantSlug/products")
@@ -43,7 +43,7 @@ export class PublicMenuController {
     @Body() body: { type?: string; path?: string; metadata?: Record<string, unknown> },
     @Req() request: Request
   ) {
-    return this.publicMenuService.track(restaurantSlug, body, request.headers["user-agent"]);
+    return this.publicMenuService.track(restaurantSlug, body, request.headers["user-agent"], request.ip);
   }
 
   @Post(":restaurantSlug/orders/whatsapp")

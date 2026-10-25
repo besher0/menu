@@ -3,8 +3,7 @@ import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60;
 
 function normalizeRouteKey(value?: string | null) {
   if (!value) return "";
@@ -56,7 +55,7 @@ export default async function ProductPage({
   params: Promise<{ slug: string; productSlug: string }>;
 }) {
   const { slug, productSlug } = await params;
-  const data = await getPublicMenuOrNotFound(slug);
+  const data = await getPublicMenuOrNotFound(slug, { track: false });
   return (
     <div className="public-page">
       <PublicMenuClient data={data} view="product" productSlug={productSlug} initialUseSubdomainRoutes />

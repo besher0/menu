@@ -570,6 +570,43 @@ function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
   return true;
 }
 
+function analyticsClientId() {
+  if (typeof window === "undefined") return "server";
+
+  const key = "public-menu-analytics-client-id";
+  try {
+    const existing = window.localStorage.getItem(key);
+    if (existing) return existing;
+
+    const value = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+    window.localStorage.setItem(key, value);
+    return value;
+  } catch {
+    return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function shouldTrackMenuView(restaurantSlug: string) {
+  if (typeof window === "undefined") return false;
+
+  const key = `menu-view:${restaurantSlug}`;
+  const now = Date.now();
+  let lastTrackedAt = 0;
+  try {
+    lastTrackedAt = Number(window.localStorage.getItem(key) ?? 0);
+  } catch {
+    return true;
+  }
+  if (now - lastTrackedAt < 30 * 60 * 1000) return false;
+
+  try {
+    window.localStorage.setItem(key, String(now));
+  } catch {
+    // Backend deduplication remains the source of truth when storage is blocked.
+  }
+  return true;
+}
+
 function productIngredients(product: PublicProduct): NormalizedIngredient[] {
   return (product.ingredients ?? [])
     .map((ingredient) =>
@@ -674,6 +711,20 @@ export function PublicMenuClient({
   useEffect(() => {
     setUseSubdomainRoutes(isRestaurantSubdomainHost(window.location.host, data.restaurant.slug));
   }, [data.restaurant.slug]);
+
+  useEffect(() => {
+    if (!shouldTrackMenuView(data.restaurant.slug)) return;
+
+    void fetch(`${PUBLIC_API_BASE_URL}/public/menus/${encodeURIComponent(data.restaurant.slug)}/track`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "MENU_VIEWED",
+        path: window.location.pathname,
+        metadata: { clientId: analyticsClientId(), view }
+      })
+    }).catch(() => undefined);
+  }, [data.restaurant.slug, view]);
 
   useEffect(() => {
     setCartLoaded(false);
@@ -2704,7 +2755,7 @@ function ProductView({
       body: JSON.stringify({
         type: "PRODUCT_VIEWED",
         path: `/m/${data.restaurant.slug}/product/${product.slug}`,
-        metadata: { productId: product.id, productSlug: product.slug }
+        metadata: { clientId: analyticsClientId(), productId: product.id, productSlug: product.slug }
       })
     }).catch(() => undefined);
   }, [data.restaurant.slug, product.id, product.slug]);
@@ -2717,7 +2768,7 @@ function ProductView({
         body: JSON.stringify({
           type: "THREE_D_VIEW_OPENED",
           path: `/m/${data.restaurant.slug}/product/${product.slug}`,
-          metadata: { productSlug: product.slug }
+          metadata: { clientId: analyticsClientId(), productSlug: product.slug }
         })
       });
     } catch {

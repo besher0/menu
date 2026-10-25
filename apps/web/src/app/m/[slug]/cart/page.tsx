@@ -3,8 +3,7 @@ import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -28,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function PublicCartPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const data = await getPublicMenuOrNotFound(slug);
+  const data = await getPublicMenuOrNotFound(slug, { track: false });
 
   return (
     <div className="public-page">

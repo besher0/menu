@@ -496,10 +496,13 @@ model AnalyticsEvent {
   userAgent    String?
   country      String?
   createdAt    DateTime   @default(now())
+  dedupeKey    String?
+  dedupeBucket DateTime?
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
 
   @@index([restaurantId, type])
   @@index([createdAt])
+  @@unique([restaurantId, type, dedupeKey, dedupeBucket])
 }
 
 model CustomDomain {
