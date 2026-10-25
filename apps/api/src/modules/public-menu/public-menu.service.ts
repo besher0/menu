@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
+import { cachedPublicMenu } from "./public-menu.cache";
 
 @Injectable()
 export class PublicMenuService {
@@ -14,19 +15,23 @@ export class PublicMenuService {
   ) {}
 
   async menu(restaurantSlug: string, userAgent?: string | string[], trackView = true) {
-    const restaurant = await this.findPublicRestaurant(restaurantSlug);
-
+    // Cache the read-only payload, never the per-request analytics event.
+    const data = await cachedPublicMenu(restaurantSlug, () => this.loadMenuPayload(restaurantSlug));
     if (trackView) {
       await this.prisma.analyticsEvent.create({
         data: {
-          restaurantId: restaurant.id,
+          restaurantId: data.restaurant.id,
           type: "MENU_VIEWED",
-          path: `/m/${restaurant.slug}`,
+          path: `/m/${data.restaurant.slug}`,
           userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
         }
       });
     }
+    return data;
+  }
 
+  private async loadMenuPayload(restaurantSlug: string) {
+    const restaurant = await this.findPublicRestaurant(restaurantSlug);
     const [features, menus] = await Promise.all([
       this.featureFlags.listFeatures(restaurant.id),
       this.prisma.menu.findMany({
@@ -70,6 +75,7 @@ export class PublicMenuService {
       menus: this.serializeMenus(menus)
     };
   }
+
 
   async menuByHost(hostHeader?: string, userAgent?: string | string[], trackView = true) {
     const host = this.normalizeHost(hostHeader);
