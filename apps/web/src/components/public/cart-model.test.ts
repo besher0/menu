@@ -95,6 +95,18 @@ describe("versioned public cart model", () => {
     expect(addOrEditNetworkCartItem(cart, different, undefined, 99)).toEqual(cart);
   });
 
+  it("keeps independently noted configurations separate and preserves a note through editing", () => {
+    const first = { ...item(), note: "بدون ملح" };
+    const second = { ...item(selection("medium", 1, "other"), "280.000001", 1, "line-2"), note: "حار" };
+    const separate = addOrEditNetworkCartItem([first], second);
+    expect(separate).toHaveLength(2);
+    expect(separate.map((line) => line.note)).toEqual(["بدون ملح", "حار"]);
+    const edited = addOrEditNetworkCartItem(separate, { ...item(selection("large"), "300", 1, "new"), note: "بدون ملح" }, first.lineId, 2);
+    expect(edited).toHaveLength(2);
+    expect(edited.find((line) => line.lineId === first.lineId)).toMatchObject({ quantity: 2, note: "بدون ملح" });
+    expect(edited.find((line) => line.lineId === second.lineId)).toMatchObject({ quantity: 1, note: "حار" });
+  });
+
   it("restores old Legacy arrays including explicit zero and safely rejects null price/corrupt entries", () => {
     const restored = restoreCartStorage(JSON.stringify([
       { slug: "zero", name: "Zero", quantity: 2, price: 0, currency: "EGP" },

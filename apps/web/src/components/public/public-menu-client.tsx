@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Pencil, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
 import { multiplyMoney, sumMoney } from "@menu/shared";
@@ -653,6 +653,7 @@ export function PublicMenuClient({
   cartRef.current = cart;
   const cartRecheckGeneration = useRef(0);
   const lineQuoteRequests = useRef(new Map<string, number>());
+  const recheckBusyLines = useRef(new Set<string>());
   function nextLineQuoteRequest(lineId: string) {
     const next = (lineQuoteRequests.current.get(lineId) ?? 0) + 1;
     lineQuoteRequests.current.set(lineId, next);
@@ -745,7 +746,7 @@ export function PublicMenuClient({
   }, [cart, cartLoaded, data.restaurant.slug, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
-    if (!cartLoaded || activeView !== "cart") return;
+    if (!cartLoaded || (activeView !== "cart" && activeView !== "menu")) return;
     const generation = ++cartRecheckGeneration.current;
     const lines = cartRef.current.filter((item): item is NetworkCartItem => item.mode === "NETWORK");
     if (!lines.length) return;
@@ -857,17 +858,18 @@ export function PublicMenuClient({
   const legacyCart = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY");
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string, quantity = 1) {
+  function addNetworkQuote(product: PublicProduct, quote: PublicProductQuoteResponse, editingLineId?: string, quantity = 1, note?: string) {
     if (!showPrices || !whatsappOrderingEnabled || data.networkWhatsappCheckoutEnabled !== true
       || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) return false;
     const lineId = createNetworkCartLineId(cartRef.current.map((item) => item.lineId));
     const incoming = networkCartItemFromQuote({ product, restaurantSlug: data.restaurant.slug, quote, lineId });
     if (!incoming) return false;
     const previous = editingLineId ? cartRef.current.find((item) => item.mode === "NETWORK" && item.lineId === editingLineId) : undefined;
+    incoming.note = note ?? previous?.note;
     const remainingUnits = cartRef.current.reduce((sum, item) => sum + item.quantity, 0) - (previous?.quantity ?? 0);
     if (remainingUnits + quantity > 100) return false;
     if (editingLineId) nextLineQuoteRequest(editingLineId);
-    const matched = cartRef.current.find((item) => item.mode === "NETWORK" && item.identity === incoming.identity);
+    const matched = cartRef.current.find((item) => item.mode === "NETWORK" && item.identity === incoming.identity && (item.note ?? "") === (incoming.note ?? ""));
     if (matched) nextLineQuoteRequest(matched.lineId);
     setCart((current) => addOrEditNetworkCartItem(current, incoming, editingLineId, quantity));
     return true;
@@ -932,23 +934,29 @@ export function PublicMenuClient({
     }
   }
 
-  async function retryNetworkLine(lineId: string) {
+  async function retryNetworkLine(lineId: string): Promise<NetworkCartItem["status"] | null> {
     const item = cartRef.current.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
-    if (!item) return;
+    if (!item || item.status === "CHECKING" || recheckBusyLines.current.has(lineId)) return null;
+    recheckBusyLines.current.add(lineId);
     const requestId = nextLineQuoteRequest(lineId);
     setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId ? { ...candidate, status: "CHECKING" } : candidate));
     try {
       const quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.selection);
-      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return null;
+      const refreshed = applyNetworkRecheck(item, quote);
       setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
         ? applyNetworkRecheck(candidate, quote) : candidate));
+      return refreshed.status;
     } catch (error) {
-      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return null;
       const known = error instanceof PublicProductQuoteError ? error : null;
       setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
         ? { ...candidate, status: known?.status && known.status < 500 ? "INVALID" : "OFFLINE", proposedQuote: undefined,
           issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] }
         : candidate));
+      return known?.status && known.status < 500 ? "INVALID" : "OFFLINE";
+    } finally {
+      recheckBusyLines.current.delete(lineId);
     }
   }
 
@@ -1155,6 +1163,10 @@ export function PublicMenuClient({
           addToCart={addToCart}
           setProductQuantity={setProductQuantity}
           getCartQuantity={getCartQuantity}
+          cart={cart}
+          updateCartItem={updateCartItem}
+          networkCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true}
+          language={language}
           t={t}
           showPrices={showPrices}
           whatsappOrderingEnabled={whatsappOrderingEnabled}
@@ -1202,13 +1214,8 @@ export function PublicMenuClient({
           networkWhatsappCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true && whatsappOrderingEnabled}
           language={language}
           acceptNetworkPrice={(lineId) => void acceptNetworkPrice(lineId)}
-          retryNetworkLine={(lineId) => void retryNetworkLine(lineId)}
-          editNetworkItem={(item) => {
-            const product = products.find((candidate) => candidate.id === item.productId);
-            if (!product) return;
-            const href = productHref(data.restaurant.slug, product, publicPath("/cart"), useSubdomainRoutes);
-            navigateTo(`${href}${href.includes("?") ? "&" : "?"}editCart=${encodeURIComponent(item.lineId)}`);
-          }}
+          retryNetworkLine={retryNetworkLine}
+          saveNetworkEdit={(product, quote, lineId, quantity, note) => addNetworkQuote(product, quote, lineId, quantity, note)}
           t={t}
           showPrices={showPrices}
           useSubdomainRoutes={useSubdomainRoutes}
@@ -1502,6 +1509,7 @@ function HomeView({
         fillPlaceholders={false}
         showPrices={showPrices}
         onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
+        networkConfigureEnabled={whatsappOrderingEnabled && showPrices && data.networkWhatsappCheckoutEnabled === true}
         showViewAll={false}
         returnHref={homeReturnHref}
         useSubdomainRoutes={useSubdomainRoutes}
@@ -1583,6 +1591,10 @@ function MenuView({
   addToCart,
   setProductQuantity,
   getCartQuantity,
+  cart,
+  updateCartItem,
+  networkCheckoutEnabled,
+  language,
   t,
   showPrices,
   whatsappOrderingEnabled,
@@ -1595,6 +1607,10 @@ function MenuView({
   addToCart: (product: PublicProduct) => void;
   setProductQuantity: (product: PublicProduct, quantity: number) => void;
   getCartQuantity: (slug: string) => number;
+  cart: CartItem[];
+  updateCartItem: (lineId: string, quantity: number) => void;
+  networkCheckoutEnabled: boolean;
+  language: PublicLanguage;
   t: PublicTranslations;
   showPrices: boolean;
   whatsappOrderingEnabled: boolean;
@@ -2065,6 +2081,10 @@ function MenuView({
   function renderProduct(product: PublicProduct) {
     const productClassName = `${productListLayout === "double" ? "menu-product-card" : "menu-product-row"} ${productCardVariant ? `card-${productCardVariant}` : ""}`.trim();
     const quantity = getCartQuantity(product.slug);
+    const networkLines = cart.filter((line): line is NetworkCartItem => line.mode === "NETWORK" && line.productId === product.id);
+    const canConfigure = isNetworkProduct(product) && product.productConfiguration?.orderable === true
+      && whatsappOrderingEnabled && networkCheckoutEnabled && showPrices;
+    const showNetworkControl = canConfigure;
     const productContent = (
       <>
         <span className="menu-product-image-link">
@@ -2087,7 +2107,7 @@ function MenuView({
     );
 
     return (
-      <article key={`${product.id}-${product.slug}`} className={productClassName}>
+      <article key={`${product.id}-${product.slug}`} className={productClassName} data-cart-mode={isNetworkProduct(product) ? "NETWORK" : "LEGACY"}>
         <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
           {productContent}
         </button>
@@ -2099,6 +2119,20 @@ function MenuView({
             onIncrease={() => addToCart(product)}
             label={product.name}
           />
+        ) : showNetworkControl && networkLines.length <= 1 ? (
+          <QuantityControl
+            className="menu-product-quantity"
+            quantity={networkLines[0]?.quantity ?? 0}
+            onDecrease={() => { const line = networkLines[0]; if (line) updateCartItem(line.lineId, line.quantity - 1); }}
+            onIncrease={() => { const line = networkLines[0]; if (line) updateCartItem(line.lineId, line.quantity + 1); else openProduct(product); }}
+            label={product.name}
+            increaseDisabled={cart.reduce((sum, line) => sum + line.quantity, 0) >= 100 || Boolean(networkLines[0] && networkLines[0].status !== "CURRENT")}
+          />
+        ) : showNetworkControl ? (
+          <button type="button" className="menu-network-configure" onClick={() => openProduct(product)}
+            aria-label={language === "ar" ? `اختيار تكوين جديد لـ ${product.name}` : `Choose another configuration for ${product.name}`}>
+            <Plus size={14} /><span>{language === "ar" ? "تكوين آخر" : "Configure"}</span>
+          </button>
         ) : null}
       </article>
     );
@@ -2119,6 +2153,7 @@ function MenuView({
                 showPrices={showPrices}
                 showViewAll={false}
                 onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
+                networkConfigureEnabled={whatsappOrderingEnabled && showPrices && data.networkWhatsappCheckoutEnabled === true}
                 returnHref={menuReturnHref}
                 useSubdomainRoutes={useSubdomainRoutes}
               />
@@ -2406,17 +2441,19 @@ function QuantityControl({
   onDecrease,
   onIncrease,
   label,
-  className = ""
+  className = "",
+  increaseDisabled = false
 }: {
   quantity: number;
   onDecrease: () => void;
   onIncrease: () => void;
   label: string;
   className?: string;
+  increaseDisabled?: boolean;
 }) {
   return (
     <div className={`quantity-control ${className}`.trim()}>
-      <button type="button" onClick={onIncrease} aria-label={`+ ${label}`}>
+      <button type="button" onClick={onIncrease} disabled={increaseDisabled} aria-label={`+ ${label}`}>
         <Plus size={14} />
       </button>
       <strong>{quantity}</strong>
@@ -2442,7 +2479,7 @@ function CartView({
   language,
   acceptNetworkPrice,
   retryNetworkLine,
-  editNetworkItem,
+  saveNetworkEdit,
   t,
   showPrices,
   useSubdomainRoutes
@@ -2460,8 +2497,8 @@ function CartView({
   networkWhatsappCheckoutEnabled: boolean;
   language: PublicLanguage;
   acceptNetworkPrice: (lineId: string) => void;
-  retryNetworkLine: (lineId: string) => void;
-  editNetworkItem: (item: NetworkCartItem) => void;
+  retryNetworkLine: (lineId: string) => Promise<NetworkCartItem["status"] | null>;
+  saveNetworkEdit: (product: PublicProduct, quote: PublicProductQuoteResponse, lineId: string, quantity: number, note: string) => boolean;
   t: PublicTranslations;
   showPrices: boolean;
   useSubdomainRoutes: boolean;
@@ -2476,6 +2513,11 @@ function CartView({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [expandedNetworkLines, setExpandedNetworkLines] = useState<Set<string>>(() => new Set());
+  const [editingNetworkLineId, setEditingNetworkLineId] = useState<string | null>(null);
+  const [editingNetworkNote, setEditingNetworkNote] = useState("");
+  const [recheckFeedback, setRecheckFeedback] = useState<Record<string, string>>({});
+  const networkEditorRef = useRef<HTMLElement | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
   const related = data.products.filter((product) => !cartSlugs.has(product.slug)).slice(0, 8);
@@ -2494,6 +2536,21 @@ function CartView({
   const total = sumMoney([legacySubtotal, deliveryFee]);
   const trustedTotal = cartDisplayedTotal(cart);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const editingNetworkItem = cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingNetworkLineId);
+  const editingNetworkProduct = editingNetworkItem ? data.products.find((product) => product.id === editingNetworkItem.productId) : undefined;
+
+  useEffect(() => {
+    if (!editingNetworkLineId) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const frame = window.requestAnimationFrame(() => networkEditorRef.current?.querySelector<HTMLButtonElement>("header button")?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [editingNetworkLineId]);
   const trustedDisabledReason = !showPrices && hasNetwork
     ? language === "ar" ? "أسعار هذه القائمة مخفية؛ لا يمكن طلب أصناف الشبكة." : "Prices are hidden for this menu; Network products cannot be ordered."
     : staleLegacyNetwork
@@ -2596,6 +2653,20 @@ function CartView({
     );
   }
 
+  async function handleNetworkRecheck(lineId: string) {
+    setRecheckFeedback((current) => ({ ...current, [lineId]: "" }));
+    const status = await retryNetworkLine(lineId);
+    if (status === "CURRENT") setRecheckFeedback((current) => ({ ...current, [lineId]: language === "ar" ? "تم التحقق من السعر والاختيارات من الخادم." : "Price and choices verified with the server." }));
+  }
+
+  function toggleNetworkDetails(lineId: string) {
+    setExpandedNetworkLines((current) => {
+      const next = new Set(current);
+      if (next.has(lineId)) next.delete(lineId); else next.add(lineId);
+      return next;
+    });
+  }
+
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
       <CheckoutSteps active={cartStep} />
@@ -2613,36 +2684,49 @@ function CartView({
 
                 return (
                   <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""}`}>
-                    {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
+                    {item.mode === "NETWORK" ? null : imageUrl ? <img src={imageUrl} alt={item.name} /> : (
                       <span className="product-image-placeholder" role="img" aria-label={item.name}>
                         <ImageIcon size={24} />
                       </span>
                     )}
                     <div className="cart-page-copy">
                       <b dir="auto">{item.mode === "NETWORK" ? networkCartHeading(item) : <>{item.quantity} × {item.name}</>}</b>
-                      {item.mode === "NETWORK" ? <NetworkCartDetails
-                        item={item}
-                        language={language}
-                        showPrices={showPrices}
-                        onAccept={() => acceptNetworkPrice(item.lineId)}
-                        onRetry={() => retryNetworkLine(item.lineId)}
-                        onEdit={() => editNetworkItem(item)}
-                        canEdit={data.products.some((candidate) => candidate.id === item.productId)}
-                      /> : <>
+                      {item.mode === "NETWORK" ? <>
+                        {showPrices ? <ProductPrice price={multiplyMoney(item.acceptedQuote.total, item.quantity)} currency={item.currency} /> : null}
+                        <div className="network-cart-tools">
+                          {item.note?.trim() ? <span className="network-cart-note-indicator" title={item.note}>{language === "ar" ? "لديه ملاحظة" : "Has a note"}</span> : null}
+                          {data.products.some((candidate) => candidate.id === item.productId) ? <button type="button" className="network-cart-edit"
+                            onClick={() => { setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); }}
+                            aria-label={language === "ar" ? `تعديل تكوين ${item.name}` : `Edit ${item.name} choices`}><Pencil size={16} /></button> : null}
+                          <button type="button" className="network-cart-recheck" onClick={() => void handleNetworkRecheck(item.lineId)}
+                            disabled={item.status === "CHECKING"} title={language === "ar" ? "إعادة التحقق" : "Recheck"}
+                            aria-label={language === "ar" ? `إعادة التحقق من ${item.name}` : `Recheck ${item.name}`}>
+                            {item.status === "CHECKING" ? <Loader2 size={16} className="spin" /> : <Rotate3D size={16} />}
+                          </button>
+                          {networkCartChoiceLabels(item.acceptedQuote.priceBreakdown).length || item.note?.trim() ? <button type="button" className="network-cart-expand"
+                            onClick={() => toggleNetworkDetails(item.lineId)} aria-expanded={expandedNetworkLines.has(item.lineId)}
+                            aria-controls={`network-cart-details-${item.lineId}`}
+                            aria-label={language === "ar" ? `${expandedNetworkLines.has(item.lineId) ? "إخفاء" : "عرض"} تفاصيل ${item.name}` : `${expandedNetworkLines.has(item.lineId) ? "Hide" : "Show"} ${item.name} choices`}>
+                            <ChevronDown size={18} /></button> : null}
+                        </div>
+                        <NetworkCartDetails item={item} language={language} showPrices={showPrices}
+                          expanded={expandedNetworkLines.has(item.lineId)} feedback={recheckFeedback[item.lineId]}
+                          onAccept={() => acceptNetworkPrice(item.lineId)} />
+                      </> : <>
                         {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
           {showPrices ? <ProductPrice price={multiplyMoney(item.priceText ?? String(item.price), item.quantity)} currency={item.currency} /> : null}
                       </>}
-                      {useTrustedNetworkCheckout ? <label className="cart-item-note">
+                      {useTrustedNetworkCheckout && item.mode === "LEGACY" ? <label className="cart-item-note">
                         <span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
                         <input value={item.note ?? ""} maxLength={500} onChange={(event) => updateCartNote(item.lineId, event.target.value)} />
                       </label> : null}
                     </div>
                     <div className="cart-page-stepper" aria-label={item.name}>
-                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity + 1)} disabled={hasNetwork && cartCount >= 100} aria-label={`+ ${item.name}`}>
+                      <button type="button" onClick={() => { if (item.mode === "NETWORK") setRecheckFeedback((current) => ({ ...current, [item.lineId]: "" })); updateCartItem(item.lineId, item.quantity + 1); }} disabled={hasNetwork && cartCount >= 100} aria-label={`+ ${item.name}`}>
                         <Plus size={14} />
                       </button>
                       <strong>{item.quantity}</strong>
-                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity - 1)} aria-label={`- ${item.name}`}>
+                      <button type="button" onClick={() => { if (item.mode === "NETWORK") setRecheckFeedback((current) => ({ ...current, [item.lineId]: "" })); updateCartItem(item.lineId, item.quantity - 1); }} aria-label={`- ${item.name}`}>
                         <Minus size={14} />
                       </button>
                     </div>
@@ -2674,6 +2758,7 @@ function CartView({
             fillPlaceholders={false}
             showPrices={showPrices}
             onAddToCart={addToCart}
+            networkConfigureEnabled={whatsappOrderingEnabled && showPrices && networkWhatsappCheckoutEnabled}
             showViewAll={false}
             returnHref={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)}
             useSubdomainRoutes={useSubdomainRoutes}
@@ -2784,20 +2869,49 @@ function CartView({
           </div>
         </div>
       </div> : null}
+      {editingNetworkItem && editingNetworkProduct ? <div className="network-cart-editor-backdrop" onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setEditingNetworkLineId(null);
+      }}>
+        <section ref={networkEditorRef} role="dialog" aria-modal="true" aria-labelledby="network-cart-editor-title" className="network-cart-editor"
+          dir={language === "ar" ? "rtl" : "ltr"} onKeyDown={(event) => {
+            if (event.key === "Escape") { setEditingNetworkLineId(null); return; }
+            if (event.key !== "Tab") return;
+            const buttons = Array.from(networkEditorRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), a[href]") ?? []);
+            if (!buttons.length) return;
+            if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1)?.focus(); }
+            else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
+          }}>
+          <header><h2 id="network-cart-editor-title" dir="auto">{editingNetworkItem.name}</h2>
+            <button type="button" onClick={() => setEditingNetworkLineId(null)} aria-label={language === "ar" ? "إلغاء التعديل" : "Cancel editing"}><X size={20} /></button></header>
+          <label className="cart-item-note"><span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
+            <input value={editingNetworkNote} maxLength={500} onChange={(event) => setEditingNetworkNote(event.target.value)} /></label>
+          <ProductConfigurator key={editingNetworkItem.lineId} restaurantSlug={data.restaurant.slug}
+            productId={editingNetworkItem.productId} currency={editingNetworkItem.currency}
+            initialSelection={editingNetworkItem.selection} editingLineId={editingNetworkItem.lineId}
+            initialQuantity={editingNetworkItem.quantity} maxQuantity={Math.max(0, 100 - cartCount + editingNetworkItem.quantity)}
+            onNetworkQuote={(quote, lineId, quantity) => {
+              if (!lineId || !quantity) return false;
+              const saved = saveNetworkEdit(editingNetworkProduct, quote, lineId, quantity, editingNetworkNote);
+              if (saved) { setRecheckFeedback((current) => ({ ...current, [lineId]: "" })); setEditingNetworkLineId(null); }
+              return saved;
+            }} checkoutEnabled={networkWhatsappCheckoutEnabled} orderingEnabled={whatsappOrderingEnabled && networkWhatsappCheckoutEnabled && showPrices}
+            showPrices={showPrices} locale={language} />
+          <button type="button" className="network-cart-editor-cancel" onClick={() => setEditingNetworkLineId(null)}>{language === "ar" ? "إلغاء" : "Cancel"}</button>
+        </section>
+      </div> : null}
     </main>
   );
 }
 
 function NetworkCartDetails({
-  item, language, showPrices, onAccept, onRetry, onEdit, canEdit
+  item, language, showPrices, expanded, feedback, onAccept
 }: {
   item: NetworkCartItem;
   language: PublicLanguage;
   showPrices: boolean;
+  expanded: boolean;
+  feedback?: string;
   onAccept: () => void;
-  onRetry: () => void;
-  onEdit: () => void;
-  canEdit: boolean;
 }) {
   const ar = language === "ar";
   const statusText = {
@@ -2819,27 +2933,22 @@ function NetworkCartDetails({
   };
   const lines = item.acceptedQuote.priceBreakdown;
   return <div className="network-cart-details" dir={ar ? "rtl" : "ltr"}>
+    <div id={`network-cart-details-${item.lineId}`} className="network-cart-expanded" hidden={!expanded}>
     <ul className="network-cart-selections">
       {networkCartChoiceLabels(lines).map((line, index) => <li key={`${line.label}-${index}`} className={line.nested ? "network-cart-nested-choice" : undefined}>
         <span dir="auto">{line.label}</span>
       </li>)}
     </ul>
+    {item.note?.trim() ? <p className="network-cart-note" dir="auto">{ar ? "ملاحظة:" : "Note:"} {item.note}</p> : null}
+    </div>
     {item.status !== "CURRENT" ? <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p> : null}
-    {showPrices ? <div className="network-cart-price">
-      <span>{item.status === "CURRENT" ? (ar ? "إجمالي الصنف" : "Item total") : (ar ? "آخر سعر وافقت عليه" : "Last accepted quote")}</span>
-      <b>{displayCurrencyAmount(multiplyMoney(item.acceptedQuote.total, item.quantity), item.currency)}</b>
-    </div> : null}
+    {feedback ? <p className="network-cart-recheck-feedback" role="status">{feedback}</p> : null}
     {item.status === "CHANGED" && item.proposedQuote && showPrices ? <div className="network-cart-price changed">
       <span>{ar ? "السعر الجديد المقترح" : "New proposed quote"}</span>
       <b>{displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency)}</b>
     </div> : null}
     {item.issues.length ? <ul className="network-cart-issues">{[...new Set(item.issues.slice(0, 4).map((issue) => issueMessage(issue.code)))].map((message) => <li key={message}>{message}</li>)}</ul> : null}
-    <div className="network-cart-actions">
-      {canEdit ? <button type="button" onClick={onEdit}>{ar ? "تعديل التكوين" : "Edit configuration"}</button>
-        : <span>{ar ? "الصنف غير متاح في القائمة الحالية؛ يمكنك حذفه من السلة." : "Product unavailable in this menu; you can remove it from the cart."}</span>}
-      {item.status === "CHANGED" && item.proposedQuote ? <button type="button" onClick={onAccept}>{ar ? "أوافق على السعر الحالي" : "Accept current quote"}</button> : null}
-      {(item.status === "OFFLINE" || item.status === "INVALID") ? <button type="button" onClick={onRetry}>{ar ? "إعادة التحقق" : "Retry quote"}</button> : null}
-    </div>
+    {item.status === "CHANGED" && item.proposedQuote ? <div className="network-cart-actions"><button type="button" onClick={onAccept}>{ar ? "أوافق على السعر الحالي" : "Accept current quote"}</button></div> : null}
   </div>;
 }
 
@@ -3203,6 +3312,7 @@ function ProductView({
             showPrices={showPrices}
             showViewAll={false}
             onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
+            networkConfigureEnabled={whatsappOrderingEnabled && showPrices && networkWhatsappCheckoutEnabled}
             returnHref={currentProductHref}
             useSubdomainRoutes={useSubdomainRoutes}
           />
@@ -3286,6 +3396,7 @@ function ProductRail({
   fillPlaceholders = true,
   showPrices,
   onAddToCart,
+  networkConfigureEnabled = false,
   showViewAll = true,
   viewAllHref,
   returnHref,
@@ -3299,6 +3410,7 @@ function ProductRail({
   fillPlaceholders?: boolean;
   showPrices: boolean;
   onAddToCart?: (product: PublicProduct) => void;
+  networkConfigureEnabled?: boolean;
   showViewAll?: boolean;
   viewAllHref?: string;
   returnHref?: string;
@@ -3417,7 +3529,7 @@ function ProductRail({
         {railSlots.map((_, index) => {
           const product = products[index];
           return product ? (
-          <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart ? "rail-product-cartable" : ""}`}>
+          <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart || networkConfigureEnabled ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
             <Link
               href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)}
@@ -3441,6 +3553,9 @@ function ProductRail({
               <button type="button" onClick={() => onAddToCart(product)} aria-label={`${t.addToCart} ${product.name}`}>
                 <ShoppingCart size={14} />
               </button>
+            ) : networkConfigureEnabled && isNetworkProduct(product) && product.productConfiguration?.orderable ? (
+              <Link className="rail-network-configure" href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)}
+                aria-label={`${t.addToCart} ${product.name}`} title={t.addToCart}><ShoppingCart size={14} /></Link>
             ) : null}
           </article>
           ) : (

@@ -213,13 +213,14 @@ export function addOrEditNetworkCartItem(cart: readonly CartItem[], incoming: Ne
   const amount = selectedQuantity ?? previous?.quantity ?? incoming.quantity;
   if (!Number.isSafeInteger(amount) || amount < 1 || amount > 100) return [...cart];
   const other = editingLineId ? cart.filter((item) => item.lineId !== editingLineId) : [...cart];
-  const matched = other.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.identity === incoming.identity);
+  const nextNote = incoming.note ?? previous?.note ?? "";
+  const matched = other.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.identity === incoming.identity && (item.note ?? "") === nextNote);
   if (other.reduce((sum, item) => sum + item.quantity, 0) + amount > 100) return [...cart];
   if (matched) return other.map((item) => item.lineId === matched.lineId ? {
     ...matched, quantity: matched.quantity + amount, acceptedQuote: incoming.acceptedQuote,
     proposedQuote: undefined, status: "CURRENT", issues: []
   } : item);
-  const next = { ...incoming, quantity: amount, lineId: previous?.lineId ?? incoming.lineId, note: previous?.note };
+  const next = { ...incoming, quantity: amount, lineId: previous?.lineId ?? incoming.lineId, note: nextNote };
   if (!previous) return [...other, next];
   const index = cart.findIndex((item) => item.lineId === previous.lineId);
   return [...other.slice(0, index), next, ...other.slice(index)];

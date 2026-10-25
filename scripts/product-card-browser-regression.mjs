@@ -155,12 +155,12 @@ try {
   results.push({ scenario: "keyboard Enter", navigated: keyboardNavigated });
 
   await navigateToMenu();
-  await until("!!document.querySelector('.menu-product-row .menu-product-quantity button')", "Legacy quantity control");
+  await until("!!document.querySelector('.menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity button')", "Legacy quantity control");
   await pause(1200);
-  const beforeQuantity = await evaluate("document.querySelector('.menu-product-row .menu-product-quantity strong')?.textContent");
-  await click(".menu-product-row .menu-product-quantity button:first-of-type");
-  await until(`document.querySelector('.menu-product-row .menu-product-quantity strong')?.textContent !== ${JSON.stringify(beforeQuantity)}`, "Legacy quantity increase");
-  const afterQuantity = await evaluate("document.querySelector('.menu-product-row .menu-product-quantity strong')?.textContent");
+  const beforeQuantity = await evaluate("document.querySelector('.menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity strong')?.textContent");
+  await click(".menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity button:first-of-type");
+  await until(`document.querySelector('.menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity strong')?.textContent !== ${JSON.stringify(beforeQuantity)}`, "Legacy quantity increase");
+  const afterQuantity = await evaluate("document.querySelector('.menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity strong')?.textContent");
   const stillMenu = await evaluate("location.pathname.endsWith('/menu')");
   if (!stillMenu || beforeQuantity === afterQuantity) throw new Error("Legacy quantity control navigated or did not update");
   results.push({ scenario: "Legacy quantity button", beforeQuantity, afterQuantity, stillMenu });
