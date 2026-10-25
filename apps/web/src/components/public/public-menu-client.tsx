@@ -1939,7 +1939,11 @@ function MenuView({
       return;
     }
 
-    navigateTo(productHref(data.restaurant.slug, product, menuReturnHref, useSubdomainRoutes));
+    // The /m/[slug] route is also used by subdomain rewrites. On a direct /m
+    // visit, the initial server prop can precede the host-derived state update.
+    const hostUsesSubdomainRoutes = isRestaurantSubdomainHost(window.location.host, data.restaurant.slug);
+    const returnHref = `${restaurantPath(data.restaurant.slug, "/menu", hostUsesSubdomainRoutes)}${menuReturnQuery ? `?${menuReturnQuery}` : ""}`;
+    navigateTo(productHref(data.restaurant.slug, product, returnHref, hostUsesSubdomainRoutes));
   }
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
@@ -1963,7 +1967,17 @@ function MenuView({
     spotlightPointerStartX.current = event.clientX;
     spotlightPointerStartY.current = event.clientY;
     spotlightPointerId.current = event.pointerId;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handleSpotlightPointerMove(event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "touch" || spotlightPointerId.current !== event.pointerId
+      || spotlightPointerStartX.current === null || spotlightPointerStartY.current === null) return;
+
+    const deltaX = Math.abs(event.clientX - spotlightPointerStartX.current);
+    const deltaY = Math.abs(event.clientY - spotlightPointerStartY.current);
+    if (deltaX >= 40 && deltaX > deltaY * 1.15 && !event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
   }
 
   function handleSpotlightPointerEnd(event: PointerEvent<HTMLElement>) {
@@ -1979,7 +1993,9 @@ function MenuView({
     spotlightPointerStartX.current = null;
     spotlightPointerStartY.current = null;
     spotlightPointerId.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
 
     if (absX < 40 || absX < absY * 1.15) return;
     event.preventDefault();
@@ -2162,6 +2178,7 @@ function MenuView({
                 className="category-spotlight-card"
                 onPointerCancel={handleSpotlightPointerCancel}
                 onPointerDown={handleSpotlightPointerDown}
+                onPointerMove={handleSpotlightPointerMove}
                 onPointerUp={handleSpotlightPointerEnd}
                 onTouchStart={handleSpotlightTouchStart}
                 onTouchEnd={handleSpotlightTouchEnd}

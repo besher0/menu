@@ -6194,6 +6194,27 @@ body:has(.public-page)::-webkit-scrollbar {
   display: none;
 }
 
+/* Keep image chips in the existing scrolling strip without truncating their names. */
+.menu-category-strip:not(.category-nav-text-tabs) {
+  height: auto;
+  max-height: none;
+}
+
+.menu-category-strip:not(.category-nav-text-tabs) .menu-category-chip {
+  flex: 0 0 auto;
+  height: auto;
+  min-width: 66px;
+  width: max-content;
+}
+
+.menu-category-strip:not(.category-nav-text-tabs) .menu-category-chip > span:last-of-type {
+  line-height: 1.2;
+  max-width: min(120px, 32vw);
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .menu-category-strip.category-nav-text-tabs {
   gap: 34px;
   height: 46px;
@@ -6686,8 +6707,8 @@ body:has(.public-page)::-webkit-scrollbar {
   display: grid;
   gap: 4px;
   grid-template-columns: minmax(0, 1fr) 142px;
-  grid-template-rows: 94px;
-  height: 94px;
+  grid-template-rows: minmax(94px, auto);
+  height: auto;
   min-height: 94px;
   overflow: hidden;
   padding: 0;
@@ -6705,7 +6726,13 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .menu-product-row .menu-product-open {
-  display: contents;
+  display: grid;
+  gap: inherit;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  grid-template-columns: inherit;
+  min-height: 94px;
+  width: 100%;
 }
 
 .menu-product-image-link {
@@ -6744,7 +6771,8 @@ body:has(.public-page)::-webkit-scrollbar {
   display: block;
   grid-column: 2;
   grid-row: 1;
-  height: 94px;
+  height: 100%;
+  min-height: 94px;
   overflow: hidden;
 }
 
@@ -6752,12 +6780,12 @@ body:has(.public-page)::-webkit-scrollbar {
   align-content: center;
   direction: ltr;
   display: grid;
-  gap: 4px;
+  gap: 5px;
   grid-column: 1;
   grid-row: 1;
   justify-items: end;
   min-width: 0;
-  padding: 18px 8px 22px 58px;
+  padding: 10px 8px 10px 58px;
   text-align: end;
 }
 
@@ -6786,7 +6814,7 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: right;
   width: 100%;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
 }
 
 .menu-product-row .product-price {
@@ -6813,10 +6841,14 @@ body:has(.public-page)::-webkit-scrollbar {
   box-shadow: 0 8px 22px rgb(16 24 40 / 7%);
   gap: 8px;
   grid-template-columns: minmax(0, 1fr) 132px;
-  grid-template-rows: 96px;
-  height: 114px;
+  grid-template-rows: minmax(96px, auto);
+  height: auto;
   min-height: 114px;
   padding: 9px 12px 9px 10px;
+}
+
+.menu-product-row.card-horizontal-contained .menu-product-open {
+  min-height: 96px;
 }
 
 .menu-product-row.card-horizontal-contained .menu-product-image-link {
