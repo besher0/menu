@@ -35,9 +35,12 @@ try {
   let nextId = 0;
   const pending = new Map();
   const quoteRequests = [];
+  const checkoutRequests = [];
   socket.addEventListener("message", (event) => {
     const packet = JSON.parse(String(event.data));
     if (packet.method === "Network.requestWillBeSent" && packet.params.request.url.includes("/quote")) quoteRequests.push(packet.params.request.url);
+    if (packet.method === "Network.requestWillBeSent" && packet.params.request.url.includes("/orders/whatsapp")) checkoutRequests.push(packet.params.request.url);
+    if (packet.method === "Network.requestWillBeSent" && packet.params.request.url.includes("/checkout/whatsapp/")) checkoutRequests.push(packet.params.request.url);
     const request = pending.get(packet.id);
     if (!request) return;
     pending.delete(packet.id);
@@ -66,6 +69,11 @@ try {
     const found = await evalInPage(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); e?.click(); return !!e; })()`);
     if (!found) throw new Error(`Missing click target: ${selector}`);
   };
+  const pizzaCard = "[...document.querySelectorAll('.menu-product-row[data-cart-mode=NETWORK]')].find(e => e.querySelector('.menu-product-copy b')?.textContent.includes('بيتزا مارغريتا'))";
+  const clickPizza = async (selector) => {
+    const found = await evalInPage(`(() => { const e = (${pizzaCard})?.querySelector(${JSON.stringify(selector)}); e?.click(); return !!e; })()`);
+    if (!found) throw new Error(`Missing pizza control: ${selector}`);
+  };
   const navigate = async (path) => {
     await cdp("Page.navigate", { url: origin + path });
     await until(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.readyState === 'complete'`, `navigate ${path}`, 120);
@@ -87,18 +95,39 @@ try {
   if (!menuState.legacy || !menuState.network.some((line) => line.control)) throw new Error(`Missing menu controls: ${JSON.stringify(menuState)}`);
   results.push({ scenario: "menu quantity controls", menuState });
   await shot("menu-network-stepper-390.png");
-  await click(".menu-product-row[data-cart-mode=NETWORK] .menu-product-quantity button:first-of-type");
+  await clickPizza(".menu-product-quantity button:first-of-type");
   await until("location.pathname.includes('/product/')", "Network + opens configuration");
   await until("!!document.querySelector('[data-testid=public-product-configurator] [data-group-type=SIZE] [role=radio]')", "configuration loaded");
   await click("[data-testid=public-product-configurator] [data-group-type=SIZE] [role=radio]:not([disabled])");
-  await click("[data-testid=public-product-configurator] [data-group-type=OPTIONS] [role=checkbox]:not([disabled])");
+  await evalInPage("document.querySelector('[data-testid=public-product-configurator] [aria-label*=\"زيادة جبنة\"]')?.click()");
   await click(".product-bottom-cart-network .product-cart-link");
   await until("!!JSON.parse(localStorage.getItem('cart:preview-ordersawa:main') || '{}').items?.some?.(item => item.mode === 'NETWORK')", "Network line saved");
   results.push({ scenario: "Network configuration opened from +", path: await evalInPage("location.pathname") });
   await navigate("/m/preview-ordersawa/cart");
   await until("!!document.querySelector('.network-cart-item .network-cart-expand')", "Network cart line");
   const collapsed = await evalInPage("({ image: !!document.querySelector('.network-cart-item > img, .network-cart-item > .product-image-placeholder'), expanded: document.querySelector('.network-cart-expand')?.getAttribute('aria-expanded'), choiceVisible: !document.querySelector('.network-cart-expanded')?.hidden, price: document.querySelector('.network-cart-item .product-price')?.innerText })");
-  if (collapsed.image || collapsed.expanded !== "false" || collapsed.choiceVisible !== false || !collapsed.price) throw new Error(`Incorrect collapsed Network card: ${JSON.stringify(collapsed)}`);
+  if (!collapsed.image || collapsed.expanded !== "false" || collapsed.choiceVisible !== false || !collapsed.price) throw new Error(`Incorrect collapsed Network card: ${JSON.stringify(collapsed)}`);
+  const cardLayout = await evalInPage(`(() => { const card = document.querySelector('.network-cart-item'); const image = card.querySelector('img, .product-image-placeholder');
+    const rect = image.getBoundingClientRect(); return { ratio: rect.width / rect.height, note: !!card.querySelector('.cart-card-note input'), summary: !!card.querySelector('.network-cart-choice-summary') }; })()`);
+  if (Math.abs(cardLayout.ratio - 1) > 0.03 || !cardLayout.note || !cardLayout.summary) throw new Error(`Card layout differs: ${JSON.stringify(cardLayout)}`);
+  results.push({ scenario: "square card image and inline note", cardLayout });
+  const collapsedInvoice = await evalInPage("({ handle: !!document.querySelector('.cart-invoice-handle'), rows: document.querySelectorAll('.cart-invoice-lines .cart-invoice-line').length, images: document.querySelectorAll('.cart-invoice-scroll img').length })");
+  if (!collapsedInvoice.handle || collapsedInvoice.rows !== 1 || collapsedInvoice.images !== 0) throw new Error(`Invoice shell differs: ${JSON.stringify(collapsedInvoice)}`);
+  await click(".cart-invoice-handle");
+  await until("document.querySelector('.cart-invoice-handle')?.getAttribute('aria-expanded') === 'true'", "invoice expands");
+  await shot("network-cart-invoice-expanded-390.png");
+  await click(".cart-invoice-handle");
+  const handlePoint = await evalInPage("(() => { const r = document.querySelector('.cart-invoice-handle').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
+  await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: handlePoint.x, y: handlePoint.y, button: "left", clickCount: 1 });
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: handlePoint.x, y: handlePoint.y - 85, button: "left", buttons: 1 });
+  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: handlePoint.x, y: handlePoint.y - 85, button: "left", clickCount: 1 });
+  await until("document.querySelector('.cart-invoice-handle')?.getAttribute('aria-expanded') === 'true'", "invoice drag opens");
+  const openPoint = await evalInPage("(() => { const r = document.querySelector('.cart-invoice-handle').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
+  await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: openPoint.x, y: openPoint.y, button: "left", clickCount: 1 });
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: openPoint.x, y: openPoint.y + 85, button: "left", buttons: 1 });
+  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: openPoint.x, y: openPoint.y + 85, button: "left", clickCount: 1 });
+  await until("document.querySelector('.cart-invoice-handle')?.getAttribute('aria-expanded') === 'false'", "invoice drag closes");
+  results.push({ scenario: "invoice expands, collapses and drags without images", collapsedInvoice });
   await shot("network-cart-collapsed-390.png");
   await click(".network-cart-expand");
   await until("document.querySelector('.network-cart-expanded')?.hidden === false", "expanded choices");
@@ -117,13 +146,12 @@ try {
   results.push({ scenario: "collapsed/expanded/edit/cancel", collapsed, expanded, selectedBeforeCancel });
   await click(".network-cart-edit");
   await until("!!document.querySelector('.network-cart-editor [role=radio][aria-checked=true]')", "editor reopened");
-  await click(".network-cart-editor [data-group-type=SIZE] [role=radio]:nth-child(2)");
   await evalInPage(`(() => { const input = document.querySelector('.network-cart-editor .cart-item-note input');
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
     setter.call(input, 'ملاحظة اختبار'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await evalInPage(`[...document.querySelectorAll('.network-cart-editor button')].find(e => e.innerText.includes('حفظ التكوين في السلة'))?.click()`);
   await until("!document.querySelector('.network-cart-editor')", "editor save closes");
-  await until("document.querySelector('.network-cart-item .cart-page-copy > b')?.innerText.includes('وسط')", "edited size saved");
+  await until("document.querySelector('.network-cart-item .cart-card-note input')?.value === 'ملاحظة اختبار'", "edited note saved");
   const savedNote = await evalInPage("JSON.parse(localStorage.getItem('cart:preview-ordersawa:main')).items.find(e => e.mode === 'NETWORK')?.note");
   if (savedNote !== "ملاحظة اختبار") throw new Error(`Edited note not saved: ${savedNote}`);
   results.push({ scenario: "edit target Network line with trusted quote", savedNote,
@@ -149,19 +177,19 @@ try {
   await until("!!document.querySelector('.network-cart-recheck-feedback')", "offline retry recovery");
   results.push({ scenario: "offline recheck fail closed and recovery", offlinePath });
   await navigate("/m/preview-ordersawa/menu?category=demo-products&display=list");
-  await until("Number(document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .menu-product-quantity strong')?.innerText) > 0 && !!document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .menu-product-quantity button:first-of-type:not([disabled])')", "single Network line verified");
-  const oneLineQuantity = await evalInPage("document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .menu-product-quantity strong')?.innerText");
-  await click(".menu-product-row[data-cart-mode=NETWORK] .menu-product-quantity button:first-of-type");
-  await until(`document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .menu-product-quantity strong')?.innerText !== ${JSON.stringify(oneLineQuantity)}`, "one configuration quantity increases");
+  await until(`Number((${pizzaCard})?.querySelector('.menu-product-quantity strong')?.innerText) > 0 && !!(${pizzaCard})?.querySelector('.menu-product-quantity button:first-of-type:not([disabled])')`, "single Network line verified");
+  const oneLineQuantity = await evalInPage(`(${pizzaCard})?.querySelector('.menu-product-quantity strong')?.innerText`);
+  await clickPizza(".menu-product-quantity button:first-of-type");
+  await until(`(${pizzaCard})?.querySelector('.menu-product-quantity strong')?.innerText !== ${JSON.stringify(oneLineQuantity)}`, "one configuration quantity increases");
   if (!await evalInPage("location.pathname.endsWith('/menu')")) throw new Error("Network quantity changed route");
-  await click(".menu-product-row[data-cart-mode=NETWORK] .menu-product-open");
+  await clickPizza(".menu-product-open");
   await until("!!document.querySelector('[data-testid=public-product-configurator] [data-group-type=SIZE] [role=radio]')", "second configuration page");
   await click("[data-testid=public-product-configurator] [data-group-type=SIZE] [role=radio]:nth-child(3)");
   await click(".product-bottom-cart-network .product-cart-link");
   await until("JSON.parse(localStorage.getItem('cart:preview-ordersawa:main')).items.filter(e => e.mode === 'NETWORK').length === 2", "two independent configurations");
   await navigate("/m/preview-ordersawa/menu?category=demo-products&display=list");
-  await until("!!document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .menu-network-configure')", "multi-configuration control restored");
-  const multiState = await evalInPage("(() => { const card = document.querySelector('.menu-product-row[data-cart-mode=NETWORK]'); return { ambiguousStepper: !!card?.querySelector('.menu-product-quantity'), configure: !!card?.querySelector('.menu-network-configure') }; })()");
+  await until(`!!(${pizzaCard})?.querySelector('.menu-network-configure')`, "multi-configuration control restored");
+  const multiState = await evalInPage(`(() => { const card = ${pizzaCard}; return { ambiguousStepper: !!card?.querySelector('.menu-product-quantity'), configure: !!card?.querySelector('.menu-network-configure') }; })()`);
   if (multiState.ambiguousStepper || !multiState.configure) throw new Error(`Unsafe multi-configuration control: ${JSON.stringify(multiState)}`);
   await shot("menu-network-multiple-configurations-390.png");
   await click(".menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity button:first-of-type");
@@ -173,11 +201,22 @@ try {
   })()`);
   if (JSON.stringify(priceStyles.network) !== JSON.stringify(priceStyles.legacy)) throw new Error(`Network price style differs from Legacy: ${JSON.stringify(priceStyles)}`);
   await shot("mixed-cart-390.png");
+  await click(".cart-invoice-handle");
+  await until("document.querySelectorAll('.cart-invoice-lines .cart-invoice-line').length === 3", "expanded Mixed invoice lines");
+  await shot("mixed-invoice-expanded-390.png");
+  await click(".cart-invoice-handle");
   results.push({ scenario: "one vs multiple Network configurations and Mixed cart", oneLineQuantity, multiState, priceStyles,
     networkLines: await evalInPage("document.querySelectorAll('.network-cart-item').length"),
     legacyLines: await evalInPage("document.querySelectorAll('.cart-page-item:not(.network-cart-item)').length") });
+  await evalInPage(`(() => { const input = document.querySelector('.cart-page-item:not(.network-cart-item) .cart-card-note input');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'Legacy note test'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await until("JSON.parse(localStorage.getItem('cart:preview-ordersawa:main')).items.some(e => e.mode === 'LEGACY' && e.note === 'Legacy note test')", "inline Legacy note persisted");
   await navigate("/m/preview-ordersawa/cart");
   await until("document.querySelectorAll('.network-cart-item').length === 2 && document.querySelectorAll('.cart-page-item:not(.network-cart-item)').length === 1", "mixed cart after reload");
+  if (!await evalInPage("document.querySelector('.cart-page-item:not(.network-cart-item) .cart-card-note input')?.value === 'Legacy note test'")) {
+    throw new Error("Inline Legacy note was lost after reload");
+  }
   results.push({ scenario: "cart reload persistence", restoredNetworkLines: 2, restoredLegacyLines: 1 });
   for (const width of [360, 430, 1280]) {
     await cdp("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -192,6 +231,20 @@ try {
   await until("document.querySelector('.public-screen')?.dir === 'ltr'", "LTR cart");
   await shot("network-cart-ltr-390.png");
   results.push({ scenario: "English LTR", direction: await evalInPage("document.querySelector('.public-screen')?.dir") });
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.cart-message-preview-open')", "checkout verification step");
+  await click(".cart-message-preview-open");
+  await until("!!document.querySelector('.whatsapp-preview-dialog pre') || !!document.querySelector('.cart-message[role=alert]')", "trusted message preview");
+  const message = await evalInPage("document.querySelector('.whatsapp-preview-dialog pre')?.innerText");
+  if (!message || !message.includes('بيتزا مارغريتا') || !message.includes('Legacy note test')
+    || checkoutRequests.some((url) => url.includes('/orders/whatsapp') || url.includes('/checkout/whatsapp/confirm'))
+    || !checkoutRequests.some((url) => url.includes('/checkout/whatsapp/prepare'))) {
+    throw new Error(`Preview did not use the side-effect-free trusted prepare: ${JSON.stringify({ message, checkoutRequests })}`);
+  }
+  await writeFile(join(output, "mixed-whatsapp-message-preview.txt"), `${message}\n`, "utf8");
+  await shot("mixed-whatsapp-message-preview-390.png");
+  results.push({ scenario: "trusted Mixed message preview without order creation", previewLength: message.length,
+    checkoutRequests });
   console.log(JSON.stringify({ origin, output, results }, null, 2));
 } finally {
   socket?.close();

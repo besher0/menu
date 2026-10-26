@@ -42,6 +42,8 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   const [pendingPrice, setPendingPrice] = useState<PendingPrice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [previewPriceChanged, setPreviewPriceChanged] = useState(false);
   const busyRef = useRef(false);
   const editVersion = useRef(0);
   const ar = locale === "ar";
@@ -49,6 +51,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   useEffect(() => {
     editVersion.current += 1;
     setPendingPrice(null);
+    setPreviewMessage(null);
   }, [cart, locale, details.customerName, details.customerPhone, details.fulfillmentType,
     details.deliveryArea, details.deliveryNear, details.deliveryBeside, details.pickupTime, details.orderNote]);
 
@@ -74,6 +77,34 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         expectedLinkedSourceRevisions: item.acceptedQuote.linkedSourceRevisions
       })
     };
+  }
+
+  async function preview() {
+    if (disabledReason || !cart.length || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    setPreviewMessage(null);
+    const version = editVersion.current;
+    const checkoutRequest = request();
+    try {
+      const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
+      if (editVersion.current !== version) return;
+      const comparison = compareTrustedDraft(prepared.draft, checkoutRequest,
+        cartDisplayedTotal(cart), restaurantSlug, locale);
+      if (comparison === "INVALID" || comparison === "SOURCE_CHANGED") {
+        setError(ar ? "تغيرت اختيارات الطلب؛ راجع السلة قبل معاينة الرسالة." : "Order choices changed; review the cart before previewing.");
+        return;
+      }
+      setPreviewPriceChanged(comparison === "PRICE_CHANGED");
+      setPreviewMessage(prepared.messagePreview);
+    } catch (caught) {
+      if (editVersion.current === version) setError(caught instanceof PublicWhatsappCheckoutError ? caught.message
+        : ar ? "تعذر تجهيز معاينة الرسالة." : "Could not prepare the message preview.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   }
 
   function handleConfirmationError(caught: unknown, checkoutRequest: PublicWhatsappCheckoutRequest, displayedTotal: string,
@@ -195,7 +226,8 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     }
   }
 
-  return { busy, error, pendingPrice, submit, acceptUpdatedPrice, dismissUpdatedPrice: () => setPendingPrice(null) };
+  return { busy, error, pendingPrice, previewMessage, previewPriceChanged, preview,
+    closePreview: () => setPreviewMessage(null), submit, acceptUpdatedPrice, dismissUpdatedPrice: () => setPendingPrice(null) };
 }
 
 export function cartDisplayedTotal(cart: readonly CartItem[]): string {

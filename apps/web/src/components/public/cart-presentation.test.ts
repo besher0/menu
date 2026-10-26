@@ -8,9 +8,9 @@ const line = (path: string, nodeId: string, label: string, chargedAmount: string
 });
 
 describe("compact network cart choices", () => {
-  it("keeps the existing Legacy cart title in its own rendering branch", () => {
+  it("shows the Legacy name without repeating the adjacent quantity control", () => {
     const source = readFileSync(new URL("./public-menu-client.tsx", import.meta.url), "utf8");
-    expect(source).toContain('item.mode === "NETWORK" ? networkCartHeading(item) : <>{item.quantity} × {item.name}</>');
+    expect(source).toContain('item.mode === "NETWORK" ? networkCartHeading(item) : item.name');
   });
 
   it("shows Network size without duplicating the adjacent quantity", () => {

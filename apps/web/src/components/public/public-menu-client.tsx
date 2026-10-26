@@ -1059,7 +1059,8 @@ export function PublicMenuClient({
           pickupTime: checkoutDetails?.pickupTime,
           items: legacyCart.map((item) => ({
             productSlug: item.slug,
-            quantity: item.quantity
+            quantity: item.quantity,
+            ...(item.note?.trim() ? { note: item.note.trim() } : {})
           }))
         })
       });
@@ -2513,9 +2514,13 @@ function CartView({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [previewCopied, setPreviewCopied] = useState(false);
   const [expandedNetworkLines, setExpandedNetworkLines] = useState<Set<string>>(() => new Set());
   const [editingNetworkLineId, setEditingNetworkLineId] = useState<string | null>(null);
   const [editingNetworkNote, setEditingNetworkNote] = useState("");
+  const [invoiceExpanded, setInvoiceExpanded] = useState(false);
+  const invoiceDragStart = useRef<number | null>(null);
+  const invoiceWasDragged = useRef(false);
   const [recheckFeedback, setRecheckFeedback] = useState<Record<string, string>>({});
   const networkEditorRef = useRef<HTMLElement | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
@@ -2681,45 +2686,24 @@ function CartView({
                 const ingredientNames = product
                   ? productIngredients(product).map((ingredient) => ingredient.name).filter(Boolean).join(" - ")
                   : "";
+                const choiceLabels = item.mode === "NETWORK" ? networkCartChoiceLabels(item.acceptedQuote.priceBreakdown) : [];
+                const hasSizeChoice = item.mode === "NETWORK" && item.acceptedQuote.priceBreakdown.some((line) => line.kind === "SIZE");
 
                 return (
                   <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""}`}>
-                    {item.mode === "NETWORK" ? null : imageUrl ? <img src={imageUrl} alt={item.name} /> : (
+                    {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
                       <span className="product-image-placeholder" role="img" aria-label={item.name}>
                         <ImageIcon size={24} />
                       </span>
                     )}
                     <div className="cart-page-copy">
-                      <b dir="auto">{item.mode === "NETWORK" ? networkCartHeading(item) : <>{item.quantity} × {item.name}</>}</b>
+                      <b dir="auto">{item.mode === "NETWORK" ? networkCartHeading(item) : item.name}</b>
                       {item.mode === "NETWORK" ? <>
                         {showPrices ? <ProductPrice price={multiplyMoney(item.acceptedQuote.total, item.quantity)} currency={item.currency} /> : null}
-                        <div className="network-cart-tools">
-                          {item.note?.trim() ? <span className="network-cart-note-indicator" title={item.note}>{language === "ar" ? "لديه ملاحظة" : "Has a note"}</span> : null}
-                          {data.products.some((candidate) => candidate.id === item.productId) ? <button type="button" className="network-cart-edit"
-                            onClick={() => { setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); }}
-                            aria-label={language === "ar" ? `تعديل تكوين ${item.name}` : `Edit ${item.name} choices`}><Pencil size={16} /></button> : null}
-                          <button type="button" className="network-cart-recheck" onClick={() => void handleNetworkRecheck(item.lineId)}
-                            disabled={item.status === "CHECKING"} title={language === "ar" ? "إعادة التحقق" : "Recheck"}
-                            aria-label={language === "ar" ? `إعادة التحقق من ${item.name}` : `Recheck ${item.name}`}>
-                            {item.status === "CHECKING" ? <Loader2 size={16} className="spin" /> : <Rotate3D size={16} />}
-                          </button>
-                          {networkCartChoiceLabels(item.acceptedQuote.priceBreakdown).length || item.note?.trim() ? <button type="button" className="network-cart-expand"
-                            onClick={() => toggleNetworkDetails(item.lineId)} aria-expanded={expandedNetworkLines.has(item.lineId)}
-                            aria-controls={`network-cart-details-${item.lineId}`}
-                            aria-label={language === "ar" ? `${expandedNetworkLines.has(item.lineId) ? "إخفاء" : "عرض"} تفاصيل ${item.name}` : `${expandedNetworkLines.has(item.lineId) ? "Hide" : "Show"} ${item.name} choices`}>
-                            <ChevronDown size={18} /></button> : null}
-                        </div>
-                        <NetworkCartDetails item={item} language={language} showPrices={showPrices}
-                          expanded={expandedNetworkLines.has(item.lineId)} feedback={recheckFeedback[item.lineId]}
-                          onAccept={() => acceptNetworkPrice(item.lineId)} />
                       </> : <>
                         {ingredientNames ? <p dir="auto" title={ingredientNames}>{ingredientNames}</p> : null}
-          {showPrices ? <ProductPrice price={multiplyMoney(item.priceText ?? String(item.price), item.quantity)} currency={item.currency} /> : null}
+                        {showPrices ? <ProductPrice price={multiplyMoney(item.priceText ?? String(item.price), item.quantity)} currency={item.currency} /> : null}
                       </>}
-                      {useTrustedNetworkCheckout && item.mode === "LEGACY" ? <label className="cart-item-note">
-                        <span>{language === "ar" ? "ملاحظة الصنف" : "Item note"}</span>
-                        <input value={item.note ?? ""} maxLength={500} onChange={(event) => updateCartNote(item.lineId, event.target.value)} />
-                      </label> : null}
                     </div>
                     <div className="cart-page-stepper" aria-label={item.name}>
                       <button type="button" onClick={() => { if (item.mode === "NETWORK") setRecheckFeedback((current) => ({ ...current, [item.lineId]: "" })); updateCartItem(item.lineId, item.quantity + 1); }} disabled={hasNetwork && cartCount >= 100} aria-label={`+ ${item.name}`}>
@@ -2738,6 +2722,33 @@ function CartView({
                     >
                       <Trash2 size={15} />
                     </button>
+                    {item.mode === "NETWORK" ? <div className="cart-card-configuration">
+                      {choiceLabels.length || hasSizeChoice ? <div className="network-cart-tools">
+                        {data.products.some((candidate) => candidate.id === item.productId) ? <button type="button" className="network-cart-edit"
+                          onClick={() => { setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); }}
+                          aria-label={language === "ar" ? `تعديل تكوين ${item.name}` : `Edit ${item.name} choices`}><Pencil size={15} />{language === "ar" ? "تعديل" : "Edit"}</button> : null}
+                        {choiceLabels.length ? <span className="network-cart-choice-summary" dir="auto">{choiceLabels.slice(0, 2).map((choice) => choice.label).join(" • ")}</span> : null}
+                        <button type="button" className="network-cart-recheck" onClick={() => void handleNetworkRecheck(item.lineId)}
+                          disabled={item.status === "CHECKING"} title={language === "ar" ? "إعادة التحقق" : "Recheck"}
+                          aria-label={language === "ar" ? `إعادة التحقق من ${item.name}` : `Recheck ${item.name}`}>
+                          {item.status === "CHECKING" ? <Loader2 size={16} className="spin" /> : <Rotate3D size={16} />}
+                        </button>
+                        {choiceLabels.length ? <button type="button" className="network-cart-expand"
+                          onClick={() => toggleNetworkDetails(item.lineId)} aria-expanded={expandedNetworkLines.has(item.lineId)}
+                          aria-controls={`network-cart-details-${item.lineId}`}
+                          aria-label={language === "ar" ? `${expandedNetworkLines.has(item.lineId) ? "إخفاء" : "عرض"} تفاصيل ${item.name}` : `${expandedNetworkLines.has(item.lineId) ? "Hide" : "Show"} ${item.name} choices`}>
+                          <ChevronDown size={18} /></button> : null}
+                      </div> : null}
+                      <NetworkCartDetails item={item} language={language} showPrices={showPrices}
+                        expanded={expandedNetworkLines.has(item.lineId)} feedback={recheckFeedback[item.lineId]}
+                        onAccept={() => acceptNetworkPrice(item.lineId)} />
+                    </div> : null}
+                    <label className="cart-item-note cart-card-note">
+                      <MessageCircle size={18} aria-hidden="true" />
+                      <input value={item.note ?? ""} maxLength={500} onChange={(event) => updateCartNote(item.lineId, event.target.value)}
+                        placeholder={language === "ar" ? "إضافة ملاحظة" : "Add a note"}
+                        aria-label={language === "ar" ? `ملاحظة ${item.name}` : `Note for ${item.name}`} />
+                    </label>
                   </article>
                 );
               })}
@@ -2821,12 +2832,40 @@ function CartView({
         {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
         {!showPrices ? <p>{trustedDisabledReason}</p> : null}
         {networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
-      </section> : whatsappOrderingEnabled ? <section className="cart-checkout-card">
+      </section> : whatsappOrderingEnabled ? <section className={`cart-checkout-card ${invoiceExpanded ? "invoice-expanded" : ""}`}>
+        <button type="button" className="cart-invoice-handle" aria-label={language === "ar" ? invoiceExpanded ? "تصغير ملخص الفاتورة" : "توسيع ملخص الفاتورة" : invoiceExpanded ? "Collapse invoice" : "Expand invoice"}
+          aria-expanded={invoiceExpanded}
+          onPointerDown={(event) => { invoiceDragStart.current = event.clientY; invoiceWasDragged.current = false; event.currentTarget.setPointerCapture(event.pointerId); }}
+          onPointerUp={(event) => {
+            if (invoiceDragStart.current !== null && Math.abs(event.clientY - invoiceDragStart.current) >= 28) {
+              setInvoiceExpanded(event.clientY < invoiceDragStart.current);
+              invoiceWasDragged.current = true;
+            }
+            invoiceDragStart.current = null;
+          }}
+          onPointerCancel={() => { invoiceDragStart.current = null; invoiceWasDragged.current = false; }}
+          onClick={() => { if (invoiceWasDragged.current) { invoiceWasDragged.current = false; return; } setInvoiceExpanded((current) => !current); }}>
+          <span />
+        </button>
         <div className="cart-checkout-meta">
           <span>{t.selectedItems} <b>{cartCount}</b></span>
           {!hasNetwork ? <span>{t.orderNumber}: {orderNumber}</span> : null}
         </div>
-        <dl>
+        <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
+        <dl className="cart-invoice-lines">
+          {(invoiceExpanded ? cart : cart.slice(0, 2)).map((item) => {
+            const heading = item.mode === "NETWORK" ? networkCartHeading(item) : item.name;
+            const matching = cart.filter((line) => line.mode === "NETWORK" && networkCartHeading(line) === heading);
+            const suffix = item.mode === "NETWORK" && matching.length > 1
+              ? ` (${language === "ar" ? "تكوين" : "configuration"} ${matching.findIndex((line) => line.lineId === item.lineId) + 1})` : "";
+            const amount = item.mode === "NETWORK" ? multiplyMoney(item.acceptedQuote.total, item.quantity)
+              : multiplyMoney(item.priceText ?? String(item.price), item.quantity);
+            return <div key={item.lineId} className="cart-invoice-line"><dt dir="auto">{item.quantity} × {heading}{suffix}</dt>
+              <dd>{displayCurrencyAmount(amount, item.currency)}</dd></div>;
+          })}
+          {!invoiceExpanded && cart.length > 2 ? <div className="cart-invoice-more"><dt>{language === "ar" ? `و${cart.length - 2} أصناف أخرى` : `and ${cart.length - 2} more items`}</dt></div> : null}
+        </dl>
+        <dl className="cart-invoice-totals">
           <div>
             <dt>{t.subtotal}</dt>
             <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : legacySubtotal, data.restaurant.currency ?? "ل.س")}</dd>
@@ -2838,14 +2877,19 @@ function CartView({
           </div>
           ) : null}
           <div>
-            <dt />
+            <dt>{t.total}</dt>
             <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : total, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
         </dl>
+        </div>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
         {useTrustedNetworkCheckout && trustedDisabledReason ? <p className="cart-message">{trustedDisabledReason}</p> : null}
         {useTrustedNetworkCheckout && trusted.error ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
+        {useTrustedNetworkCheckout && cartStep === "confirm" ? <button type="button" className="cart-message-preview-open"
+          disabled={trusted.busy || Boolean(trustedDisabledReason)} onClick={() => { setPreviewCopied(false); void trusted.preview(); }}>
+          {language === "ar" ? "معاينة رسالة WhatsApp دون إرسال" : "Preview WhatsApp message without sending"}
+        </button> : null}
         <button
           type="button"
           className="cart-whatsapp"
@@ -2856,6 +2900,19 @@ function CartView({
           {orderSubmitting || trusted.busy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
         </button>
       </section> : <section className="network-cart-gate" role="status">{language === "ar" ? "إرسال الطلب غير متاح لهذه القائمة حاليًا." : "Ordering is unavailable for this menu."}</section>}
+      {trusted.previewMessage ? <div className="whatsapp-preview-backdrop" role="presentation" onMouseDown={(event) => {
+        if (event.target === event.currentTarget) trusted.closePreview();
+      }}><section className="whatsapp-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="whatsapp-preview-title"
+        dir={language === "ar" ? "rtl" : "ltr"} onKeyDown={(event) => { if (event.key === "Escape") trusted.closePreview(); }}>
+        <header><h2 id="whatsapp-preview-title">{language === "ar" ? "معاينة رسالة WhatsApp" : "WhatsApp message preview"}</h2>
+          <button type="button" onClick={trusted.closePreview} aria-label={language === "ar" ? "إغلاق المعاينة" : "Close preview"}><X size={20} /></button></header>
+        {trusted.previewPriceChanged ? <p role="alert">{language === "ar" ? "تغير السعر. هذه معاينة للسعر الحالي فقط؛ يلزم قبول السعر الجديد قبل الإرسال." : "The price changed. This previews the current price only; you must accept it before sending."}</p> : null}
+        <p>{language === "ar" ? "هذه رسالة نصية فقط. المعاينة لا تنشئ طلبًا ولا تفتح WhatsApp." : "Plain text only. Preview does not create an order or open WhatsApp."}</p>
+        <pre dir="auto">{trusted.previewMessage}</pre>
+        <button type="button" onClick={() => { void navigator.clipboard.writeText(trusted.previewMessage ?? "").then(() => setPreviewCopied(true)); }}>
+          {previewCopied ? language === "ar" ? "تم النسخ" : "Copied" : language === "ar" ? "نسخ النص" : "Copy text"}
+        </button>
+      </section></div> : null}
       {trusted.pendingPrice ? <div className="price-update-backdrop" role="presentation">
         <div className="price-update-dialog" role="dialog" aria-modal="true" aria-labelledby="price-update-title" dir={language === "ar" ? "rtl" : "ltr"}
           onKeyDown={(event) => { if (event.key === "Escape") { trusted.dismissUpdatedPrice(); setCartStep("review"); } }}>

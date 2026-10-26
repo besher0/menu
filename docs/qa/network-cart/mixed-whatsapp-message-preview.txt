@@ -1,0 +1,25 @@
+🧾 New order — OrderSawa
+Restaurant: ⁨مطعم OrderSawa التجريبي⁩
+Fulfillment: Pickup
+Branch: ⁨فرع التجربة⁩
+
+2 × ⁨بيتزا مارغريتا — Demo⁩ — ⁨صغير⁩
+  ➕ ⁨الإضافات⁩ (optional):
+    • 1 × ⁨جبنة إضافية⁩
+Item note: ⁨ملاحظة اختبار⁩
+Line total: 180 ل.س
+━━━━━━━━━━━━━━
+
+1 × ⁨بيتزا مارغريتا — Demo⁩ — ⁨كبير⁩
+  ➕ ⁨الإضافات⁩ (optional):
+    • 1 × ⁨جبنة إضافية⁩
+Line total: 167 ل.س
+━━━━━━━━━━━━━━
+
+1 × ⁨منتج قديم — Demo⁩
+Item note: ⁨Legacy note test⁩
+Line total: 60 ل.س
+━━━━━━━━━━━━━━
+
+Items subtotal: 407 ل.س
+💵 Order total: 407 ل.س
