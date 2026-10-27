@@ -1,0 +1,806 @@
+diff --git a/apps/api/src/modules/dashboard/dashboard.service.spec.ts b/apps/api/src/modules/dashboard/dashboard.service.spec.ts
+index 186d38d..5aaf48f 100644
+--- a/apps/api/src/modules/dashboard/dashboard.service.spec.ts
++++ b/apps/api/src/modules/dashboard/dashboard.service.spec.ts
+@@ -99,6 +99,20 @@ describe("DashboardService settings persistence", () => {
+       splashScreen
+     });
+   });
++
++  it("rejects fractional SYP delivery fee before modifying restaurant data", async () => {
++    const prisma = {
++      restaurant: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "r1", currency: "SYP", branches: [], themeSettings: null }),
++        update: vi.fn() },
++      restaurantThemeSettings: { upsert: vi.fn() }
++    };
++    const service = createService(prisma);
++    await expect(service.updateSettings("r1", { deliveryFee: "125.50" })).rejects.toMatchObject({
++      response: { error: "INVALID_DELIVERY_FEE" }
++    });
++    expect(prisma.restaurant.update).not.toHaveBeenCalled();
++    expect(prisma.restaurantThemeSettings.upsert).not.toHaveBeenCalled();
++  });
+ });
+ 
+ describe("DashboardService linked-product category protection", () => {
+diff --git a/apps/api/src/modules/dashboard/dashboard.service.ts b/apps/api/src/modules/dashboard/dashboard.service.ts
+index 23bd840..b369529 100644
+--- a/apps/api/src/modules/dashboard/dashboard.service.ts
++++ b/apps/api/src/modules/dashboard/dashboard.service.ts
+@@ -6,6 +6,7 @@ import { resolveTxt } from "dns/promises";
+ import { slugify } from "../../common/slugify";
+ import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
+ import { PrismaService } from "../prisma/prisma.service";
++import { parseDeliveryFeeInput, readDeliveryFee } from "../public-menu/delivery-fee";
+ import { CreateDomainDto } from "./dto/create-domain.dto";
+ import { ListCategoriesQueryDto } from "./dto/list-categories-query.dto";
+ import { UpdateDashboardSettingsDto } from "./dto/update-dashboard-settings.dto";
+@@ -728,6 +729,7 @@ export class DashboardService {
+         logoUrl: restaurant.logoUrl,
+         currency: restaurant.currency,
+         showPrices: dashboardSettings.showPrices ?? true,
++        deliveryFee: readDeliveryFee(dashboardSettings, restaurant.currency),
+         productOpenMode: this.normalizeProductOpenMode(dashboardSettings.productOpenMode),
+         splashScreen: this.normalizeSplashScreenSettings(
+           dashboardSettings.splashScreen,
+@@ -753,6 +755,11 @@ export class DashboardService {
+       }
+     });
+     const branch = current.branches[0] ?? null;
++    const existingSettings = this.asJsonObject(current.themeSettings?.settings);
++    const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
++    const deliveryFee = dto.deliveryFee === undefined
++      ? readDeliveryFee(existingDashboardSettings, dto.currency ?? current.currency)
++      : parseDeliveryFeeInput(dto.deliveryFee, dto.currency ?? current.currency);
+ 
+     const nextRestaurantSlug = allowAdminSettings && dto.slug !== undefined
+       ? await this.uniqueRestaurantSlug(restaurantId, dto.slug)
+@@ -797,8 +804,6 @@ export class DashboardService {
+       ]);
+     }
+ 
+-    const existingSettings = this.asJsonObject(current.themeSettings?.settings);
+-    const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
+     const nextDashboardSettings = {
+       ...existingDashboardSettings,
+       ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
+@@ -808,6 +813,7 @@ export class DashboardService {
+       ...(dto.tiktokUrl !== undefined ? { tiktokUrl: dto.tiktokUrl } : { tiktokUrl: existingDashboardSettings.tiktokUrl ?? "" }),
+       ...(dto.whatsappUrl !== undefined ? { whatsappUrl: dto.whatsappUrl } : { whatsappUrl: existingDashboardSettings.whatsappUrl ?? "" }),
+       ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
++      deliveryFee,
+       ...(dto.productOpenMode !== undefined
+         ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }
+         : { productOpenMode: this.normalizeProductOpenMode(existingDashboardSettings.productOpenMode) }),
+diff --git a/apps/api/src/modules/dashboard/dto/update-dashboard-settings.dto.ts b/apps/api/src/modules/dashboard/dto/update-dashboard-settings.dto.ts
+index d761242..e05f82c 100644
+--- a/apps/api/src/modules/dashboard/dto/update-dashboard-settings.dto.ts
++++ b/apps/api/src/modules/dashboard/dto/update-dashboard-settings.dto.ts
+@@ -119,6 +119,10 @@ export class UpdateDashboardSettingsDto {
+   @IsBoolean()
+   showPrices?: boolean;
+ 
++  @IsOptional()
++  @IsString()
++  deliveryFee?: string | null;
++
+   @IsOptional()
+   @IsIn(["MODAL", "PAGE"])
+   productOpenMode?: "MODAL" | "PAGE";
+diff --git a/apps/api/src/modules/public-menu/delivery-fee.spec.ts b/apps/api/src/modules/public-menu/delivery-fee.spec.ts
+new file mode 100644
+index 0000000..ff666b6
+--- /dev/null
++++ b/apps/api/src/modules/public-menu/delivery-fee.spec.ts
+@@ -0,0 +1,20 @@
++import { describe, expect, it } from "vitest";
++import { parseDeliveryFeeInput, readDeliveryFee } from "./delivery-fee";
++
++describe("restaurant delivery fee policy", () => {
++  it("keeps pending, free and fixed fees distinct", () => {
++    expect(parseDeliveryFeeInput(null, "SYP")).toBeNull();
++    expect(parseDeliveryFeeInput("", "SYP")).toBeNull();
++    expect(parseDeliveryFeeInput("0.000000", "SYP")).toBe("0");
++    expect(parseDeliveryFeeInput("12000.000000", "SYP")).toBe("12000");
++    expect(readDeliveryFee({ deliveryFee: "0" }, "SYP")).toBe("0");
++    expect(readDeliveryFee({}, "SYP")).toBeNull();
++  });
++
++  it("rejects fractional Syrian fees, negatives and malformed stored settings", () => {
++    expect(() => parseDeliveryFeeInput("1.50", "SYP")).toThrow();
++    expect(() => parseDeliveryFeeInput("-1", "SYP")).toThrow();
++    expect(() => parseDeliveryFeeInput(5, "SYP")).toThrow();
++    expect(() => readDeliveryFee({ deliveryFee: "2.5" }, "SYP")).toThrow();
++  });
++});
+diff --git a/apps/api/src/modules/public-menu/delivery-fee.ts b/apps/api/src/modules/public-menu/delivery-fee.ts
+new file mode 100644
+index 0000000..2dc0329
+--- /dev/null
++++ b/apps/api/src/modules/public-menu/delivery-fee.ts
+@@ -0,0 +1,21 @@
++import { BadRequestException, ConflictException } from "@nestjs/common";
++import { normalizeMoney, validateCurrencyAmount } from "@menu/shared";
++
++/** null means the restaurant will determine the delivery fee by area. */
++export function parseDeliveryFeeInput(value: unknown, currency: string): string | null {
++  if (value === null || value === "") return null;
++  if (typeof value !== "string" || validateCurrencyAmount(value, currency, "$deliveryFee").length) {
++    throw new BadRequestException({ error: "INVALID_DELIVERY_FEE", message: "Delivery fee must be a non-negative amount valid for the restaurant currency." });
++  }
++  return normalizeMoney(value);
++}
++
++export function readDeliveryFee(settings: unknown, currency: string): string | null {
++  const value = settings && typeof settings === "object" && !Array.isArray(settings)
++    ? (settings as Record<string, unknown>).deliveryFee : undefined;
++  if (value === undefined || value === null) return null;
++  if (typeof value !== "string" || validateCurrencyAmount(value, currency, "$deliveryFee").length) {
++    throw new ConflictException({ error: "INVALID_STORED_DELIVERY_FEE", message: "The restaurant delivery fee is not valid for its currency." });
++  }
++  return normalizeMoney(value);
++}
+diff --git a/apps/api/src/modules/public-menu/public-menu.service.ts b/apps/api/src/modules/public-menu/public-menu.service.ts
+index e5a43ef..185ca2e 100644
+--- a/apps/api/src/modules/public-menu/public-menu.service.ts
++++ b/apps/api/src/modules/public-menu/public-menu.service.ts
+@@ -5,6 +5,7 @@ import { currencyDisplayReconciliation, currencyDisplayScale, formatCurrencyAmou
+ import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
+ import { PrismaService } from "../prisma/prisma.service";
+ import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
++import { readDeliveryFee } from "./delivery-fee";
+ import {
+   resolvePublicProductConfiguration,
+   type PublicConfigurationProductRecord,
+@@ -340,8 +341,11 @@ export class PublicMenuService {
+       };
+     });
+ 
+-    const totalAmount = sumMoney(items.map((item) => item.totalPrice));
++    const itemsSubtotal = sumMoney(items.map((item) => item.totalPrice));
+     const dashboardSettings = this.dashboardSettingsFromTheme(restaurant.themeSettings?.settings);
++    const deliveryFee = dto.fulfillmentType === "delivery" ? readDeliveryFee(dashboardSettings, restaurant.currency) : null;
++    const totalAmount = dto.fulfillmentType === "delivery" && deliveryFee !== null
++      ? sumMoney([itemsSubtotal, deliveryFee]) : itemsSubtotal;
+     const showPrices = dashboardSettings.showPrices ?? true;
+     const orderNumber = this.formatDailyOrderNumber(await this.nextDailyOrderSequence(restaurant.id));
+     const message = this.buildWhatsappMessage({
+@@ -358,6 +362,8 @@ export class PublicMenuService {
+       pickupTime: dto.pickupTime,
+       currency: restaurant.currency,
+       items,
++      itemsSubtotal,
++      deliveryFee,
+       totalAmount,
+       showPrices
+     });
+@@ -372,7 +378,7 @@ export class PublicMenuService {
+         currency: restaurant.currency,
+         status: "PENDING_WHATSAPP",
+         whatsappMessage: message,
+-        cartSnapshot: { ...dto, orderNumber } as unknown as Prisma.InputJsonValue,
++        cartSnapshot: { ...dto, orderNumber, itemsSubtotal, deliveryFee, finalTotalKnown: dto.fulfillmentType !== "delivery" || deliveryFee !== null } as unknown as Prisma.InputJsonValue,
+         items: {
+           create: items.map((item) => ({
+             productId: item.product.id,
+@@ -498,6 +504,7 @@ export class PublicMenuService {
+       tiktokUrl: dashboardSettings.tiktokUrl ?? null,
+       whatsappUrl: dashboardSettings.whatsappUrl ?? null,
+       showPrices: dashboardSettings.showPrices ?? true,
++      deliveryFee: readDeliveryFee(dashboardSettings, restaurant.currency),
+       productOpenMode: dashboardSettings.productOpenMode === "PAGE" ? "PAGE" : "MODAL",
+       splashScreen: this.serializeSplashScreenSettings(
+         dashboardSettings.splashScreen,
+@@ -902,11 +909,13 @@ export class PublicMenuService {
+       options: string[];
+       note?: string;
+     }>;
++    itemsSubtotal: string;
++    deliveryFee: string | null;
+     totalAmount: string;
+     showPrices: boolean;
+   }) {
+     const displayDifference = input.showPrices
+-      ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.totalAmount, input.currency)
++      ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.itemsSubtotal, input.currency)
+       : null;
+     const lines = [
+       `طلب جديد من ${input.restaurantName}`,
+@@ -932,7 +941,11 @@ export class PublicMenuService {
+         ""
+       ]),
+       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
+-      input.showPrices ? `الإجمالي: ${currencyDisplayScale(input.currency) === null
++      input.showPrices ? `مجموع الأصناف: ${currencyDisplayScale(input.currency) === null
++        ? `${formatDecimalForDisplay(input.itemsSubtotal, 2)} ${input.currency}`
++        : formatCurrencyAmount(input.itemsSubtotal, input.currency)}` : null,
++      input.showPrices && input.fulfillmentType === "delivery" ? `رسوم التوصيل: ${input.deliveryFee === null ? "تُحدّد حسب المنطقة" : input.deliveryFee === "0" ? "مجاني" : formatCurrencyAmount(input.deliveryFee, input.currency)}` : null,
++      input.showPrices && (input.fulfillmentType !== "delivery" || input.deliveryFee !== null) ? `الإجمالي: ${currencyDisplayScale(input.currency) === null
+         ? `${formatDecimalForDisplay(input.totalAmount, 2)} ${input.currency}`
+         : formatCurrencyAmount(input.totalAmount, input.currency)}` : null,
+       input.orderNote ? "" : null,
+diff --git a/apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts b/apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts
+index 298a4ae..b14011f 100644
+--- a/apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts
++++ b/apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts
+@@ -6,6 +6,7 @@ import { ABO_MALEK_THEME } from "@menu/shared";
+ import { randomBytes } from "node:crypto";
+ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+ import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
++import { DashboardService } from "../dashboard/dashboard.service";
+ import { PrismaService } from "../prisma/prisma.service";
+ import { PublicMenuController } from "./public-menu.controller";
+ import { PublicMenuService } from "./public-menu.service";
+@@ -90,6 +91,11 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
+     where: { restaurantId: "s6e2-r1" },
+     data: { settings: { ...ABO_MALEK_THEME, dashboardSettings: { showPrices }, publicUi: { whatsappOrderingEnabled: true } } }
+   });
++  const setDeliveryFee = (deliveryFee: string | null) => prisma.restaurantThemeSettings.update({
++    where: { restaurantId: "s6e2-r1" },
++    data: { settings: { ...ABO_MALEK_THEME, dashboardSettings: { showPrices: true, deliveryFee },
++      publicUi: { whatsappOrderingEnabled: true } } }
++  });
+ 
+   beforeAll(async () => {
+     process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "1";
+@@ -242,17 +248,63 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
+     const prepared = await prepare(payload);
+     expect(prepared.status).toBe(200);
+     expect(prepared.body.draft.items.map((line: any) => line.lineTotal)).toEqual(["24.000002", "530.000008"]);
+-    expect(prepared.body.draft.totalAmount).toBe("554.00001");
++    expect(prepared.body.draft.itemsSubtotal).toBe("554.00001");
++    expect(prepared.body.draft.deliveryFee).toBeNull();
++    expect(prepared.body.draft.totalAmount).toBeNull();
+     expect(prepared.body.messagePreview).toContain("Pizza Margherita");
+     expect(prepared.body.messagePreview).toContain("BBQ");
+-    expect(prepared.body.messagePreview).toContain("554.00001 EGP");
++    expect(prepared.body.messagePreview).toContain("مجموع الأصناف: 554.00001 EGP");
++    expect(prepared.body.messagePreview).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
++    expect(prepared.body.messagePreview).not.toContain("إجمالي الطلب:");
+     const sent = await confirm(payload, prepared.body.acceptanceToken);
+     expect(sent.status).toBe(200);
+     expect(sent.body.message).toContain("Pizza Margherita");
+     expect(sent.body.message).toContain("Cheese");
+     expect(sent.body.message).toContain("BBQ");
+     expect(sent.body.message).toContain("Area A");
+-    expect(sent.body.message).toContain("554.00001 EGP");
++    expect(sent.body.message).toContain("مجموع الأصناف: 554.00001 EGP");
++  });
++
++  it("binds the actual fee to trusted acceptance and leaves rejected checkout without Orders", async () => {
++    const payload = request([legacyLine, networkLine], { fulfillmentType: "delivery",
++      deliveryArea: "Area A", deliveryNear: "School", deliveryBeside: "Building 5" });
++    const before = await prisma.order.count();
++    await setDeliveryFee("10");
++    const fixed = await prepare(payload);
++    expect(fixed.status).toBe(200);
++    expect(fixed.body.draft.itemsSubtotal).toBe("554.00001");
++    expect(fixed.body.draft.deliveryFee).toBe("10");
++    expect(fixed.body.draft.totalAmount).toBe("564.00001");
++    expect(fixed.body.messagePreview).toContain("رسوم التوصيل: 10 EGP");
++    await setDeliveryFee("0");
++    const stale = await confirm(payload, fixed.body.acceptanceToken);
++    expect(stale.status).toBe(409);
++    expect(stale.body.error).toBe("WHATSAPP_CHECKOUT_REQUIRES_ACCEPTANCE");
++    expect(stale.body.whatsappUrl).toBeUndefined();
++    expect(stale.body.changedDraft.deliveryFee).toBe("0");
++    const accepted = await confirm(payload, stale.body.acceptanceToken);
++    expect(accepted.status).toBe(200);
++    expect(accepted.body.message).toContain("رسوم التوصيل: مجاني");
++    expect(await prisma.order.count()).toBe(before);
++    await setDeliveryFee(null);
++  });
++
++  it("saves and reloads a fixed delivery fee through the Dashboard settings service", async () => {
++    const dashboard = new DashboardService(prisma as any, { assertFeature: async () => undefined } as any);
++    const saved = await dashboard.updateSettings("s6e2-r1", { deliveryFee: "15.000000" });
++    expect(saved.restaurant.deliveryFee).toBe("15");
++    expect((await dashboard.settings("s6e2-r1")).restaurant.deliveryFee).toBe("15");
++    const menu = await fetch(`${origin}/public/menus/s6e2-r1?track=0`);
++    expect(menu.status).toBe(200);
++    const menuBody = await menu.json() as Record<string, any>;
++    expect(menuBody.restaurant?.deliveryFee ?? menuBody.data?.restaurant?.deliveryFee).toBe("15");
++    const payload = request([networkLine], { fulfillmentType: "delivery", deliveryArea: "Area A",
++      deliveryNear: "School", deliveryBeside: "Building 5" });
++    const prepared = await prepare(payload);
++    expect(prepared.status).toBe(200);
++    expect(prepared.body.draft.deliveryFee).toBe("15");
++    await dashboard.updateSettings("s6e2-r1", { deliveryFee: null });
++    expect((await dashboard.settings("s6e2-r1")).restaurant.deliveryFee).toBeNull();
+   });
+ 
+   it("renders Network-only and Mixed HTTP messages in Arabic and English without repeated sizes or option prices", async () => {
+@@ -440,6 +492,33 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
+     expect(await prisma.order.count()).toBe(before + 2);
+   });
+ 
++  it("persists the unchanged Legacy order route with fixed, free and pending delivery fee messages", async () => {
++    const body = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "delivery",
++      deliveryArea: "Area A", deliveryNear: "School", deliveryBeside: "Building 5" };
++    const submitLegacy = async () => {
++      const response = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
++        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
++      });
++      return { status: response.status, body: await response.json() as Record<string, any> };
++    };
++    const before = await prisma.order.count();
++    await setDeliveryFee("5");
++    const fixed = await submitLegacy();
++    expect(fixed.status).toBe(201);
++    expect(fixed.body.message).toContain("رسوم التوصيل: 5 EGP");
++    expect(fixed.body.message).toContain("الإجمالي: 17.00 EGP");
++    await setDeliveryFee("0");
++    const free = await submitLegacy();
++    expect(free.status).toBe(201);
++    expect(free.body.message).toContain("رسوم التوصيل: مجاني");
++    await setDeliveryFee(null);
++    const pending = await submitLegacy();
++    expect(pending.status).toBe(201);
++    expect(pending.body.message).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
++    expect(pending.body.message).not.toContain("الإجمالي:");
++    expect(await prisma.order.count()).toBe(before + 3);
++  });
++
+   it("rechecks quantity, notes, restaurant phone and confirmation binding", async () => {
+     const payload = request([{ ...legacyLine, quantity: 3, note: "No onion" }, networkLine], { customerName: "Sample", customerPhone: "0000000000" });
+     const prepared = await prepare(payload);
+diff --git a/apps/api/src/modules/public-menu/public-whatsapp-checkout.service.ts b/apps/api/src/modules/public-menu/public-whatsapp-checkout.service.ts
+index ca23c13..fde064a 100644
+--- a/apps/api/src/modules/public-menu/public-whatsapp-checkout.service.ts
++++ b/apps/api/src/modules/public-menu/public-whatsapp-checkout.service.ts
+@@ -12,6 +12,7 @@ import {
+ import { resolvePublicProductConfiguration } from "./public-product-configuration";
+ import { quotePublicProductConfiguration } from "./public-product-quote";
+ import { parseWhatsappCheckoutRequest, type WhatsappCheckoutRequest } from "./public-whatsapp-checkout.contract";
++import { readDeliveryFee } from "./delivery-fee";
+ 
+ type NetworkDisplayLine = {
+   snapshotVersion: 1; mode: "NETWORK"; locale: "ar" | "en"; currency: string;
+@@ -34,7 +35,7 @@ type TrustedDraft = {
+   schemaVersion: 1; restaurantId: string; restaurantName: string; restaurantSlug: string;
+   branchName?: string; whatsappPhone: string; currency: string; locale: "ar" | "en";
+   details: Omit<WhatsappCheckoutRequest, "items" | "locale" | "branchSlug">;
+-  items: TrustedLine[]; totalAmount: string;
++  items: TrustedLine[]; itemsSubtotal: string; deliveryFee: string | null; totalAmount: string | null;
+ };
+ 
+ function checkoutKey(): Buffer {
+@@ -50,7 +51,8 @@ function publicDraft(draft: TrustedDraft) {
+     restaurantName: draft.restaurantName, restaurantSlug: draft.restaurantSlug,
+     ...(draft.branchName ? { branchName: draft.branchName } : {}),
+     currency: draft.currency, locale: draft.locale, details: draft.details,
+-    items: draft.items.map(({ display, ...line }) => line), totalAmount: draft.totalAmount,
++    items: draft.items.map(({ display, ...line }) => line), itemsSubtotal: draft.itemsSubtotal,
++    deliveryFee: draft.deliveryFee, totalAmount: draft.totalAmount,
+     requiresExplicitAcceptance: true as const
+   };
+ }
+@@ -140,12 +142,17 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
+     }
+     output.push("━━━━━━━━━━━━━━", "");
+   }
+-  if (sumMoney(draft.items.map((item) => item.lineTotal)) !== draft.totalAmount) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
+-  const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.totalAmount, draft.currency);
++  if (sumMoney(draft.items.map((item) => item.lineTotal)) !== draft.itemsSubtotal
++    || draft.totalAmount !== (draft.details.fulfillmentType === "delivery" && draft.deliveryFee === null
++      ? null : sumMoney([draft.itemsSubtotal, draft.deliveryFee ?? "0"]))) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
++  const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.itemsSubtotal, draft.currency);
+   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
+   output.push(...details.footer);
+-  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
+-  output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
++  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.itemsSubtotal, draft.currency)}`);
++  if (draft.details.fulfillmentType === "delivery") output.push(`${ar ? "رسوم التوصيل" : "Delivery fee"}: ${draft.deliveryFee === null
++    ? ar ? "تُحدّد حسب المنطقة" : "Determined by area"
++    : draft.deliveryFee === "0" ? ar ? "مجاني" : "Free" : formatCurrencyAmount(draft.deliveryFee, draft.currency)}`);
++  if (draft.totalAmount !== null) output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
+   return output.join("\n");
+ }
+ 
+@@ -189,6 +196,8 @@ export class PublicWhatsappCheckoutService {
+         SELECT "settings" FROM "RestaurantThemeSettings" WHERE "restaurantId" = ${restaurant.id} FOR SHARE
+       `;
+       const settings = themeRows[0]?.settings;
++      const dashboardSettings = settings && typeof settings === "object" && !Array.isArray(settings)
++        ? (settings as { dashboardSettings?: unknown }).dashboardSettings : undefined;
+       if (settings && typeof settings === "object" && !Array.isArray(settings)
+         && (settings as { publicUi?: { whatsappOrderingEnabled?: unknown } }).publicUi?.whatsappOrderingEnabled === false) {
+         throw new ForbiddenException({ error: "WHATSAPP_ORDERING_DISABLED", message: "WhatsApp ordering is disabled for this menu." });
+@@ -287,14 +296,18 @@ export class PublicWhatsappCheckoutService {
+           linkedSourceRevisions: result.quote.linkedSourceRevisions, display };
+       });
+       const { items: _items, locale: _locale, branchSlug: _branchSlug, ...details } = request;
+-      const totalAmount = sumMoney(lines.map((line) => line.lineTotal));
+-      if (validateCurrencyAmount(totalAmount, restaurant.currency, "$draft.totalAmount").length) {
++      const itemsSubtotal = sumMoney(lines.map((line) => line.lineTotal));
++      const deliveryFee = request.fulfillmentType === "delivery" ? readDeliveryFee(dashboardSettings, restaurant.currency) : null;
++      const totalAmount = request.fulfillmentType === "delivery" && deliveryFee === null
++        ? null : sumMoney([itemsSubtotal, deliveryFee ?? "0"]);
++      if (validateCurrencyAmount(itemsSubtotal, restaurant.currency, "$draft.itemsSubtotal").length
++        || (totalAmount !== null && validateCurrencyAmount(totalAmount, restaurant.currency, "$draft.totalAmount").length)) {
+         throw new ConflictException({ error: "INVALID_CURRENCY_TOTAL", message: "The order total is invalid for the restaurant currency." });
+       }
+       return { schemaVersion: 1, restaurantId: restaurant.id, restaurantName: restaurant.name,
+         restaurantSlug: restaurant.slug, ...(branch ? { branchName: branch.name } : {}),
+         whatsappPhone: digits, currency: restaurant.currency, locale: request.locale, details,
+-        items: lines, totalAmount };
++        items: lines, itemsSubtotal, deliveryFee, totalAmount };
+       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 20_000 });
+     } catch (error) {
+       if (error instanceof Prisma.PrismaClientKnownRequestError
+diff --git a/apps/api/src/modules/public-menu/public-whatsapp-message-format.spec.ts b/apps/api/src/modules/public-menu/public-whatsapp-message-format.spec.ts
+index a4c59e3..19964f2 100644
+--- a/apps/api/src/modules/public-menu/public-whatsapp-message-format.spec.ts
++++ b/apps/api/src/modules/public-menu/public-whatsapp-message-format.spec.ts
+@@ -17,7 +17,7 @@ function demoDraft(kind: "pizza" | "combo", locale: "ar" | "en"): Draft {
+       configurationRevision: item.configurationRevision, linkedSourceRevisions: item.linkedSourceRevisions,
+       display: item as Draft["items"][number]["display"]
+     }],
+-    totalAmount: item.lineTotal
++    itemsSubtotal: item.lineTotal, deliveryFee: null, totalAmount: item.lineTotal
+   };
+ }
+ 
+@@ -52,6 +52,7 @@ describe("trusted public WhatsApp message presentation", () => {
+     const first = draft.items[0];
+     draft.items.push({ ...first, lineId: "line-2", display: first.display ? { ...first.display } : undefined });
+     draft.totalAmount = "1060.000016";
++    draft.itemsSubtotal = draft.totalAmount;
+     const before = JSON.stringify(draft.items);
+     const message = formatTrustedWhatsappDraft(draft);
+     expect(message).toContain("4 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
+@@ -68,6 +69,7 @@ describe("trusted public WhatsApp message presentation", () => {
+     draft.items.push({ mode: "LEGACY", lineId: "legacy-1", productId: "legacy", productName: "Juice", quantity: 1,
+       unitPrice: "10", lineTotal: "10", changed: false });
+     draft.totalAmount = "1070.000016";
++    draft.itemsSubtotal = draft.totalAmount;
+     const message = formatTrustedWhatsappDraft(draft);
+     expect(message.match(/Pizza Margherita/g)).toHaveLength(2);
+     expect(message).toContain("No onion");
+@@ -81,4 +83,24 @@ describe("trusted public WhatsApp message presentation", () => {
+     draft.items.push({ ...draft.items[0], lineId: "line-2", lineTotal: "1" });
+     expect(() => formatTrustedWhatsappDraft(draft)).toThrow(/LINE_MISMATCH/);
+   });
++
++  it("distinguishes fixed, free and area-pending delivery without inventing a final total", () => {
++    const draft = demoDraft("pizza", "ar");
++    draft.details.fulfillmentType = "delivery";
++    draft.details.deliveryArea = "منطقة تجريبية";
++    draft.details.deliveryNear = "معلم تجريبي";
++    draft.details.deliveryBeside = "عنوان تجريبي";
++    draft.deliveryFee = "10";
++    draft.totalAmount = "540.000008";
++    expect(formatTrustedWhatsappDraft(draft)).toContain("رسوم التوصيل: 10 EGP");
++    expect(formatTrustedWhatsappDraft(draft)).toContain("إجمالي الطلب: 540.000008 EGP");
++    draft.deliveryFee = "0";
++    draft.totalAmount = draft.itemsSubtotal;
++    expect(formatTrustedWhatsappDraft(draft)).toContain("رسوم التوصيل: مجاني");
++    draft.deliveryFee = null;
++    draft.totalAmount = null;
++    const pending = formatTrustedWhatsappDraft(draft);
++    expect(pending).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
++    expect(pending).not.toContain("إجمالي الطلب:");
++  });
+ });
+diff --git a/apps/web/src/app/globals.css b/apps/web/src/app/globals.css
+index 3632df7..4b37177 100644
+--- a/apps/web/src/app/globals.css
++++ b/apps/web/src/app/globals.css
+@@ -12679,11 +12679,13 @@ body {
+ 
+ .public-screen .cart-checkout-card {
+   border: 1px solid var(--color-border);
++  bottom: 0;
++  gap: 7px;
+   max-height: min(76dvh, 680px);
+   width: min(calc(100vw - 24px), 440px);
+   max-width: 440px;
+   padding-top: 5px;
+-  padding-bottom: max(24px, env(safe-area-inset-bottom));
++  padding-bottom: max(10px, env(safe-area-inset-bottom));
+ }
+ 
+ .public-screen .cart-invoice-handle {
+@@ -12707,7 +12709,7 @@ body {
+ .public-screen .cart-invoice-lines .cart-invoice-line { gap: 10px; }
+ .public-screen .cart-invoice-lines dt { color: var(--color-text); flex: 1; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+ .public-screen .cart-invoice-lines dd { flex: 0 0 auto; font-weight: 700; }
+-.public-screen .cart-invoice-more dt { color: var(--color-muted); }
++.public-screen .cart-invoice-more dt { color: var(--color-muted); font-size: 11px; font-weight: 500; }
+ .public-screen .cart-invoice-totals { border-top: 1px solid var(--color-border); padding-top: 8px; }
+ 
+ .public-screen .cart-message-preview-open {
+diff --git a/apps/web/src/components/dashboard/restaurant-dashboard-client.tsx b/apps/web/src/components/dashboard/restaurant-dashboard-client.tsx
+index b5f0a56..044f7df 100644
+--- a/apps/web/src/components/dashboard/restaurant-dashboard-client.tsx
++++ b/apps/web/src/components/dashboard/restaurant-dashboard-client.tsx
+@@ -119,6 +119,7 @@ type DashboardSettings = {
+     logoUrl?: string | null;
+     currency: string;
+     showPrices: boolean;
++    deliveryFee: string | null;
+     productOpenMode?: "MODAL" | "PAGE";
+     splashScreen: SplashScreenSettings;
+   };
+@@ -1417,6 +1418,13 @@ function SettingsForm() {
+           <StatusPill active={form.showPrices} label="اظهار الاسعار" />
+         </button>
+         <Field label="العملة" value={form.currency} onChange={(value) => updateField("currency", value)} />
++        <label className="field">
++          <span>رسوم التوصيل الثابتة</span>
++          <input inputMode="decimal" dir="ltr" value={form.deliveryFee ?? ""}
++            onChange={(event) => updateField("deliveryFee", event.target.value || null)}
++            placeholder="فارغ: تُحدّد حسب المنطقة، 0: مجاني" />
++          <small>اتركها فارغة إذا كانت رسوم التوصيل تُحدّد حسب المنطقة. لا تُضاف رسوم للاستلام من المطعم.</small>
++        </label>
+       </section>
+       <section className="settings-card working-hours">
+         <h2>ساعات العمل</h2>
+diff --git a/apps/web/src/components/public/public-menu-client.tsx b/apps/web/src/components/public/public-menu-client.tsx
+index d506943..6a559e1 100644
+--- a/apps/web/src/components/public/public-menu-client.tsx
++++ b/apps/web/src/components/public/public-menu-client.tsx
+@@ -2537,8 +2537,9 @@ function CartView({
+   const subtotal = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY")
+     .map((item) => multiplyMoney(item.priceText ?? String(item.price), item.quantity));
+   const legacySubtotal = sumMoney(subtotal);
+-  const deliveryFee = "0"; // Existing checkout does not apply a delivery charge.
+-  const total = sumMoney([legacySubtotal, deliveryFee]);
++  const deliveryFee = fulfillment === "delivery" ? data.restaurant.deliveryFee ?? null : null;
++  const total = fulfillment === "delivery" && deliveryFee === null ? null
++    : sumMoney([legacySubtotal, deliveryFee ?? "0"]);
+   const trustedTotal = cartDisplayedTotal(cart);
+   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+   const editingNetworkItem = cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingNetworkLineId);
+@@ -2565,7 +2566,13 @@ function CartView({
+         : undefined;
+   const trusted = useTrustedWhatsappCheckout({ cart, restaurantSlug: data.restaurant.slug, locale: language,
+     details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
+-      deliveryBeside, pickupTime, orderNote }, disabledReason: trustedDisabledReason });
++      deliveryBeside, pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
++  const displayedFee = trusted.pendingPrice ? trusted.pendingPrice.draft.deliveryFee : deliveryFee;
++  const displayedItemsSubtotal = useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.itemsSubtotal ?? trustedTotal : legacySubtotal;
++  const displayedOrderTotal = useTrustedNetworkCheckout
++    ? trusted.pendingPrice ? trusted.pendingPrice.draft.totalAmount
++      : fulfillment === "delivery" && deliveryFee === null ? null : sumMoney([trustedTotal, deliveryFee ?? "0"])
++    : total;
+   const [orderNumber, setOrderNumber] = useState("001");
+ 
+   useEffect(() => {
+@@ -2625,6 +2632,11 @@ function CartView({
+       return;
+     }
+     if (cartStep === "review") {
++      if (networkItems.some((item) => item.status !== "CURRENT")) {
++        setCheckoutError(language === "ar" ? "راجع خيارات الأصناف المتغيرة قبل إتمام الطلب." : "Review changed configurations before checkout.");
++        return;
++      }
++      setCheckoutError(null);
+       goToConfirmStep();
+       return;
+     }
+@@ -2824,6 +2836,10 @@ function CartView({
+               </label>
+             </>
+           )}
++          {useTrustedNetworkCheckout ? <button type="button" className="cart-message-preview-open"
++            disabled={trusted.busy || Boolean(trustedDisabledReason)} onClick={() => { setPreviewCopied(false); void trusted.preview(); }}>
++            {language === "ar" ? "معاينة رسالة WhatsApp دون إرسال" : "Preview WhatsApp message without sending"}
++          </button> : null}
+         </section>
+       )}
+ 
+@@ -2848,7 +2864,7 @@ function CartView({
+           <span />
+         </button>
+         <div className="cart-checkout-meta">
+-          <span>{t.selectedItems} <b>{cartCount}</b></span>
++          <span><b>{cartCount}</b></span>
+           {!hasNetwork ? <span>{t.orderNumber}: {orderNumber}</span> : null}
+         </div>
+         <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
+@@ -2861,40 +2877,40 @@ function CartView({
+             const amount = item.mode === "NETWORK" ? multiplyMoney(item.acceptedQuote.total, item.quantity)
+               : multiplyMoney(item.priceText ?? String(item.price), item.quantity);
+             return <div key={item.lineId} className="cart-invoice-line"><dt dir="auto">{item.quantity} × {heading}{suffix}</dt>
+-              <dd>{displayCurrencyAmount(amount, item.currency)}</dd></div>;
++              {invoiceExpanded ? <dd>{displayCurrencyAmount(amount, item.currency)}</dd> : null}</div>;
+           })}
+           {!invoiceExpanded && cart.length > 2 ? <div className="cart-invoice-more"><dt>{language === "ar" ? `و${cart.length - 2} أصناف أخرى` : `and ${cart.length - 2} more items`}</dt></div> : null}
+         </dl>
+         <dl className="cart-invoice-totals">
+-          <div>
++          {invoiceExpanded ? <div>
+             <dt>{t.subtotal}</dt>
+-            <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : legacySubtotal, data.restaurant.currency ?? "ل.س")}</dd>
+-          </div>
++            <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")}</dd>
++          </div> : null}
+           {fulfillment === "delivery" ? (
+           <div>
+               <dt>{t.deliveryFee}</dt>
+-              <dd>{displayCurrencyAmount(deliveryFee, data.restaurant.currency ?? "ل.س")}</dd>
++              <dd>{displayedFee === null ? language === "ar" ? "تُحدّد حسب المنطقة" : "Determined by area"
++                : displayedFee === "0" ? language === "ar" ? "مجاني" : "Free"
++                : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س")}</dd>
+           </div>
+           ) : null}
+           <div>
+             <dt>{t.total}</dt>
+-            <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : total, data.restaurant.currency ?? "ل.س")}</dd>
++            <dd>{displayedOrderTotal === null
++              ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
++              : displayCurrencyAmount(displayedOrderTotal, data.restaurant.currency ?? "ل.س")}</dd>
+           </div>
+         </dl>
+         </div>
+         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
+-        {useTrustedNetworkCheckout && trustedDisabledReason ? <p className="cart-message">{trustedDisabledReason}</p> : null}
++        {useTrustedNetworkCheckout && trustedDisabledReason && !networkItems.some((item) => item.status !== "CURRENT") ? <p className="cart-message">{trustedDisabledReason}</p> : null}
+         {useTrustedNetworkCheckout && trusted.error ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
+         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
+-        {useTrustedNetworkCheckout && cartStep === "confirm" ? <button type="button" className="cart-message-preview-open"
+-          disabled={trusted.busy || Boolean(trustedDisabledReason)} onClick={() => { setPreviewCopied(false); void trusted.preview(); }}>
+-          {language === "ar" ? "معاينة رسالة WhatsApp دون إرسال" : "Preview WhatsApp message without sending"}
+-        </button> : null}
+         <button
+           type="button"
+           className="cart-whatsapp"
+           onClick={handleCheckoutAction}
+-          disabled={!cart.length || orderSubmitting || trusted.busy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason))}
++          disabled={!cart.length || orderSubmitting || trusted.busy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason) && cartStep !== "review")}
+         >
+           {orderSubmitting || trusted.busy ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
+           {orderSubmitting || trusted.busy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
+@@ -2919,7 +2935,9 @@ function CartView({
+           <h2 id="price-update-title">{language === "ar" ? "تم تحديث الأسعار" : "Prices have been updated"}</h2>
+           <p>{language === "ar" ? "راجع الإجمالي الجديد قبل المتابعة." : "Review the new total before continuing."}</p>
+           <ul>{trusted.pendingPrice.draft.items.map((line) => <li key={line.lineId}><span dir="auto">{line.productName} × {line.quantity}</span><b>{displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency)}</b></li>)}</ul>
+-          <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
++          <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {trusted.pendingPrice.draft.totalAmount === null
++            ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
++            : displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
+           <div className="price-update-actions">
+             <button type="button" autoFocus onClick={() => { trusted.dismissUpdatedPrice(); setCartStep("review"); }}>{language === "ar" ? "العودة لمراجعة السلة" : "Review cart"}</button>
+             <button type="button" disabled={trusted.busy} onClick={() => void trusted.acceptUpdatedPrice()}>{language === "ar" ? "أوافق وأفتح WhatsApp" : "Accept and open WhatsApp"}</button>
+diff --git a/apps/web/src/components/public/trusted-whatsapp-checkout.test.ts b/apps/web/src/components/public/trusted-whatsapp-checkout.test.ts
+index 44ec7bf..a5d1bbf 100644
+--- a/apps/web/src/components/public/trusted-whatsapp-checkout.test.ts
++++ b/apps/web/src/components/public/trusted-whatsapp-checkout.test.ts
+@@ -15,7 +15,7 @@ const draft: PublicWhatsappCheckoutDraft = {
+     { mode: "LEGACY", lineId: "old", productName: "Water", quantity: 2, unitPrice: "1.250000", lineTotal: "2.500000", changed: false },
+     { mode: "NETWORK", lineId: "pizza", productName: "بيتزا", quantity: 1, unitPrice: "10.125000", lineTotal: "10.125000", changed: false }
+   ],
+-  totalAmount: "12.625000", requiresExplicitAcceptance: true
++  itemsSubtotal: "12.625000", deliveryFee: null, totalAmount: "12.625000", requiresExplicitAcceptance: true
+ };
+ 
+ const compare = (value: PublicWhatsappCheckoutDraft, displayed = "12.625000") =>
+@@ -24,10 +24,18 @@ const compare = (value: PublicWhatsappCheckoutDraft, displayed = "12.625000") =>
+ describe("trusted checkout visible-invoice acceptance", () => {
+   it("accepts only a matching server draft, preserving six-decimal precision", () => {
+     expect(compare(draft)).toBe("CURRENT");
+-    expect(compare({ ...draft, totalAmount: "12.625001" })).toBe("PRICE_CHANGED");
++    expect(compare({ ...draft, itemsSubtotal: "12.625001", totalAmount: "12.625001" })).toBe("PRICE_CHANGED");
+     expect(compare({ ...draft, items: [draft.items[0], { ...draft.items[1], unitPrice: "10.125001" }] })).toBe("PRICE_CHANGED");
+   });
+ 
++  it("requires acceptance when the server delivery fee changes, including pending versus free", () => {
++    const delivery = { ...request, fulfillmentType: "delivery" as const };
++    expect(compareTrustedDraft({ ...draft, deliveryFee: "0", totalAmount: "12.625000" }, delivery,
++      "12.625000", "demo", "ar", null)).toBe("PRICE_CHANGED");
++    expect(compareTrustedDraft({ ...draft, deliveryFee: "5", totalAmount: "17.625000" }, delivery,
++      "12.625000", "demo", "ar", "0")).toBe("PRICE_CHANGED");
++  });
++
+   it("does not silently accept a changed linked source even when the total is equal", () => {
+     expect(compare({ ...draft, items: [draft.items[0], { ...draft.items[1], changed: true }] })).toBe("SOURCE_CHANGED");
+   });
+diff --git a/apps/web/src/components/public/trusted-whatsapp-checkout.tsx b/apps/web/src/components/public/trusted-whatsapp-checkout.tsx
+index a9af577..7a31b9b 100644
+--- a/apps/web/src/components/public/trusted-whatsapp-checkout.tsx
++++ b/apps/web/src/components/public/trusted-whatsapp-checkout.tsx
+@@ -20,13 +20,16 @@ type PendingPrice = {
+ };
+ 
+ export function compareTrustedDraft(draft: PublicWhatsappCheckoutDraft, checkoutRequest: PublicWhatsappCheckoutRequest,
+-  displayedTotal: string, restaurantSlug: string, locale: Locale): "INVALID" | "PRICE_CHANGED" | "SOURCE_CHANGED" | "CURRENT" {
++  displayedTotal: string, restaurantSlug: string, locale: Locale, displayedFee: string | null = null): "INVALID" | "PRICE_CHANGED" | "SOURCE_CHANGED" | "CURRENT" {
+   if (draft.items.length !== checkoutRequest.items.length || draft.restaurantSlug !== restaurantSlug
+     || draft.locale !== locale || !draft.items.every((line, index) => {
+       const requested = checkoutRequest.items[index];
+       return line.lineId === requested.lineId && line.mode === requested.mode && line.quantity === requested.quantity;
+     })) return "INVALID";
+-  const priceChanged = compareMoney(draft.totalAmount, displayedTotal) !== 0 || draft.items.some((line, index) => {
++  const feeChanged = checkoutRequest.fulfillmentType === "delivery"
++    && (draft.deliveryFee === null || displayedFee === null
++      ? draft.deliveryFee !== displayedFee : compareMoney(draft.deliveryFee, displayedFee) !== 0);
++  const priceChanged = compareMoney(draft.itemsSubtotal, displayedTotal) !== 0 || feeChanged || draft.items.some((line, index) => {
+     const requested = checkoutRequest.items[index];
+     return !requested.expectedUnitPrice || compareMoney(line.unitPrice, requested.expectedUnitPrice) !== 0
+       || compareMoney(line.lineTotal, multiplyMoney(requested.expectedUnitPrice, requested.quantity)) !== 0;
+@@ -36,8 +39,9 @@ export function compareTrustedDraft(draft: PublicWhatsappCheckoutDraft, checkout
+ }
+ 
+ /** Checkout behavior only. CartView owns the original three-step visual shell. */
+-export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, details, disabledReason }: {
++export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, details, disabledReason, displayedFee }: {
+   cart: readonly CartItem[]; restaurantSlug: string; locale: Locale; details: Details; disabledReason?: string;
++  displayedFee: string | null;
+ }) {
+   const [pendingPrice, setPendingPrice] = useState<PendingPrice | null>(null);
+   const [busy, setBusy] = useState(false);
+@@ -91,7 +95,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
+       const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
+       if (editVersion.current !== version) return;
+       const comparison = compareTrustedDraft(prepared.draft, checkoutRequest,
+-        cartDisplayedTotal(cart), restaurantSlug, locale);
++        cartDisplayedTotal(cart), restaurantSlug, locale, displayedFee);
+       if (comparison === "INVALID" || comparison === "SOURCE_CHANGED") {
+         setError(ar ? "تغيرت اختيارات الطلب؛ راجع السلة قبل معاينة الرسالة." : "Order choices changed; review the cart before previewing.");
+         return;
+@@ -113,12 +117,12 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
+     if (caught instanceof PublicWhatsappCheckoutError && caught.status === 409
+       && caught.changedDraft && caught.changedMessagePreview && caught.acceptanceToken) {
+       const comparison = approvedDraft
+-        ? compareMoney(caught.changedDraft.totalAmount, approvedDraft.totalAmount) !== 0
++        ? caught.changedDraft.totalAmount !== approvedDraft.totalAmount
+           || caught.changedDraft.items.some((line, index) => {
+             const approvedLine = approvedDraft.items[index];
+             return !approvedLine || compareMoney(line.unitPrice, approvedLine.unitPrice) !== 0;
+           }) ? "PRICE_CHANGED" : JSON.stringify(caught.changedDraft) !== JSON.stringify(approvedDraft) ? "SOURCE_CHANGED" : "CURRENT"
+-        : compareTrustedDraft(caught.changedDraft, checkoutRequest, displayedTotal, restaurantSlug, locale);
++        : compareTrustedDraft(caught.changedDraft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
+       if (comparison === "PRICE_CHANGED") {
+         setPendingPrice({ request: checkoutRequest, draft: caught.changedDraft,
+           messagePreview: caught.changedMessagePreview, acceptanceToken: caught.acceptanceToken });
+@@ -139,7 +143,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
+       const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken);
+       if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");
+       if (editVersion.current !== version) { tab?.close(); return; }
+-      const comparison = compareTrustedDraft(result.draft, checkoutRequest, displayedTotal, restaurantSlug, locale);
++      const comparison = compareTrustedDraft(result.draft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
+       if (comparison !== "CURRENT") {
+         tab?.close();
+         setError(ar ? "تغير الطلب أثناء التحقق. راجعه وأعد الإرسال." : "The order changed during verification. Review and retry.");
+@@ -171,7 +175,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
+     try {
+       const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
+       if (editVersion.current !== version) { tab?.close(); return; }
+-      const comparison = compareTrustedDraft(prepared.draft, checkoutRequest, displayedTotal, restaurantSlug, locale);
++      const comparison = compareTrustedDraft(prepared.draft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
+       if (comparison === "PRICE_CHANGED") {
+         tab?.close();
+         setPendingPrice({ request: checkoutRequest, ...prepared });
+@@ -219,7 +223,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
+       else window.location.href = result.whatsappUrl;
+     } catch (caught) {
+       tab?.close();
+-      handleConfirmationError(caught, checkoutRequest, draft.totalAmount, version, draft);
++      handleConfirmationError(caught, checkoutRequest, draft.itemsSubtotal, version, draft);
+     } finally {
+       busyRef.current = false;
+       setBusy(false);
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index c88fc27..ae41798 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -182,6 +182,7 @@ export type PublicMenuData = {
+     };
+     currency?: string | null;
+     showPrices?: boolean;
++    deliveryFee?: string | null;
+     productOpenMode?: "MODAL" | "PAGE";
+     branches?: Array<{
+       id: string;
+@@ -274,7 +275,9 @@ export type PublicWhatsappCheckoutDraft = {
+   details: Record<string, unknown>;
+   items: Array<{ mode: "LEGACY" | "NETWORK"; lineId: string; productName: string; quantity: number;
+     note?: string; unitPrice: string; lineTotal: string; changed: boolean }>;
+-  totalAmount: string;
++  itemsSubtotal: string;
++  deliveryFee: string | null;
++  totalAmount: string | null;
+   requiresExplicitAcceptance: true;
+ };
+ 

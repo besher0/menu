@@ -20,13 +20,16 @@ type PendingPrice = {
 };
 
 export function compareTrustedDraft(draft: PublicWhatsappCheckoutDraft, checkoutRequest: PublicWhatsappCheckoutRequest,
-  displayedTotal: string, restaurantSlug: string, locale: Locale): "INVALID" | "PRICE_CHANGED" | "SOURCE_CHANGED" | "CURRENT" {
+  displayedTotal: string, restaurantSlug: string, locale: Locale, displayedFee: string | null = null): "INVALID" | "PRICE_CHANGED" | "SOURCE_CHANGED" | "CURRENT" {
   if (draft.items.length !== checkoutRequest.items.length || draft.restaurantSlug !== restaurantSlug
     || draft.locale !== locale || !draft.items.every((line, index) => {
       const requested = checkoutRequest.items[index];
       return line.lineId === requested.lineId && line.mode === requested.mode && line.quantity === requested.quantity;
     })) return "INVALID";
-  const priceChanged = compareMoney(draft.totalAmount, displayedTotal) !== 0 || draft.items.some((line, index) => {
+  const feeChanged = checkoutRequest.fulfillmentType === "delivery"
+    && (draft.deliveryFee === null || displayedFee === null
+      ? draft.deliveryFee !== displayedFee : compareMoney(draft.deliveryFee, displayedFee) !== 0);
+  const priceChanged = compareMoney(draft.itemsSubtotal, displayedTotal) !== 0 || feeChanged || draft.items.some((line, index) => {
     const requested = checkoutRequest.items[index];
     return !requested.expectedUnitPrice || compareMoney(line.unitPrice, requested.expectedUnitPrice) !== 0
       || compareMoney(line.lineTotal, multiplyMoney(requested.expectedUnitPrice, requested.quantity)) !== 0;
@@ -36,8 +39,9 @@ export function compareTrustedDraft(draft: PublicWhatsappCheckoutDraft, checkout
 }
 
 /** Checkout behavior only. CartView owns the original three-step visual shell. */
-export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, details, disabledReason }: {
+export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, details, disabledReason, displayedFee }: {
   cart: readonly CartItem[]; restaurantSlug: string; locale: Locale; details: Details; disabledReason?: string;
+  displayedFee: string | null;
 }) {
   const [pendingPrice, setPendingPrice] = useState<PendingPrice | null>(null);
   const [busy, setBusy] = useState(false);
@@ -91,7 +95,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
       if (editVersion.current !== version) return;
       const comparison = compareTrustedDraft(prepared.draft, checkoutRequest,
-        cartDisplayedTotal(cart), restaurantSlug, locale);
+        cartDisplayedTotal(cart), restaurantSlug, locale, displayedFee);
       if (comparison === "INVALID" || comparison === "SOURCE_CHANGED") {
         setError(ar ? "تغيرت اختيارات الطلب؛ راجع السلة قبل معاينة الرسالة." : "Order choices changed; review the cart before previewing.");
         return;
@@ -113,12 +117,12 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     if (caught instanceof PublicWhatsappCheckoutError && caught.status === 409
       && caught.changedDraft && caught.changedMessagePreview && caught.acceptanceToken) {
       const comparison = approvedDraft
-        ? compareMoney(caught.changedDraft.totalAmount, approvedDraft.totalAmount) !== 0
+        ? caught.changedDraft.totalAmount !== approvedDraft.totalAmount
           || caught.changedDraft.items.some((line, index) => {
             const approvedLine = approvedDraft.items[index];
             return !approvedLine || compareMoney(line.unitPrice, approvedLine.unitPrice) !== 0;
           }) ? "PRICE_CHANGED" : JSON.stringify(caught.changedDraft) !== JSON.stringify(approvedDraft) ? "SOURCE_CHANGED" : "CURRENT"
-        : compareTrustedDraft(caught.changedDraft, checkoutRequest, displayedTotal, restaurantSlug, locale);
+        : compareTrustedDraft(caught.changedDraft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
       if (comparison === "PRICE_CHANGED") {
         setPendingPrice({ request: checkoutRequest, draft: caught.changedDraft,
           messagePreview: caught.changedMessagePreview, acceptanceToken: caught.acceptanceToken });
@@ -139,7 +143,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken);
       if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");
       if (editVersion.current !== version) { tab?.close(); return; }
-      const comparison = compareTrustedDraft(result.draft, checkoutRequest, displayedTotal, restaurantSlug, locale);
+      const comparison = compareTrustedDraft(result.draft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
       if (comparison !== "CURRENT") {
         tab?.close();
         setError(ar ? "تغير الطلب أثناء التحقق. راجعه وأعد الإرسال." : "The order changed during verification. Review and retry.");
@@ -171,7 +175,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     try {
       const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
       if (editVersion.current !== version) { tab?.close(); return; }
-      const comparison = compareTrustedDraft(prepared.draft, checkoutRequest, displayedTotal, restaurantSlug, locale);
+      const comparison = compareTrustedDraft(prepared.draft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
       if (comparison === "PRICE_CHANGED") {
         tab?.close();
         setPendingPrice({ request: checkoutRequest, ...prepared });
@@ -219,7 +223,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       else window.location.href = result.whatsappUrl;
     } catch (caught) {
       tab?.close();
-      handleConfirmationError(caught, checkoutRequest, draft.totalAmount, version, draft);
+      handleConfirmationError(caught, checkoutRequest, draft.itemsSubtotal, version, draft);
     } finally {
       busyRef.current = false;
       setBusy(false);

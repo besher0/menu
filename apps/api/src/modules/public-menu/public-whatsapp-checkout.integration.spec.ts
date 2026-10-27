@@ -6,6 +6,7 @@ import { ABO_MALEK_THEME } from "@menu/shared";
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
+import { DashboardService } from "../dashboard/dashboard.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicMenuController } from "./public-menu.controller";
 import { PublicMenuService } from "./public-menu.service";
@@ -89,6 +90,11 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   const setShowPrices = (showPrices: boolean) => prisma.restaurantThemeSettings.update({
     where: { restaurantId: "s6e2-r1" },
     data: { settings: { ...ABO_MALEK_THEME, dashboardSettings: { showPrices }, publicUi: { whatsappOrderingEnabled: true } } }
+  });
+  const setDeliveryFee = (deliveryFee: string | null) => prisma.restaurantThemeSettings.update({
+    where: { restaurantId: "s6e2-r1" },
+    data: { settings: { ...ABO_MALEK_THEME, dashboardSettings: { showPrices: true, deliveryFee },
+      publicUi: { whatsappOrderingEnabled: true } } }
   });
 
   beforeAll(async () => {
@@ -242,17 +248,63 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     const prepared = await prepare(payload);
     expect(prepared.status).toBe(200);
     expect(prepared.body.draft.items.map((line: any) => line.lineTotal)).toEqual(["24.000002", "530.000008"]);
-    expect(prepared.body.draft.totalAmount).toBe("554.00001");
+    expect(prepared.body.draft.itemsSubtotal).toBe("554.00001");
+    expect(prepared.body.draft.deliveryFee).toBeNull();
+    expect(prepared.body.draft.totalAmount).toBeNull();
     expect(prepared.body.messagePreview).toContain("Pizza Margherita");
     expect(prepared.body.messagePreview).toContain("BBQ");
-    expect(prepared.body.messagePreview).toContain("554.00001 EGP");
+    expect(prepared.body.messagePreview).toContain("مجموع الأصناف: 554.00001 EGP");
+    expect(prepared.body.messagePreview).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
+    expect(prepared.body.messagePreview).not.toContain("إجمالي الطلب:");
     const sent = await confirm(payload, prepared.body.acceptanceToken);
     expect(sent.status).toBe(200);
     expect(sent.body.message).toContain("Pizza Margherita");
     expect(sent.body.message).toContain("Cheese");
     expect(sent.body.message).toContain("BBQ");
     expect(sent.body.message).toContain("Area A");
-    expect(sent.body.message).toContain("554.00001 EGP");
+    expect(sent.body.message).toContain("مجموع الأصناف: 554.00001 EGP");
+  });
+
+  it("binds the actual fee to trusted acceptance and leaves rejected checkout without Orders", async () => {
+    const payload = request([legacyLine, networkLine], { fulfillmentType: "delivery",
+      deliveryArea: "Area A", deliveryNear: "School", deliveryBeside: "Building 5" });
+    const before = await prisma.order.count();
+    await setDeliveryFee("10");
+    const fixed = await prepare(payload);
+    expect(fixed.status).toBe(200);
+    expect(fixed.body.draft.itemsSubtotal).toBe("554.00001");
+    expect(fixed.body.draft.deliveryFee).toBe("10");
+    expect(fixed.body.draft.totalAmount).toBe("564.00001");
+    expect(fixed.body.messagePreview).toContain("رسوم التوصيل: 10 EGP");
+    await setDeliveryFee("0");
+    const stale = await confirm(payload, fixed.body.acceptanceToken);
+    expect(stale.status).toBe(409);
+    expect(stale.body.error).toBe("WHATSAPP_CHECKOUT_REQUIRES_ACCEPTANCE");
+    expect(stale.body.whatsappUrl).toBeUndefined();
+    expect(stale.body.changedDraft.deliveryFee).toBe("0");
+    const accepted = await confirm(payload, stale.body.acceptanceToken);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.message).toContain("رسوم التوصيل: مجاني");
+    expect(await prisma.order.count()).toBe(before);
+    await setDeliveryFee(null);
+  });
+
+  it("saves and reloads a fixed delivery fee through the Dashboard settings service", async () => {
+    const dashboard = new DashboardService(prisma as any, { assertFeature: async () => undefined } as any);
+    const saved = await dashboard.updateSettings("s6e2-r1", { deliveryFee: "15.000000" });
+    expect(saved.restaurant.deliveryFee).toBe("15");
+    expect((await dashboard.settings("s6e2-r1")).restaurant.deliveryFee).toBe("15");
+    const menu = await fetch(`${origin}/public/menus/s6e2-r1?track=0`);
+    expect(menu.status).toBe(200);
+    const menuBody = await menu.json() as Record<string, any>;
+    expect(menuBody.restaurant?.deliveryFee ?? menuBody.data?.restaurant?.deliveryFee).toBe("15");
+    const payload = request([networkLine], { fulfillmentType: "delivery", deliveryArea: "Area A",
+      deliveryNear: "School", deliveryBeside: "Building 5" });
+    const prepared = await prepare(payload);
+    expect(prepared.status).toBe(200);
+    expect(prepared.body.draft.deliveryFee).toBe("15");
+    await dashboard.updateSettings("s6e2-r1", { deliveryFee: null });
+    expect((await dashboard.settings("s6e2-r1")).restaurant.deliveryFee).toBeNull();
   });
 
   it("renders Network-only and Mixed HTTP messages in Arabic and English without repeated sizes or option prices", async () => {
@@ -438,6 +490,33 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     });
     expect(network.status).toBe(400);
     expect(await prisma.order.count()).toBe(before + 2);
+  });
+
+  it("persists the unchanged Legacy order route with fixed, free and pending delivery fee messages", async () => {
+    const body = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "delivery",
+      deliveryArea: "Area A", deliveryNear: "School", deliveryBeside: "Building 5" };
+    const submitLegacy = async () => {
+      const response = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+      });
+      return { status: response.status, body: await response.json() as Record<string, any> };
+    };
+    const before = await prisma.order.count();
+    await setDeliveryFee("5");
+    const fixed = await submitLegacy();
+    expect(fixed.status).toBe(201);
+    expect(fixed.body.message).toContain("رسوم التوصيل: 5 EGP");
+    expect(fixed.body.message).toContain("الإجمالي: 17.00 EGP");
+    await setDeliveryFee("0");
+    const free = await submitLegacy();
+    expect(free.status).toBe(201);
+    expect(free.body.message).toContain("رسوم التوصيل: مجاني");
+    await setDeliveryFee(null);
+    const pending = await submitLegacy();
+    expect(pending.status).toBe(201);
+    expect(pending.body.message).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
+    expect(pending.body.message).not.toContain("الإجمالي:");
+    expect(await prisma.order.count()).toBe(before + 3);
   });
 
   it("rechecks quantity, notes, restaurant phone and confirmation binding", async () => {

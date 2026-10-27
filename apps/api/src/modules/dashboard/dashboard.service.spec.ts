@@ -99,6 +99,20 @@ describe("DashboardService settings persistence", () => {
       splashScreen
     });
   });
+
+  it("rejects fractional SYP delivery fee before modifying restaurant data", async () => {
+    const prisma = {
+      restaurant: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "r1", currency: "SYP", branches: [], themeSettings: null }),
+        update: vi.fn() },
+      restaurantThemeSettings: { upsert: vi.fn() }
+    };
+    const service = createService(prisma);
+    await expect(service.updateSettings("r1", { deliveryFee: "125.50" })).rejects.toMatchObject({
+      response: { error: "INVALID_DELIVERY_FEE" }
+    });
+    expect(prisma.restaurant.update).not.toHaveBeenCalled();
+    expect(prisma.restaurantThemeSettings.upsert).not.toHaveBeenCalled();
+  });
 });
 
 describe("DashboardService linked-product category protection", () => {

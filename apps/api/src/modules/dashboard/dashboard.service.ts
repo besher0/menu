@@ -6,6 +6,7 @@ import { resolveTxt } from "dns/promises";
 import { slugify } from "../../common/slugify";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { parseDeliveryFeeInput, readDeliveryFee } from "../public-menu/delivery-fee";
 import { CreateDomainDto } from "./dto/create-domain.dto";
 import { ListCategoriesQueryDto } from "./dto/list-categories-query.dto";
 import { UpdateDashboardSettingsDto } from "./dto/update-dashboard-settings.dto";
@@ -728,6 +729,7 @@ export class DashboardService {
         logoUrl: restaurant.logoUrl,
         currency: restaurant.currency,
         showPrices: dashboardSettings.showPrices ?? true,
+        deliveryFee: readDeliveryFee(dashboardSettings, restaurant.currency),
         productOpenMode: this.normalizeProductOpenMode(dashboardSettings.productOpenMode),
         splashScreen: this.normalizeSplashScreenSettings(
           dashboardSettings.splashScreen,
@@ -753,6 +755,11 @@ export class DashboardService {
       }
     });
     const branch = current.branches[0] ?? null;
+    const existingSettings = this.asJsonObject(current.themeSettings?.settings);
+    const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
+    const deliveryFee = dto.deliveryFee === undefined
+      ? readDeliveryFee(existingDashboardSettings, dto.currency ?? current.currency)
+      : parseDeliveryFeeInput(dto.deliveryFee, dto.currency ?? current.currency);
 
     const nextRestaurantSlug = allowAdminSettings && dto.slug !== undefined
       ? await this.uniqueRestaurantSlug(restaurantId, dto.slug)
@@ -797,8 +804,6 @@ export class DashboardService {
       ]);
     }
 
-    const existingSettings = this.asJsonObject(current.themeSettings?.settings);
-    const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
     const nextDashboardSettings = {
       ...existingDashboardSettings,
       ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
@@ -808,6 +813,7 @@ export class DashboardService {
       ...(dto.tiktokUrl !== undefined ? { tiktokUrl: dto.tiktokUrl } : { tiktokUrl: existingDashboardSettings.tiktokUrl ?? "" }),
       ...(dto.whatsappUrl !== undefined ? { whatsappUrl: dto.whatsappUrl } : { whatsappUrl: existingDashboardSettings.whatsappUrl ?? "" }),
       ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
+      deliveryFee,
       ...(dto.productOpenMode !== undefined
         ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }
         : { productOpenMode: this.normalizeProductOpenMode(existingDashboardSettings.productOpenMode) }),

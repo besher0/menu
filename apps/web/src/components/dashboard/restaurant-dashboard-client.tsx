@@ -119,6 +119,7 @@ type DashboardSettings = {
     logoUrl?: string | null;
     currency: string;
     showPrices: boolean;
+    deliveryFee: string | null;
     productOpenMode?: "MODAL" | "PAGE";
     splashScreen: SplashScreenSettings;
   };
@@ -1417,6 +1418,13 @@ function SettingsForm() {
           <StatusPill active={form.showPrices} label="اظهار الاسعار" />
         </button>
         <Field label="العملة" value={form.currency} onChange={(value) => updateField("currency", value)} />
+        <label className="field">
+          <span>رسوم التوصيل الثابتة</span>
+          <input inputMode="decimal" dir="ltr" value={form.deliveryFee ?? ""}
+            onChange={(event) => updateField("deliveryFee", event.target.value || null)}
+            placeholder="فارغ: تُحدّد حسب المنطقة، 0: مجاني" />
+          <small>اتركها فارغة إذا كانت رسوم التوصيل تُحدّد حسب المنطقة. لا تُضاف رسوم للاستلام من المطعم.</small>
+        </label>
       </section>
       <section className="settings-card working-hours">
         <h2>ساعات العمل</h2>

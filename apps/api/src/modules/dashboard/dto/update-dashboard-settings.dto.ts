@@ -120,6 +120,10 @@ export class UpdateDashboardSettingsDto {
   showPrices?: boolean;
 
   @IsOptional()
+  @IsString()
+  deliveryFee?: string | null;
+
+  @IsOptional()
   @IsIn(["MODAL", "PAGE"])
   productOpenMode?: "MODAL" | "PAGE";
 

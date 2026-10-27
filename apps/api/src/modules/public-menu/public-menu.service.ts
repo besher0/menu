@@ -5,6 +5,7 @@ import { currencyDisplayReconciliation, currencyDisplayScale, formatCurrencyAmou
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
+import { readDeliveryFee } from "./delivery-fee";
 import {
   resolvePublicProductConfiguration,
   type PublicConfigurationProductRecord,
@@ -340,8 +341,11 @@ export class PublicMenuService {
       };
     });
 
-    const totalAmount = sumMoney(items.map((item) => item.totalPrice));
+    const itemsSubtotal = sumMoney(items.map((item) => item.totalPrice));
     const dashboardSettings = this.dashboardSettingsFromTheme(restaurant.themeSettings?.settings);
+    const deliveryFee = dto.fulfillmentType === "delivery" ? readDeliveryFee(dashboardSettings, restaurant.currency) : null;
+    const totalAmount = dto.fulfillmentType === "delivery" && deliveryFee !== null
+      ? sumMoney([itemsSubtotal, deliveryFee]) : itemsSubtotal;
     const showPrices = dashboardSettings.showPrices ?? true;
     const orderNumber = this.formatDailyOrderNumber(await this.nextDailyOrderSequence(restaurant.id));
     const message = this.buildWhatsappMessage({
@@ -358,6 +362,8 @@ export class PublicMenuService {
       pickupTime: dto.pickupTime,
       currency: restaurant.currency,
       items,
+      itemsSubtotal,
+      deliveryFee,
       totalAmount,
       showPrices
     });
@@ -372,7 +378,7 @@ export class PublicMenuService {
         currency: restaurant.currency,
         status: "PENDING_WHATSAPP",
         whatsappMessage: message,
-        cartSnapshot: { ...dto, orderNumber } as unknown as Prisma.InputJsonValue,
+        cartSnapshot: { ...dto, orderNumber, itemsSubtotal, deliveryFee, finalTotalKnown: dto.fulfillmentType !== "delivery" || deliveryFee !== null } as unknown as Prisma.InputJsonValue,
         items: {
           create: items.map((item) => ({
             productId: item.product.id,
@@ -498,6 +504,7 @@ export class PublicMenuService {
       tiktokUrl: dashboardSettings.tiktokUrl ?? null,
       whatsappUrl: dashboardSettings.whatsappUrl ?? null,
       showPrices: dashboardSettings.showPrices ?? true,
+      deliveryFee: readDeliveryFee(dashboardSettings, restaurant.currency),
       productOpenMode: dashboardSettings.productOpenMode === "PAGE" ? "PAGE" : "MODAL",
       splashScreen: this.serializeSplashScreenSettings(
         dashboardSettings.splashScreen,
@@ -902,11 +909,13 @@ export class PublicMenuService {
       options: string[];
       note?: string;
     }>;
+    itemsSubtotal: string;
+    deliveryFee: string | null;
     totalAmount: string;
     showPrices: boolean;
   }) {
     const displayDifference = input.showPrices
-      ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.totalAmount, input.currency)
+      ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.itemsSubtotal, input.currency)
       : null;
     const lines = [
       `طلب جديد من ${input.restaurantName}`,
@@ -932,7 +941,11 @@ export class PublicMenuService {
         ""
       ]),
       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
-      input.showPrices ? `الإجمالي: ${currencyDisplayScale(input.currency) === null
+      input.showPrices ? `مجموع الأصناف: ${currencyDisplayScale(input.currency) === null
+        ? `${formatDecimalForDisplay(input.itemsSubtotal, 2)} ${input.currency}`
+        : formatCurrencyAmount(input.itemsSubtotal, input.currency)}` : null,
+      input.showPrices && input.fulfillmentType === "delivery" ? `رسوم التوصيل: ${input.deliveryFee === null ? "تُحدّد حسب المنطقة" : input.deliveryFee === "0" ? "مجاني" : formatCurrencyAmount(input.deliveryFee, input.currency)}` : null,
+      input.showPrices && (input.fulfillmentType !== "delivery" || input.deliveryFee !== null) ? `الإجمالي: ${currencyDisplayScale(input.currency) === null
         ? `${formatDecimalForDisplay(input.totalAmount, 2)} ${input.currency}`
         : formatCurrencyAmount(input.totalAmount, input.currency)}` : null,
       input.orderNote ? "" : null,

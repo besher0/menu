@@ -12,6 +12,7 @@ import {
 import { resolvePublicProductConfiguration } from "./public-product-configuration";
 import { quotePublicProductConfiguration } from "./public-product-quote";
 import { parseWhatsappCheckoutRequest, type WhatsappCheckoutRequest } from "./public-whatsapp-checkout.contract";
+import { readDeliveryFee } from "./delivery-fee";
 
 type NetworkDisplayLine = {
   snapshotVersion: 1; mode: "NETWORK"; locale: "ar" | "en"; currency: string;
@@ -34,7 +35,7 @@ type TrustedDraft = {
   schemaVersion: 1; restaurantId: string; restaurantName: string; restaurantSlug: string;
   branchName?: string; whatsappPhone: string; currency: string; locale: "ar" | "en";
   details: Omit<WhatsappCheckoutRequest, "items" | "locale" | "branchSlug">;
-  items: TrustedLine[]; totalAmount: string;
+  items: TrustedLine[]; itemsSubtotal: string; deliveryFee: string | null; totalAmount: string | null;
 };
 
 function checkoutKey(): Buffer {
@@ -50,7 +51,8 @@ function publicDraft(draft: TrustedDraft) {
     restaurantName: draft.restaurantName, restaurantSlug: draft.restaurantSlug,
     ...(draft.branchName ? { branchName: draft.branchName } : {}),
     currency: draft.currency, locale: draft.locale, details: draft.details,
-    items: draft.items.map(({ display, ...line }) => line), totalAmount: draft.totalAmount,
+    items: draft.items.map(({ display, ...line }) => line), itemsSubtotal: draft.itemsSubtotal,
+    deliveryFee: draft.deliveryFee, totalAmount: draft.totalAmount,
     requiresExplicitAcceptance: true as const
   };
 }
@@ -140,12 +142,17 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
     }
     output.push("━━━━━━━━━━━━━━", "");
   }
-  if (sumMoney(draft.items.map((item) => item.lineTotal)) !== draft.totalAmount) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
-  const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.totalAmount, draft.currency);
+  if (sumMoney(draft.items.map((item) => item.lineTotal)) !== draft.itemsSubtotal
+    || draft.totalAmount !== (draft.details.fulfillmentType === "delivery" && draft.deliveryFee === null
+      ? null : sumMoney([draft.itemsSubtotal, draft.deliveryFee ?? "0"]))) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
+  const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.itemsSubtotal, draft.currency);
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
   output.push(...details.footer);
-  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
-  output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
+  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.itemsSubtotal, draft.currency)}`);
+  if (draft.details.fulfillmentType === "delivery") output.push(`${ar ? "رسوم التوصيل" : "Delivery fee"}: ${draft.deliveryFee === null
+    ? ar ? "تُحدّد حسب المنطقة" : "Determined by area"
+    : draft.deliveryFee === "0" ? ar ? "مجاني" : "Free" : formatCurrencyAmount(draft.deliveryFee, draft.currency)}`);
+  if (draft.totalAmount !== null) output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
   return output.join("\n");
 }
 
@@ -189,6 +196,8 @@ export class PublicWhatsappCheckoutService {
         SELECT "settings" FROM "RestaurantThemeSettings" WHERE "restaurantId" = ${restaurant.id} FOR SHARE
       `;
       const settings = themeRows[0]?.settings;
+      const dashboardSettings = settings && typeof settings === "object" && !Array.isArray(settings)
+        ? (settings as { dashboardSettings?: unknown }).dashboardSettings : undefined;
       if (settings && typeof settings === "object" && !Array.isArray(settings)
         && (settings as { publicUi?: { whatsappOrderingEnabled?: unknown } }).publicUi?.whatsappOrderingEnabled === false) {
         throw new ForbiddenException({ error: "WHATSAPP_ORDERING_DISABLED", message: "WhatsApp ordering is disabled for this menu." });
@@ -287,14 +296,18 @@ export class PublicWhatsappCheckoutService {
           linkedSourceRevisions: result.quote.linkedSourceRevisions, display };
       });
       const { items: _items, locale: _locale, branchSlug: _branchSlug, ...details } = request;
-      const totalAmount = sumMoney(lines.map((line) => line.lineTotal));
-      if (validateCurrencyAmount(totalAmount, restaurant.currency, "$draft.totalAmount").length) {
+      const itemsSubtotal = sumMoney(lines.map((line) => line.lineTotal));
+      const deliveryFee = request.fulfillmentType === "delivery" ? readDeliveryFee(dashboardSettings, restaurant.currency) : null;
+      const totalAmount = request.fulfillmentType === "delivery" && deliveryFee === null
+        ? null : sumMoney([itemsSubtotal, deliveryFee ?? "0"]);
+      if (validateCurrencyAmount(itemsSubtotal, restaurant.currency, "$draft.itemsSubtotal").length
+        || (totalAmount !== null && validateCurrencyAmount(totalAmount, restaurant.currency, "$draft.totalAmount").length)) {
         throw new ConflictException({ error: "INVALID_CURRENCY_TOTAL", message: "The order total is invalid for the restaurant currency." });
       }
       return { schemaVersion: 1, restaurantId: restaurant.id, restaurantName: restaurant.name,
         restaurantSlug: restaurant.slug, ...(branch ? { branchName: branch.name } : {}),
         whatsappPhone: digits, currency: restaurant.currency, locale: request.locale, details,
-        items: lines, totalAmount };
+        items: lines, itemsSubtotal, deliveryFee, totalAmount };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 20_000 });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError

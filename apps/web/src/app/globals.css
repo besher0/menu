@@ -12679,11 +12679,13 @@ body {
 
 .public-screen .cart-checkout-card {
   border: 1px solid var(--color-border);
+  bottom: 0;
+  gap: 7px;
   max-height: min(76dvh, 680px);
   width: min(calc(100vw - 24px), 440px);
   max-width: 440px;
   padding-top: 5px;
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
 }
 
 .public-screen .cart-invoice-handle {
@@ -12707,7 +12709,7 @@ body {
 .public-screen .cart-invoice-lines .cart-invoice-line { gap: 10px; }
 .public-screen .cart-invoice-lines dt { color: var(--color-text); flex: 1; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
 .public-screen .cart-invoice-lines dd { flex: 0 0 auto; font-weight: 700; }
-.public-screen .cart-invoice-more dt { color: var(--color-muted); }
+.public-screen .cart-invoice-more dt { color: var(--color-muted); font-size: 11px; font-weight: 500; }
 .public-screen .cart-invoice-totals { border-top: 1px solid var(--color-border); padding-top: 8px; }
 
 .public-screen .cart-message-preview-open {

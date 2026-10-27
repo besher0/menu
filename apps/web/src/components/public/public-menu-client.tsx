@@ -2537,8 +2537,9 @@ function CartView({
   const subtotal = cart.filter((item): item is LegacyCartItem => item.mode === "LEGACY")
     .map((item) => multiplyMoney(item.priceText ?? String(item.price), item.quantity));
   const legacySubtotal = sumMoney(subtotal);
-  const deliveryFee = "0"; // Existing checkout does not apply a delivery charge.
-  const total = sumMoney([legacySubtotal, deliveryFee]);
+  const deliveryFee = fulfillment === "delivery" ? data.restaurant.deliveryFee ?? null : null;
+  const total = fulfillment === "delivery" && deliveryFee === null ? null
+    : sumMoney([legacySubtotal, deliveryFee ?? "0"]);
   const trustedTotal = cartDisplayedTotal(cart);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const editingNetworkItem = cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingNetworkLineId);
@@ -2565,7 +2566,13 @@ function CartView({
         : undefined;
   const trusted = useTrustedWhatsappCheckout({ cart, restaurantSlug: data.restaurant.slug, locale: language,
     details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
-      deliveryBeside, pickupTime, orderNote }, disabledReason: trustedDisabledReason });
+      deliveryBeside, pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
+  const displayedFee = trusted.pendingPrice ? trusted.pendingPrice.draft.deliveryFee : deliveryFee;
+  const displayedItemsSubtotal = useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.itemsSubtotal ?? trustedTotal : legacySubtotal;
+  const displayedOrderTotal = useTrustedNetworkCheckout
+    ? trusted.pendingPrice ? trusted.pendingPrice.draft.totalAmount
+      : fulfillment === "delivery" && deliveryFee === null ? null : sumMoney([trustedTotal, deliveryFee ?? "0"])
+    : total;
   const [orderNumber, setOrderNumber] = useState("001");
 
   useEffect(() => {
@@ -2625,6 +2632,11 @@ function CartView({
       return;
     }
     if (cartStep === "review") {
+      if (networkItems.some((item) => item.status !== "CURRENT")) {
+        setCheckoutError(language === "ar" ? "راجع خيارات الأصناف المتغيرة قبل إتمام الطلب." : "Review changed configurations before checkout.");
+        return;
+      }
+      setCheckoutError(null);
       goToConfirmStep();
       return;
     }
@@ -2824,6 +2836,10 @@ function CartView({
               </label>
             </>
           )}
+          {useTrustedNetworkCheckout ? <button type="button" className="cart-message-preview-open"
+            disabled={trusted.busy || Boolean(trustedDisabledReason)} onClick={() => { setPreviewCopied(false); void trusted.preview(); }}>
+            {language === "ar" ? "معاينة رسالة WhatsApp دون إرسال" : "Preview WhatsApp message without sending"}
+          </button> : null}
         </section>
       )}
 
@@ -2848,7 +2864,7 @@ function CartView({
           <span />
         </button>
         <div className="cart-checkout-meta">
-          <span>{t.selectedItems} <b>{cartCount}</b></span>
+          <span><b>{cartCount}</b></span>
           {!hasNetwork ? <span>{t.orderNumber}: {orderNumber}</span> : null}
         </div>
         <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
@@ -2861,40 +2877,40 @@ function CartView({
             const amount = item.mode === "NETWORK" ? multiplyMoney(item.acceptedQuote.total, item.quantity)
               : multiplyMoney(item.priceText ?? String(item.price), item.quantity);
             return <div key={item.lineId} className="cart-invoice-line"><dt dir="auto">{item.quantity} × {heading}{suffix}</dt>
-              <dd>{displayCurrencyAmount(amount, item.currency)}</dd></div>;
+              {invoiceExpanded ? <dd>{displayCurrencyAmount(amount, item.currency)}</dd> : null}</div>;
           })}
           {!invoiceExpanded && cart.length > 2 ? <div className="cart-invoice-more"><dt>{language === "ar" ? `و${cart.length - 2} أصناف أخرى` : `and ${cart.length - 2} more items`}</dt></div> : null}
         </dl>
         <dl className="cart-invoice-totals">
-          <div>
+          {invoiceExpanded ? <div>
             <dt>{t.subtotal}</dt>
-            <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : legacySubtotal, data.restaurant.currency ?? "ل.س")}</dd>
-          </div>
+            <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")}</dd>
+          </div> : null}
           {fulfillment === "delivery" ? (
           <div>
               <dt>{t.deliveryFee}</dt>
-              <dd>{displayCurrencyAmount(deliveryFee, data.restaurant.currency ?? "ل.س")}</dd>
+              <dd>{displayedFee === null ? language === "ar" ? "تُحدّد حسب المنطقة" : "Determined by area"
+                : displayedFee === "0" ? language === "ar" ? "مجاني" : "Free"
+                : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
           ) : null}
           <div>
             <dt>{t.total}</dt>
-            <dd>{displayCurrencyAmount(useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.totalAmount ?? trustedTotal : total, data.restaurant.currency ?? "ل.س")}</dd>
+            <dd>{displayedOrderTotal === null
+              ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
+              : displayCurrencyAmount(displayedOrderTotal, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
         </dl>
         </div>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
-        {useTrustedNetworkCheckout && trustedDisabledReason ? <p className="cart-message">{trustedDisabledReason}</p> : null}
+        {useTrustedNetworkCheckout && trustedDisabledReason && !networkItems.some((item) => item.status !== "CURRENT") ? <p className="cart-message">{trustedDisabledReason}</p> : null}
         {useTrustedNetworkCheckout && trusted.error ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
-        {useTrustedNetworkCheckout && cartStep === "confirm" ? <button type="button" className="cart-message-preview-open"
-          disabled={trusted.busy || Boolean(trustedDisabledReason)} onClick={() => { setPreviewCopied(false); void trusted.preview(); }}>
-          {language === "ar" ? "معاينة رسالة WhatsApp دون إرسال" : "Preview WhatsApp message without sending"}
-        </button> : null}
         <button
           type="button"
           className="cart-whatsapp"
           onClick={handleCheckoutAction}
-          disabled={!cart.length || orderSubmitting || trusted.busy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason))}
+          disabled={!cart.length || orderSubmitting || trusted.busy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason) && cartStep !== "review")}
         >
           {orderSubmitting || trusted.busy ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
           {orderSubmitting || trusted.busy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
@@ -2919,7 +2935,9 @@ function CartView({
           <h2 id="price-update-title">{language === "ar" ? "تم تحديث الأسعار" : "Prices have been updated"}</h2>
           <p>{language === "ar" ? "راجع الإجمالي الجديد قبل المتابعة." : "Review the new total before continuing."}</p>
           <ul>{trusted.pendingPrice.draft.items.map((line) => <li key={line.lineId}><span dir="auto">{line.productName} × {line.quantity}</span><b>{displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency)}</b></li>)}</ul>
-          <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
+          <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {trusted.pendingPrice.draft.totalAmount === null
+            ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
+            : displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
           <div className="price-update-actions">
             <button type="button" autoFocus onClick={() => { trusted.dismissUpdatedPrice(); setCartStep("review"); }}>{language === "ar" ? "العودة لمراجعة السلة" : "Review cart"}</button>
             <button type="button" disabled={trusted.busy} onClick={() => void trusted.acceptUpdatedPrice()}>{language === "ar" ? "أوافق وأفتح WhatsApp" : "Accept and open WhatsApp"}</button>

@@ -17,7 +17,7 @@ function demoDraft(kind: "pizza" | "combo", locale: "ar" | "en"): Draft {
       configurationRevision: item.configurationRevision, linkedSourceRevisions: item.linkedSourceRevisions,
       display: item as Draft["items"][number]["display"]
     }],
-    totalAmount: item.lineTotal
+    itemsSubtotal: item.lineTotal, deliveryFee: null, totalAmount: item.lineTotal
   };
 }
 
@@ -52,6 +52,7 @@ describe("trusted public WhatsApp message presentation", () => {
     const first = draft.items[0];
     draft.items.push({ ...first, lineId: "line-2", display: first.display ? { ...first.display } : undefined });
     draft.totalAmount = "1060.000016";
+    draft.itemsSubtotal = draft.totalAmount;
     const before = JSON.stringify(draft.items);
     const message = formatTrustedWhatsappDraft(draft);
     expect(message).toContain("4 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");
@@ -68,6 +69,7 @@ describe("trusted public WhatsApp message presentation", () => {
     draft.items.push({ mode: "LEGACY", lineId: "legacy-1", productId: "legacy", productName: "Juice", quantity: 1,
       unitPrice: "10", lineTotal: "10", changed: false });
     draft.totalAmount = "1070.000016";
+    draft.itemsSubtotal = draft.totalAmount;
     const message = formatTrustedWhatsappDraft(draft);
     expect(message.match(/Pizza Margherita/g)).toHaveLength(2);
     expect(message).toContain("No onion");
@@ -80,5 +82,25 @@ describe("trusted public WhatsApp message presentation", () => {
     const draft = demoDraft("pizza", "en");
     draft.items.push({ ...draft.items[0], lineId: "line-2", lineTotal: "1" });
     expect(() => formatTrustedWhatsappDraft(draft)).toThrow(/LINE_MISMATCH/);
+  });
+
+  it("distinguishes fixed, free and area-pending delivery without inventing a final total", () => {
+    const draft = demoDraft("pizza", "ar");
+    draft.details.fulfillmentType = "delivery";
+    draft.details.deliveryArea = "منطقة تجريبية";
+    draft.details.deliveryNear = "معلم تجريبي";
+    draft.details.deliveryBeside = "عنوان تجريبي";
+    draft.deliveryFee = "10";
+    draft.totalAmount = "540.000008";
+    expect(formatTrustedWhatsappDraft(draft)).toContain("رسوم التوصيل: 10 EGP");
+    expect(formatTrustedWhatsappDraft(draft)).toContain("إجمالي الطلب: 540.000008 EGP");
+    draft.deliveryFee = "0";
+    draft.totalAmount = draft.itemsSubtotal;
+    expect(formatTrustedWhatsappDraft(draft)).toContain("رسوم التوصيل: مجاني");
+    draft.deliveryFee = null;
+    draft.totalAmount = null;
+    const pending = formatTrustedWhatsappDraft(draft);
+    expect(pending).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
+    expect(pending).not.toContain("إجمالي الطلب:");
   });
 });

@@ -182,6 +182,7 @@ export type PublicMenuData = {
     };
     currency?: string | null;
     showPrices?: boolean;
+    deliveryFee?: string | null;
     productOpenMode?: "MODAL" | "PAGE";
     branches?: Array<{
       id: string;
@@ -274,7 +275,9 @@ export type PublicWhatsappCheckoutDraft = {
   details: Record<string, unknown>;
   items: Array<{ mode: "LEGACY" | "NETWORK"; lineId: string; productName: string; quantity: number;
     note?: string; unitPrice: string; lineTotal: string; changed: boolean }>;
-  totalAmount: string;
+  itemsSubtotal: string;
+  deliveryFee: string | null;
+  totalAmount: string | null;
   requiresExplicitAcceptance: true;
 };
 
