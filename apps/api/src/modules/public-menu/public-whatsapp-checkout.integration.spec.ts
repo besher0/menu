@@ -460,6 +460,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
 
   it("preserves the separate Legacy WhatsApp endpoint and rejects Network there", async () => {
     await setShowPrices(false);
+    await prisma.restaurant.update({ where: { id: "s6e2-r1" }, data: { whatsappPhone: "+201000000000" } });
     const before = await prisma.order.count();
     const beforeEvents = await prisma.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } });
     const legacyBody = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup",
@@ -477,6 +478,8 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = originalFlag;
     expect(legacyOff.status).toBe(201);
     expect(legacyOn.status).toBe(201);
+    expect((await legacyOff.json() as { whatsappUrl: string }).whatsappUrl).toMatch(/^https:\/\/wa\.me\/201000000000\?text=/);
+    expect((await legacyOn.json() as { whatsappUrl: string }).whatsappUrl).toMatch(/^https:\/\/wa\.me\/201000000000\?text=/);
     expect(await prisma.order.count()).toBe(before + 2);
     expect(await prisma.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } })).toBe(beforeEvents + 2);
     const saved = await prisma.order.findMany({ where: { restaurantId: "s6e2-r1", customerName: "Synthetic Customer" },

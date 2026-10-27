@@ -406,7 +406,7 @@ export class PublicMenuService {
       orderId: order.id,
       orderNumber,
       message,
-      whatsappUrl: `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`
+      whatsappUrl: `https://wa.me/${whatsappPhone.replace(/^\+/, "")}?text=${encodeURIComponent(message)}`
     };
   }
 
