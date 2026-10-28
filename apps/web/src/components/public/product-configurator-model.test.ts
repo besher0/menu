@@ -9,6 +9,7 @@ import {
   calculatePublicPreview,
   changeSizeSelection,
   LatestQuoteGate,
+  rebaseSelectionRevisions,
   updateOptionGroup
 } from "./product-configurator-model";
 
@@ -85,6 +86,78 @@ function envelope(configuration: ProductConfigurationV1): PublicProductConfigura
 }
 
 describe("public product configurator model", () => {
+  it("rebases only revisions, preserving nested choices and IDs; rejects removed or unavailable choices", () => {
+    const configuration = pizzaMargheritaDemo("pizza", 1);
+    const createId = ids();
+    const original = buildInitialSelection(configuration, new Map(), createId);
+    const size = configuration.groups[0];
+    if (size.type !== "SIZE") throw new Error("Missing sizes");
+    const toppings = size.sizes[0].children?.[0];
+    if (toppings?.type !== "OPTIONS") throw new Error("Missing toppings");
+    const chosen = buildOptionInstance(toppings.options[0], new Map(), createId);
+    const selected = { ...original, groups: original.groups.map((group) => group.type === "SIZE"
+      ? { ...group, children: [{ type: "OPTIONS" as const, groupId: toppings.id, instances: [chosen] }] } : group) };
+    const current = pizzaMargheritaDemo("pizza", 2);
+    const rebased = rebaseSelectionRevisions(selected, current, new Map());
+    expect(rebased).toMatchObject({ configurationRevision: 2 });
+    expect(rebased?.groups).toEqual(selected.groups);
+    const currentSize = current.groups[0];
+    if (currentSize.type !== "SIZE") throw new Error("Missing current sizes");
+    const currentToppings = currentSize.sizes[0].children?.[0];
+    if (currentToppings?.type !== "OPTIONS") throw new Error("Missing current toppings");
+    currentToppings.options[0].available = false;
+    expect(rebaseSelectionRevisions(selected, current, new Map())).toBeNull();
+  });
+
+  it("recovers a removed size by explicit new-size selection while preserving compatible nested choices", () => {
+    const configuration = pizzaMargheritaDemo("pizza", 2);
+    const size = configuration.groups[0];
+    if (size.type !== "SIZE") throw new Error("Missing sizes");
+    const toppings = size.sizes[0].children?.[0];
+    if (toppings?.type !== "OPTIONS") throw new Error("Missing toppings");
+    const old = buildInitialSelection(configuration, new Map(), ids());
+    const selected = { ...old, groups: old.groups.map((group) => group.type === "SIZE"
+      ? { ...group, sizeChoiceId: "removed-size", children: [{ type: "OPTIONS" as const,
+        groupId: toppings.id, instances: [{ instanceId: "saved-cheese", optionId: toppings.options[0].id }] }] }
+      : group) };
+    const result = changeSizeSelection(selected, size, size.sizes[0].id, new Map(), ids());
+    expect(result.error).toBeUndefined();
+    expect(result.selection?.groups[0]).toMatchObject({ type: "SIZE", sizeChoiceId: size.sizes[0].id,
+      children: [{ instances: [{ instanceId: "saved-cheese", optionId: toppings.options[0].id }] }] });
+    expect(calculatePublicPreview(envelope(configuration), "restaurant", result.selection!)).toMatchObject({ valid: true });
+  });
+
+  it("rebases repeated ORIGINAL and CUSTOM linked instances independently", () => {
+    const source: ProductConfigurationV1 = { schemaVersion: 1, productId: "source", revision: 3,
+      basePrice: null, groups: [{ type: "SIZE", id: "source-size", label: "Size",
+        sizes: [{ id: "small", label: "Small", price: "10" }] }] };
+    const custom: ProductConfigurationV1 = { ...source, revision: 2 };
+    const combo: ProductConfigurationV1 = { schemaVersion: 1, productId: "combo", revision: 4,
+      basePrice: "0", groups: [{ type: "OPTIONS", id: "slots", label: "Pizzas", min: 0, max: 3,
+        includedQuantity: 0, options: [
+          { id: "original", label: "Original", price: "10", maxQuantity: 2,
+            linkedProduct: { sourceProductId: "source", mode: "ORIGINAL" } },
+          { id: "custom", label: "Custom", price: "10", maxQuantity: 1,
+            linkedProduct: { sourceProductId: "source", mode: "CUSTOM", customConfiguration: custom } }
+        ] }] };
+    const child = (instanceId: string) => ({ instanceId, optionId: "original",
+      linkedSelection: { schemaVersion: 1 as const, productId: "source", configurationRevision: 1,
+        groups: [{ type: "SIZE" as const, groupId: "source-size", sizeChoiceId: "small" }] } });
+    const selection = { schemaVersion: 1 as const, productId: "combo", configurationRevision: 1,
+      groups: [{ type: "OPTIONS" as const, groupId: "slots", instances: [child("first"), child("second"),
+        { ...child("third"), optionId: "custom" }] }] };
+    const sources = new Map([["source", { productId: "source", slug: "source", name: "Source",
+      mode: "NETWORK" as const, available: true, orderable: true, configuration: source }]]);
+    const result = rebaseSelectionRevisions(selection, combo, sources);
+    expect(result?.groups[0]).toMatchObject({ type: "OPTIONS", instances: [
+      { instanceId: "first", linkedSelection: { configurationRevision: 3 } },
+      { instanceId: "second", linkedSelection: { configurationRevision: 3 } },
+      { instanceId: "third", linkedSelection: { configurationRevision: 2 } }
+    ] });
+    expect((result?.groups[0] as { instances: { instanceId: string }[] }).instances.map((entry) => entry.instanceId))
+      .toEqual(["first", "second", "third"]);
+  });
+
   it("keeps olives, cheese, nested choices and stable instances through Small → Large → Medium → Small", () => {
     const configuration = pizzaMargheritaDemo("pizza", 4);
     const sizeGroup = configuration.groups[0];

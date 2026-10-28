@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, type PointerEvent, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Pencil, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
-import { getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
+import { getPublicProductConfiguration, getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
 import { multiplyMoney, sumMoney } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator } from "./product-configurator";
+import { rebaseSelectionRevisions } from "./product-configurator-model";
 import { networkCartChoiceLabels, networkCartHeading } from "./cart-presentation";
 import {
   acceptNetworkRecheck,
   addOrEditNetworkCartItem,
   applyNetworkRecheck,
+  applyRebasedNetworkRecheck,
   cartNeedsPreviewGate,
   createNetworkCartLineId,
   networkCartItemFromQuote,
@@ -915,46 +917,64 @@ export function PublicMenuClient({
     return cart.find((item) => item.mode === "LEGACY" && item.slug === slug)?.quantity ?? 0;
   }
 
-  async function acceptNetworkPrice(lineId: string) {
+  async function acceptNetworkPrice(lineId: string): Promise<NetworkCartItem | null> {
     const item = cartRef.current.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
-    if (!item || item.status !== "CHANGED") return;
+    if (!item || item.status !== "CHANGED") return null;
     const requestId = nextLineQuoteRequest(lineId);
     try {
-      const quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.selection);
-      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      const quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.proposedSelection ?? item.selection);
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return null;
+      const accepted = acceptNetworkRecheck(item, quote);
       setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
         ? acceptNetworkRecheck(candidate, quote) : candidate));
+      return accepted;
     } catch (error) {
-      if (lineQuoteRequests.current.get(lineId) !== requestId) return;
+      if (lineQuoteRequests.current.get(lineId) !== requestId) return null;
       const known = error instanceof PublicProductQuoteError ? error : null;
+      const invalid = { ...item, status: known?.status && known.status < 500 ? "INVALID" as const : "OFFLINE" as const,
+        proposedQuote: undefined, proposedSelection: undefined, issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] };
       setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
-        ? { ...candidate, status: known?.status && known.status < 500 ? "INVALID" : "OFFLINE", proposedQuote: undefined,
-          issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] }
+        ? invalid
         : candidate));
+      return invalid;
     }
   }
 
-  async function retryNetworkLine(lineId: string): Promise<NetworkCartItem["status"] | null> {
+  async function retryNetworkLine(lineId: string): Promise<NetworkCartItem | null> {
     const item = cartRef.current.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
-    if (!item || item.status === "CHECKING" || recheckBusyLines.current.has(lineId)) return null;
+    if (!item || recheckBusyLines.current.has(lineId)) return null;
     recheckBusyLines.current.add(lineId);
     const requestId = nextLineQuoteRequest(lineId);
     setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId ? { ...candidate, status: "CHECKING" } : candidate));
     try {
-      const quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.selection);
+      let quote: PublicProductQuoteResponse;
+      let rebased = null;
+      try {
+        quote = await getPublicProductQuote(item.restaurantSlug, item.productId, item.selection);
+      } catch (error) {
+        if (!(error instanceof PublicProductQuoteError)
+          || !["CONFIGURATION_REVISION_CHANGED", "LINKED_CONFIGURATION_REVISION_CHANGED"].includes(error.code)) throw error;
+        const current = await getPublicProductConfiguration(item.restaurantSlug, item.productId);
+        if (!current.orderable) throw error;
+        rebased = rebaseSelectionRevisions(item.selection, current.configuration,
+          new Map(current.linkedProducts.map((source) => [source.productId, source])));
+        if (!rebased) throw error;
+        quote = await getPublicProductQuote(item.restaurantSlug, item.productId, rebased);
+      }
       if (lineQuoteRequests.current.get(lineId) !== requestId) return null;
-      const refreshed = applyNetworkRecheck(item, quote);
+      const refreshed = rebased ? applyRebasedNetworkRecheck(item, quote, rebased) : applyNetworkRecheck(item, quote);
       setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
-        ? applyNetworkRecheck(candidate, quote) : candidate));
-      return refreshed.status;
+        ? rebased ? applyRebasedNetworkRecheck(candidate, quote, rebased) : applyNetworkRecheck(candidate, quote) : candidate));
+      return refreshed;
     } catch (error) {
       if (lineQuoteRequests.current.get(lineId) !== requestId) return null;
       const known = error instanceof PublicProductQuoteError ? error : null;
+      const invalid = { ...item, status: known?.status && known.status < 500 ? "INVALID" as const : "OFFLINE" as const,
+        proposedQuote: undefined, proposedSelection: undefined, issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] };
       setCart((current) => current.map((candidate) => candidate.mode === "NETWORK" && candidate.lineId === lineId && candidate.identity === item.identity
-        ? { ...candidate, status: known?.status && known.status < 500 ? "INVALID" : "OFFLINE", proposedQuote: undefined,
-          issues: known?.issues.length ? known.issues : [{ code: known?.code ?? "QUOTE_NETWORK_FAILURE", path: "$cart", message: known?.message ?? "Quote service is unavailable." }] }
+        ? invalid
         : candidate));
-      return known?.status && known.status < 500 ? "INVALID" : "OFFLINE";
+      return invalid;
     } finally {
       recheckBusyLines.current.delete(lineId);
     }
@@ -1214,7 +1234,7 @@ export function PublicMenuClient({
           whatsappOrderingEnabled={whatsappOrderingEnabled}
           networkWhatsappCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true && whatsappOrderingEnabled}
           language={language}
-          acceptNetworkPrice={(lineId) => void acceptNetworkPrice(lineId)}
+          acceptNetworkPrice={acceptNetworkPrice}
           retryNetworkLine={retryNetworkLine}
           saveNetworkEdit={(product, quote, lineId, quantity, note) => addNetworkQuote(product, quote, lineId, quantity, note)}
           t={t}
@@ -2132,7 +2152,7 @@ function MenuView({
         ) : showNetworkControl ? (
           <button type="button" className="menu-network-configure" onClick={() => openProduct(product)}
             aria-label={language === "ar" ? `اختيار تكوين جديد لـ ${product.name}` : `Choose another configuration for ${product.name}`}>
-            <Plus size={14} /><span>{language === "ar" ? "تكوين آخر" : "Configure"}</span>
+            <Plus size={14} />
           </button>
         ) : null}
       </article>
@@ -2420,11 +2440,11 @@ function ProductPrice({
   const hasCurrency = formatted.endsWith(currencySuffix);
   const amount = hasCurrency ? formatted.slice(0, -currencySuffix.length) : formatted;
   return (
-    <strong className={`product-price ${className}`.trim()}>
+    <strong className={`product-price ${className}`.trim()} dir={startingAt ? /[\u0600-\u06ff]/.test(startingAtLabel) ? "rtl" : "ltr" : undefined}>
       {startingAt ? <em>{startingAtLabel}</em> : null}
-      {priceFirst ? (
+      {priceFirst || startingAt ? (
         <>
-          <span>{amount}</span>
+          <span dir="ltr">{amount}</span>
           {hasCurrency ? <small>{currency}</small> : null}
         </>
       ) : (
@@ -2497,8 +2517,8 @@ function CartView({
   whatsappOrderingEnabled: boolean;
   networkWhatsappCheckoutEnabled: boolean;
   language: PublicLanguage;
-  acceptNetworkPrice: (lineId: string) => void;
-  retryNetworkLine: (lineId: string) => Promise<NetworkCartItem["status"] | null>;
+  acceptNetworkPrice: (lineId: string) => Promise<NetworkCartItem | null>;
+  retryNetworkLine: (lineId: string) => Promise<NetworkCartItem | null>;
   saveNetworkEdit: (product: PublicProduct, quote: PublicProductQuoteResponse, lineId: string, quantity: number, note: string) => boolean;
   t: PublicTranslations;
   showPrices: boolean;
@@ -2519,9 +2539,16 @@ function CartView({
   const [editingNetworkLineId, setEditingNetworkLineId] = useState<string | null>(null);
   const [editingNetworkNote, setEditingNetworkNote] = useState("");
   const [invoiceExpanded, setInvoiceExpanded] = useState(false);
-  const invoiceDragStart = useRef<number | null>(null);
+  const [invoiceDragActive, setInvoiceDragActive] = useState(false);
+  const invoiceCardRef = useRef<HTMLElement | null>(null);
+  const invoiceCollapsedHeight = useRef(0);
+  const invoiceSnapTimer = useRef<number | null>(null);
+  const invoiceDrag = useRef<{ pointerId: number; startY: number; lastY: number; startHeight: number;
+    expandedHeight: number; startedAt: number; wasExpanded: boolean } | null>(null);
   const invoiceWasDragged = useRef(false);
-  const [recheckFeedback, setRecheckFeedback] = useState<Record<string, string>>({});
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewedLineIds, setReviewedLineIds] = useState<Set<string>>(() => new Set());
+  const [reviewModalLineIds, setReviewModalLineIds] = useState<string[] | null>(null);
   const networkEditorRef = useRef<HTMLElement | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
@@ -2544,6 +2571,90 @@ function CartView({
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const editingNetworkItem = cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingNetworkLineId);
   const editingNetworkProduct = editingNetworkItem ? data.products.find((product) => product.id === editingNetworkItem.productId) : undefined;
+
+  useLayoutEffect(() => {
+    const card = invoiceCardRef.current;
+    if (!card || invoiceDragActive || invoiceExpanded) return;
+    invoiceCollapsedHeight.current = card.getBoundingClientRect().height;
+  }, [invoiceDragActive, invoiceExpanded, cart.length, fulfillment, deliveryFee]);
+
+  useLayoutEffect(() => {
+    const card = invoiceCardRef.current;
+    const drag = invoiceDrag.current;
+    if (!invoiceDragActive || !card || !drag) return;
+    const clone = card.cloneNode(true) as HTMLElement;
+    clone.classList.add("invoice-expanded");
+    clone.classList.remove("invoice-dragging");
+    clone.style.height = "auto";
+    clone.style.maxHeight = "min(76dvh, 680px)";
+    clone.style.overflow = "hidden";
+    clone.style.left = "-10000px";
+    clone.style.bottom = "auto";
+    clone.style.top = "0";
+    clone.style.transition = "none";
+    card.parentElement?.appendChild(clone);
+    drag.expandedHeight = Math.max(drag.startHeight, Math.min(clone.getBoundingClientRect().height, window.innerHeight * 0.76, 680));
+    clone.remove();
+  }, [invoiceDragActive]);
+
+  useEffect(() => () => { if (invoiceSnapTimer.current !== null) window.clearTimeout(invoiceSnapTimer.current); }, []);
+
+  function startInvoiceDrag(event: PointerEvent<HTMLButtonElement>) {
+    const card = invoiceCardRef.current;
+    if (!card || invoiceSnapTimer.current !== null) return;
+    const height = card.getBoundingClientRect().height;
+    invoiceDrag.current = { pointerId: event.pointerId, startY: event.clientY, lastY: event.clientY,
+      startHeight: height, expandedHeight: height, startedAt: performance.now(), wasExpanded: invoiceExpanded };
+    invoiceWasDragged.current = false;
+    card.style.height = `${height}px`;
+    card.style.overflow = "hidden";
+    card.style.transition = "none";
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setInvoiceDragActive(true);
+  }
+
+  function moveInvoiceDrag(event: PointerEvent<HTMLButtonElement>) {
+    const drag = invoiceDrag.current;
+    const card = invoiceCardRef.current;
+    if (!drag || !card || event.pointerId !== drag.pointerId) return;
+    drag.lastY = event.clientY;
+    const collapsed = invoiceCollapsedHeight.current || drag.startHeight;
+    const height = Math.max(collapsed, Math.min(drag.expandedHeight, drag.startHeight + drag.startY - event.clientY));
+    card.style.height = `${height}px`;
+    if (Math.abs(event.clientY - drag.startY) > 4) invoiceWasDragged.current = true;
+  }
+
+  function finishInvoiceDrag(event: PointerEvent<HTMLButtonElement>, cancelled = false) {
+    const drag = invoiceDrag.current;
+    const card = invoiceCardRef.current;
+    if (!drag || !card || event.pointerId !== drag.pointerId) return;
+    invoiceDrag.current = null;
+    if (!invoiceWasDragged.current && !cancelled) {
+      card.style.height = "";
+      card.style.overflow = "";
+      card.style.transition = "";
+      setInvoiceDragActive(false);
+      return;
+    }
+    const collapsed = invoiceCollapsedHeight.current || drag.startHeight;
+    const currentHeight = card.getBoundingClientRect().height;
+    const distance = drag.startY - drag.lastY;
+    const velocity = distance / Math.max(1, performance.now() - drag.startedAt);
+    const open = cancelled ? drag.wasExpanded : Math.abs(velocity) > 0.35 && Math.abs(distance) > 22
+      ? velocity > 0 : currentHeight > (collapsed + drag.expandedHeight) / 2;
+    const target = open ? drag.expandedHeight : collapsed;
+    setInvoiceExpanded(open);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    card.style.transition = reduced ? "none" : "height 180ms ease-out";
+    card.style.height = `${target}px`;
+    invoiceSnapTimer.current = window.setTimeout(() => {
+      card.style.height = "";
+      card.style.overflow = "";
+      card.style.transition = "";
+      setInvoiceDragActive(false);
+      invoiceSnapTimer.current = null;
+    }, reduced ? 0 : 190);
+  }
 
   useEffect(() => {
     if (!editingNetworkLineId) return;
@@ -2626,16 +2737,30 @@ function CartView({
     setCartStep("confirm");
   }
 
-  function handleCheckoutAction() {
+  async function handleCheckoutAction() {
     if ((hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) || !whatsappOrderingEnabled) {
       setCheckoutError(language === "ar" ? "إرسال هذا الطلب غير متاح حاليًا." : "This checkout is currently unavailable.");
       return;
     }
     if (cartStep === "review") {
-      if (networkItems.some((item) => item.status !== "CURRENT")) {
-        setCheckoutError(language === "ar" ? "راجع خيارات الأصناف المتغيرة قبل إتمام الطلب." : "Review changed configurations before checkout.");
-        return;
+      if (reviewBusy) return;
+      if (networkItems.length) {
+        setReviewBusy(true);
+        const reviewed = await Promise.all(networkItems.map((item) => retryNetworkLine(item.lineId)));
+        setReviewBusy(false);
+        if (reviewed.some((item) => item === null)) {
+          setCheckoutError(language === "ar" ? "انتظر انتهاء التحقق ثم حاول مجددًا." : "Wait for verification and try again.");
+          return;
+        }
+        const problems = reviewed.filter((item): item is NetworkCartItem => item !== null && item.status !== "CURRENT");
+        if (problems.length) {
+          setReviewedLineIds(new Set(problems.filter((item) => item.status === "INVALID" || item.status === "OFFLINE").map((item) => item.lineId)));
+          setReviewModalLineIds(problems.map((item) => item.lineId));
+          setCheckoutError(null);
+          return;
+        }
       }
+      setReviewedLineIds(new Set());
       setCheckoutError(null);
       goToConfirmStep();
       return;
@@ -2670,12 +2795,6 @@ function CartView({
     );
   }
 
-  async function handleNetworkRecheck(lineId: string) {
-    setRecheckFeedback((current) => ({ ...current, [lineId]: "" }));
-    const status = await retryNetworkLine(lineId);
-    if (status === "CURRENT") setRecheckFeedback((current) => ({ ...current, [lineId]: language === "ar" ? "تم التحقق من السعر والاختيارات من الخادم." : "Price and choices verified with the server." }));
-  }
-
   function toggleNetworkDetails(lineId: string) {
     setExpandedNetworkLines((current) => {
       const next = new Set(current);
@@ -2683,6 +2802,33 @@ function CartView({
       return next;
     });
   }
+
+  async function acceptReviewedPrices() {
+    if (!reviewModalLineIds || reviewBusy) return;
+    const changed = reviewModalLineIds.flatMap((lineId) => {
+      const item = cart.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
+      return item?.status === "CHANGED" && item.proposedQuote ? [item] : [];
+    });
+    setReviewBusy(true);
+    const results = await Promise.all(changed.map((item) => acceptNetworkPrice(item.lineId)));
+    setReviewBusy(false);
+    const remaining = reviewModalLineIds.filter((lineId) => {
+      const result = results.find((item) => item?.lineId === lineId);
+      if (result) return result.status !== "CURRENT";
+      return cart.some((item) => item.mode === "NETWORK" && item.lineId === lineId && item.status !== "CURRENT");
+    });
+    setReviewedLineIds(new Set(remaining.filter((lineId) => {
+      const result = results.find((item) => item?.lineId === lineId);
+      const current = result ?? cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === lineId);
+      return current?.status === "INVALID" || current?.status === "OFFLINE";
+    })));
+    setReviewModalLineIds(remaining.length ? remaining : null);
+  }
+
+  const reviewModalItems = reviewModalLineIds?.flatMap((lineId) => {
+    const item = cart.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
+    return item ? [item] : [];
+  }) ?? [];
 
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
@@ -2702,7 +2848,7 @@ function CartView({
                 const hasSizeChoice = item.mode === "NETWORK" && item.acceptedQuote.priceBreakdown.some((line) => line.kind === "SIZE");
 
                 return (
-                  <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""}`}>
+                  <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""} ${item.mode === "NETWORK" && (choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId)) ? "has-network-details" : ""} ${item.mode === "NETWORK" && reviewedLineIds.has(item.lineId) && (item.status === "INVALID" || item.status === "OFFLINE") ? "network-cart-needs-review" : ""}`}>
                     {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
                       <span className="product-image-placeholder" role="img" aria-label={item.name}>
                         <ImageIcon size={24} />
@@ -2718,11 +2864,11 @@ function CartView({
                       </>}
                     </div>
                     <div className="cart-page-stepper" aria-label={item.name}>
-                      <button type="button" onClick={() => { if (item.mode === "NETWORK") setRecheckFeedback((current) => ({ ...current, [item.lineId]: "" })); updateCartItem(item.lineId, item.quantity + 1); }} disabled={hasNetwork && cartCount >= 100} aria-label={`+ ${item.name}`}>
+                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity + 1)} disabled={hasNetwork && cartCount >= 100} aria-label={`+ ${item.name}`}>
                         <Plus size={14} />
                       </button>
                       <strong>{item.quantity}</strong>
-                      <button type="button" onClick={() => { if (item.mode === "NETWORK") setRecheckFeedback((current) => ({ ...current, [item.lineId]: "" })); updateCartItem(item.lineId, item.quantity - 1); }} aria-label={`- ${item.name}`}>
+                      <button type="button" onClick={() => updateCartItem(item.lineId, item.quantity - 1)} aria-label={`- ${item.name}`}>
                         <Minus size={14} />
                       </button>
                     </div>
@@ -2734,26 +2880,20 @@ function CartView({
                     >
                       <Trash2 size={15} />
                     </button>
-                    {item.mode === "NETWORK" ? <div className="cart-card-configuration">
+                    {item.mode === "NETWORK" && (choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId)) ? <div className="cart-card-configuration">
                       {choiceLabels.length || hasSizeChoice ? <div className="network-cart-tools">
                         {data.products.some((candidate) => candidate.id === item.productId) ? <button type="button" className="network-cart-edit"
                           onClick={() => { setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); }}
                           aria-label={language === "ar" ? `تعديل تكوين ${item.name}` : `Edit ${item.name} choices`}><Pencil size={15} />{language === "ar" ? "تعديل" : "Edit"}</button> : null}
                         {choiceLabels.length ? <span className="network-cart-choice-summary" dir="auto">{choiceLabels.slice(0, 2).map((choice) => choice.label).join(" • ")}</span> : null}
-                        <button type="button" className="network-cart-recheck" onClick={() => void handleNetworkRecheck(item.lineId)}
-                          disabled={item.status === "CHECKING"} title={language === "ar" ? "إعادة التحقق" : "Recheck"}
-                          aria-label={language === "ar" ? `إعادة التحقق من ${item.name}` : `Recheck ${item.name}`}>
-                          {item.status === "CHECKING" ? <Loader2 size={16} className="spin" /> : <Rotate3D size={16} />}
-                        </button>
                         {choiceLabels.length ? <button type="button" className="network-cart-expand"
                           onClick={() => toggleNetworkDetails(item.lineId)} aria-expanded={expandedNetworkLines.has(item.lineId)}
                           aria-controls={`network-cart-details-${item.lineId}`}
                           aria-label={language === "ar" ? `${expandedNetworkLines.has(item.lineId) ? "إخفاء" : "عرض"} تفاصيل ${item.name}` : `${expandedNetworkLines.has(item.lineId) ? "Hide" : "Show"} ${item.name} choices`}>
                           <ChevronDown size={18} /></button> : null}
                       </div> : null}
-                      <NetworkCartDetails item={item} language={language} showPrices={showPrices}
-                        expanded={expandedNetworkLines.has(item.lineId)} feedback={recheckFeedback[item.lineId]}
-                        onAccept={() => acceptNetworkPrice(item.lineId)} />
+                      <NetworkCartDetails item={item} language={language}
+                        expanded={expandedNetworkLines.has(item.lineId)} reviewed={reviewedLineIds.has(item.lineId)} />
                     </div> : null}
                     <label className="cart-item-note cart-card-note">
                       <MessageCircle size={18} aria-hidden="true" />
@@ -2847,29 +2987,24 @@ function CartView({
         <b>{language === "ar" ? "سلة الشبكة للمعاينة فقط" : "Network cart is preview-only"}</b>
         {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
         {!showPrices ? <p>{trustedDisabledReason}</p> : null}
-        {networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
-      </section> : whatsappOrderingEnabled ? <section className={`cart-checkout-card ${invoiceExpanded ? "invoice-expanded" : ""}`}>
+        {reviewedLineIds.size && networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
+      </section> : whatsappOrderingEnabled ? <section ref={invoiceCardRef} className={`cart-checkout-card ${invoiceExpanded ? "invoice-expanded" : ""} ${invoiceDragActive ? "invoice-dragging" : ""}`}>
         <button type="button" className="cart-invoice-handle" aria-label={language === "ar" ? invoiceExpanded ? "تصغير ملخص الفاتورة" : "توسيع ملخص الفاتورة" : invoiceExpanded ? "Collapse invoice" : "Expand invoice"}
           aria-expanded={invoiceExpanded}
-          onPointerDown={(event) => { invoiceDragStart.current = event.clientY; invoiceWasDragged.current = false; event.currentTarget.setPointerCapture(event.pointerId); }}
-          onPointerUp={(event) => {
-            if (invoiceDragStart.current !== null && Math.abs(event.clientY - invoiceDragStart.current) >= 28) {
-              setInvoiceExpanded(event.clientY < invoiceDragStart.current);
-              invoiceWasDragged.current = true;
-            }
-            invoiceDragStart.current = null;
-          }}
-          onPointerCancel={() => { invoiceDragStart.current = null; invoiceWasDragged.current = false; }}
+          onPointerDown={startInvoiceDrag}
+          onPointerMove={moveInvoiceDrag}
+          onPointerUp={finishInvoiceDrag}
+          onPointerCancel={(event) => finishInvoiceDrag(event, true)}
           onClick={() => { if (invoiceWasDragged.current) { invoiceWasDragged.current = false; return; } setInvoiceExpanded((current) => !current); }}>
           <span />
         </button>
         <div className="cart-checkout-meta">
-          <span><b>{cartCount}</b></span>
+          <span>{t.selectedItems} <b>{cartCount}</b></span>
           {!hasNetwork ? <span>{t.orderNumber}: {orderNumber}</span> : null}
         </div>
         <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
         <dl className="cart-invoice-lines">
-          {(invoiceExpanded ? cart : cart.slice(0, 2)).map((item) => {
+          {(invoiceExpanded || invoiceDragActive ? cart : cart.slice(0, 2)).map((item) => {
             const heading = item.mode === "NETWORK" ? networkCartHeading(item) : item.name;
             const matching = cart.filter((line) => line.mode === "NETWORK" && networkCartHeading(line) === heading);
             const suffix = item.mode === "NETWORK" && matching.length > 1
@@ -2877,12 +3012,12 @@ function CartView({
             const amount = item.mode === "NETWORK" ? multiplyMoney(item.acceptedQuote.total, item.quantity)
               : multiplyMoney(item.priceText ?? String(item.price), item.quantity);
             return <div key={item.lineId} className="cart-invoice-line"><dt dir="auto">{item.quantity} × {heading}{suffix}</dt>
-              {invoiceExpanded ? <dd>{displayCurrencyAmount(amount, item.currency)}</dd> : null}</div>;
+              <dd>{displayCurrencyAmount(amount, item.currency)}</dd></div>;
           })}
-          {!invoiceExpanded && cart.length > 2 ? <div className="cart-invoice-more"><dt>{language === "ar" ? `و${cart.length - 2} أصناف أخرى` : `and ${cart.length - 2} more items`}</dt></div> : null}
+          {!invoiceExpanded && !invoiceDragActive && cart.length > 2 ? <div className="cart-invoice-more"><dt>{language === "ar" ? `و${cart.length - 2} أصناف أخرى` : `and ${cart.length - 2} more items`}</dt></div> : null}
         </dl>
         <dl className="cart-invoice-totals">
-          {invoiceExpanded ? <div>
+          {invoiceExpanded || invoiceDragActive ? <div>
             <dt>{t.subtotal}</dt>
             <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")}</dd>
           </div> : null}
@@ -2910,12 +3045,34 @@ function CartView({
           type="button"
           className="cart-whatsapp"
           onClick={handleCheckoutAction}
-          disabled={!cart.length || orderSubmitting || trusted.busy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason) && cartStep !== "review")}
+          disabled={!cart.length || orderSubmitting || trusted.busy || reviewBusy || (useTrustedNetworkCheckout && Boolean(trustedDisabledReason) && cartStep !== "review")}
         >
-          {orderSubmitting || trusted.busy ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
-          {orderSubmitting || trusted.busy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
+          {orderSubmitting || trusted.busy || reviewBusy ? <Loader2 size={18} className="spin" /> : <ShoppingBag size={18} />}
+          {orderSubmitting || trusted.busy || reviewBusy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
         </button>
       </section> : <section className="network-cart-gate" role="status">{language === "ar" ? "إرسال الطلب غير متاح لهذه القائمة حاليًا." : "Ordering is unavailable for this menu."}</section>}
+      {reviewModalLineIds && reviewModalItems.length ? <div className="network-review-backdrop" role="presentation">
+        <section className="network-review-dialog" role="dialog" aria-modal="true" aria-labelledby="network-review-title" dir={language === "ar" ? "rtl" : "ltr"}>
+          <h2 id="network-review-title">{language === "ar" ? "مراجعة الأصناف" : "Review items"}</h2>
+          <p>{language === "ar" ? "تغيّرت بعض الأصناف. راجعها قبل المتابعة؛ لم نغيّر اختياراتك تلقائيًا." : "Some items changed. Review them before continuing; your choices were not changed automatically."}</p>
+          <ul>{reviewModalItems.map((item) => <li key={item.lineId}>
+            <b dir="auto">{item.name}</b>
+            {item.status === "CHANGED" && item.proposedQuote ? <p>{language === "ar" ? "السعر السابق" : "Previous price"}: {displayCurrencyAmount(multiplyMoney(item.acceptedQuote.total, item.quantity), item.currency)}<br />
+              {language === "ar" ? "السعر الحالي" : "Current price"}: {displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency)}</p>
+              : <p>{item.status === "OFFLINE"
+                ? language === "ar" ? "تعذر الاتصال بالخادم؛ حاول مجددًا." : "Could not reach the server; try again."
+                : networkReviewIssueLabel(item.issues[0]?.code, language)}</p>}
+            {item.status === "INVALID" && data.products.some((product) => product.id === item.productId) ? <button type="button" onClick={() => {
+              setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); setReviewModalLineIds(null);
+            }}>{language === "ar" ? "تعديل الصنف" : "Edit item"}</button> : null}
+          </li>)}</ul>
+          <div className="network-review-actions">
+            <button type="button" onClick={() => setReviewModalLineIds(null)}>{language === "ar" ? "العودة للسلة" : "Back to cart"}</button>
+            {reviewModalItems.some((item) => item.status === "CHANGED" && item.proposedQuote) ? <button type="button" disabled={reviewBusy} onClick={() => void acceptReviewedPrices()}>
+              {language === "ar" ? "أوافق على الأسعار الحالية" : "Accept current prices"}</button> : null}
+          </div>
+        </section>
+      </div> : null}
       {trusted.previewMessage ? <div className="whatsapp-preview-backdrop" role="presentation" onMouseDown={(event) => {
         if (event.target === event.currentTarget) trusted.closePreview();
       }}><section className="whatsapp-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="whatsapp-preview-title"
@@ -2967,7 +3124,11 @@ function CartView({
             onNetworkQuote={(quote, lineId, quantity) => {
               if (!lineId || !quantity) return false;
               const saved = saveNetworkEdit(editingNetworkProduct, quote, lineId, quantity, editingNetworkNote);
-              if (saved) { setRecheckFeedback((current) => ({ ...current, [lineId]: "" })); setEditingNetworkLineId(null); }
+              if (saved) {
+                setReviewedLineIds((current) => { const next = new Set(current); next.delete(lineId); return next; });
+                setReviewModalLineIds(null);
+                setEditingNetworkLineId(null);
+              }
               return saved;
             }} checkoutEnabled={networkWhatsappCheckoutEnabled} orderingEnabled={whatsappOrderingEnabled && networkWhatsappCheckoutEnabled && showPrices}
             showPrices={showPrices} locale={language} />
@@ -2978,34 +3139,29 @@ function CartView({
   );
 }
 
+function networkReviewIssueLabel(code: string | undefined, language: PublicLanguage) {
+  const ar = language === "ar";
+  switch (code) {
+    case "CONFIGURATION_REVISION_CHANGED":
+    case "STALE_CONFIGURATION_REVISION": return ar ? "تغيّر تكوين الصنف؛ حدّث اختياراته." : "The product configuration changed; update its choices.";
+    case "OPTION_UNAVAILABLE": return ar ? "أحد الخيارات المختارة لم يعد متاحًا." : "A selected option is no longer available.";
+    case "LINKED_PRODUCT_UNAVAILABLE": return ar ? "أحد الأصناف المرتبطة لم يعد متاحًا." : "A linked product is no longer available.";
+    case "GROUP_MIN_NOT_MET": return ar ? "أكمل الخيارات المطلوبة." : "Complete the required choices.";
+    case "OPTION_MAX_EXCEEDED": return ar ? "قلّل كمية أحد الخيارات." : "Reduce an option quantity.";
+    case "PRODUCT_UNAVAILABLE": return ar ? "الصنف غير متاح حاليًا." : "The product is currently unavailable.";
+    default: return ar ? "راجع اختيارات هذا الصنف." : "Review this product's choices.";
+  }
+}
+
 function NetworkCartDetails({
-  item, language, showPrices, expanded, feedback, onAccept
+  item, language, expanded, reviewed
 }: {
   item: NetworkCartItem;
   language: PublicLanguage;
-  showPrices: boolean;
   expanded: boolean;
-  feedback?: string;
-  onAccept: () => void;
+  reviewed: boolean;
 }) {
   const ar = language === "ar";
-  const statusText = {
-    CHECKING: ar ? "جارٍ إعادة التحقق من السعر والتكوين..." : "Rechecking price and configuration...",
-    CURRENT: ar ? "السعر الحالي قابل للتغير حتى إرسال الطلب" : "The current price may change until checkout",
-    CHANGED: ar ? "تغير السعر أو مصدر مرتبط. اختياراتك لم تتغير." : "Price or linked source changed. Your selections are unchanged.",
-    INVALID: ar ? "لم يعد هذا التكوين صالحًا؛ راجع اختياراتك." : "This configuration is no longer valid; review your choices.",
-    OFFLINE: ar ? "تعذر الاتصال للتحقق؛ السعر المحفوظ غير موثوق." : "Cannot verify online; the saved price is not trusted."
-  }[item.status];
-  const issueMessage = (code: string) => {
-    const messages: Record<string, [string, string]> = {
-      SIZE_REQUIRED: ["اختر حجمًا لهذا الصنف.", "Choose a size for this product."],
-      GROUP_MIN_NOT_MET: ["أكمل الاختيارات المطلوبة.", "Complete the required choices."],
-      OPTION_MAX_EXCEEDED: ["قلّل كمية أحد الخيارات.", "Reduce an option quantity."],
-      LINKED_PRODUCT_UNAVAILABLE: ["أحد الأصناف المرتبطة غير متاح.", "A linked product is unavailable."],
-      PRODUCT_UNAVAILABLE: ["هذا الصنف غير متاح حاليًا.", "This product is currently unavailable."]
-    };
-    return messages[code]?.[ar ? 0 : 1] ?? (ar ? "راجع اختيارات هذا الصنف." : "Review this product's choices.");
-  };
   const lines = item.acceptedQuote.priceBreakdown;
   return <div className="network-cart-details" dir={ar ? "rtl" : "ltr"}>
     <div id={`network-cart-details-${item.lineId}`} className="network-cart-expanded" hidden={!expanded}>
@@ -3016,14 +3172,9 @@ function NetworkCartDetails({
     </ul>
     {item.note?.trim() ? <p className="network-cart-note" dir="auto">{ar ? "ملاحظة:" : "Note:"} {item.note}</p> : null}
     </div>
-    {item.status !== "CURRENT" ? <p className={`network-cart-status status-${item.status.toLowerCase()}`}>{statusText}</p> : null}
-    {feedback ? <p className="network-cart-recheck-feedback" role="status">{feedback}</p> : null}
-    {item.status === "CHANGED" && item.proposedQuote && showPrices ? <div className="network-cart-price changed">
-      <span>{ar ? "السعر الجديد المقترح" : "New proposed quote"}</span>
-      <b>{displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency)}</b>
-    </div> : null}
-    {item.issues.length ? <ul className="network-cart-issues">{[...new Set(item.issues.slice(0, 4).map((issue) => issueMessage(issue.code)))].map((message) => <li key={message}>{message}</li>)}</ul> : null}
-    {item.status === "CHANGED" && item.proposedQuote ? <div className="network-cart-actions"><button type="button" onClick={onAccept}>{ar ? "أوافق على السعر الحالي" : "Accept current quote"}</button></div> : null}
+    {reviewed && (item.status === "INVALID" || item.status === "OFFLINE") ? <p className="network-cart-status status-invalid" role="alert">
+      {ar ? "راجع اختيارات هذا الصنف" : "Review this product's choices"}
+    </p> : null}
   </div>;
 }
 

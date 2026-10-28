@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
+import { createSelectionKey } from "@menu/shared";
 
 const origin = process.env.CART_UX_ORIGIN ?? "http://192.168.178.69:3200";
 const parsed = new URL(origin);
@@ -93,7 +94,12 @@ try {
   const menuState = await evalInPage(`(() => ({ legacy: !!document.querySelector('.menu-product-row[data-cart-mode=LEGACY] .menu-product-quantity'),
     network: [...document.querySelectorAll('.menu-product-row[data-cart-mode=NETWORK]')].map(e => ({ name: e.querySelector('b')?.textContent, control: !!e.querySelector('.menu-product-quantity') })) }))()`);
   if (!menuState.legacy || !menuState.network.some((line) => line.control)) throw new Error(`Missing menu controls: ${JSON.stringify(menuState)}`);
+  const rtlStarting = await evalInPage("(() => { const e = document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .product-price em')?.parentElement; return { dir: e?.dir, parts: [...(e?.children || [])].map(n => n.textContent) }; })()");
+  if (rtlStarting.dir !== "rtl" || !rtlStarting.parts[0]?.includes("ابتداءً") || !rtlStarting.parts[1]?.trim()) {
+    throw new Error(`RTL starting price order differs: ${JSON.stringify(rtlStarting)}`);
+  }
   results.push({ scenario: "menu quantity controls", menuState });
+  results.push({ scenario: "RTL starting price order", rtlStarting });
   await shot("menu-network-stepper-390.png");
   await clickPizza(".menu-product-quantity button:first-of-type");
   await until("location.pathname.includes('/product/')", "Network + opens configuration");
@@ -119,15 +125,26 @@ try {
   await click(".cart-invoice-handle");
   const handlePoint = await evalInPage("(() => { const r = document.querySelector('.cart-invoice-handle').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
   await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: handlePoint.x, y: handlePoint.y, button: "left", clickCount: 1 });
-  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: handlePoint.x, y: handlePoint.y - 85, button: "left", buttons: 1 });
-  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: handlePoint.x, y: handlePoint.y - 85, button: "left", clickCount: 1 });
+  const dragHeights = [0];
+  dragHeights[0] = await evalInPage("document.querySelector('.cart-checkout-card').getBoundingClientRect().height");
+  for (const delta of [25, 55, 100]) {
+    await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: handlePoint.x, y: handlePoint.y - delta, button: "left", buttons: 1 });
+    await pause(40);
+    dragHeights.push(await evalInPage("document.querySelector('.cart-checkout-card').getBoundingClientRect().height"));
+    await shot(`invoice-drag-${delta}-390.png`);
+  }
+  if (!(dragHeights[0] < dragHeights[1] && dragHeights[1] < dragHeights[2] && dragHeights[2] <= dragHeights[3])) {
+    throw new Error(`Invoice did not follow the pointer progressively: ${JSON.stringify(dragHeights)}`);
+  }
+  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: handlePoint.x, y: handlePoint.y - 100, button: "left", clickCount: 1 });
   await until("document.querySelector('.cart-invoice-handle')?.getAttribute('aria-expanded') === 'true'", "invoice drag opens");
+  await pause(230);
   const openPoint = await evalInPage("(() => { const r = document.querySelector('.cart-invoice-handle').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
   await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: openPoint.x, y: openPoint.y, button: "left", clickCount: 1 });
   await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: openPoint.x, y: openPoint.y + 85, button: "left", buttons: 1 });
   await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: openPoint.x, y: openPoint.y + 85, button: "left", clickCount: 1 });
   await until("document.querySelector('.cart-invoice-handle')?.getAttribute('aria-expanded') === 'false'", "invoice drag closes");
-  results.push({ scenario: "invoice expands, collapses and drags without images", collapsedInvoice });
+  results.push({ scenario: "invoice follows drag progressively, then snaps closed and open", collapsedInvoice, dragHeights });
   await shot("network-cart-collapsed-390.png");
   await click(".network-cart-expand");
   await until("document.querySelector('.network-cart-expanded')?.hidden === false", "expanded choices");
@@ -158,24 +175,81 @@ try {
     heading: await evalInPage("document.querySelector('.network-cart-item .cart-page-copy > b')?.innerText") });
   await shot("network-cart-edited-390.png");
   const beforeRecheck = quoteRequests.length;
-  await cdp("Network.emulateNetworkConditions", { offline: false, latency: 900, downloadThroughput: -1, uploadThroughput: -1 });
-  await click(".network-cart-recheck");
-  await until("!!document.querySelector('.network-cart-status.status-checking')", "recheck loading");
-  await shot("network-cart-recheck-loading-390.png");
-  await cdp("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-  await until("!!document.querySelector('.network-cart-recheck-feedback') || !!document.querySelector('.network-cart-status.status-changed, .network-cart-status.status-invalid, .network-cart-status.status-offline')", "recheck result");
-  if (quoteRequests.length <= beforeRecheck) throw new Error("Recheck did not request a server quote");
-  results.push({ scenario: "manual recheck", newQuoteRequests: quoteRequests.length - beforeRecheck, feedback: await evalInPage("document.querySelector('.network-cart-recheck-feedback, .network-cart-status')?.innerText") });
-  await shot("network-cart-rechecked-390.png");
   await cdp("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-  await click(".network-cart-recheck");
-  await until("!!document.querySelector('.network-cart-status.status-offline')", "offline quote failure");
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.network-review-dialog')", "offline quote failure on Next");
   const offlinePath = await evalInPage("location.pathname");
   await cdp("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   if (!offlinePath.endsWith("/cart")) throw new Error("Offline recheck unexpectedly navigated");
-  await click(".network-cart-recheck");
-  await until("!!document.querySelector('.network-cart-recheck-feedback')", "offline retry recovery");
-  results.push({ scenario: "offline recheck fail closed and recovery", offlinePath });
+  await click(".network-review-actions button:first-child");
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.cart-message-preview-open')", "online quote recovery on Next");
+  if (quoteRequests.length <= beforeRecheck) throw new Error("Next did not request a server quote");
+  results.push({ scenario: "Next-triggered validation blocks offline and recovers online", newQuoteRequests: quoteRequests.length - beforeRecheck, offlinePath });
+  await navigate("/m/preview-ordersawa/cart");
+  // Browser-only stale choice injection: exercises the invalid → edit → server quote → clear cycle
+  // without changing the preserved demo database or merchant configuration.
+  const staleCart = JSON.parse(await evalInPage("localStorage.getItem('cart:preview-ordersawa:main')"));
+  const staleLine = staleCart.items.find((line) => line.mode === "NETWORK");
+  const staleSize = staleLine.selection.groups.find((group) => group.type === "SIZE");
+  staleSize.sizeChoiceId = "removed-size-for-browser-regression";
+  staleLine.selectionKey = createSelectionKey(staleLine.selection);
+  await evalInPage(`localStorage.setItem('cart:preview-ordersawa:main', ${JSON.stringify(JSON.stringify(staleCart))})`);
+  await navigate("/m/preview-ordersawa/cart");
+  await until("!!document.querySelector('.network-cart-item')", "stale test line restored");
+  if (await evalInPage("!!document.querySelector('.network-cart-needs-review, .network-cart-status')")) {
+    throw new Error("Stale cart warning appeared before Next");
+  }
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.network-review-dialog')", "invalid choice review popup");
+  const invalidState = await evalInPage("(() => { const card = document.querySelector('.network-cart-needs-review'); const warning = document.querySelector('.network-cart-status'); return { red: !!card, borderColor: card && getComputedStyle(card).borderColor, warnings: document.querySelectorAll('.network-cart-status').length, message: warning?.innerText }; })()");
+  const invalidBorderChannels = invalidState.borderColor?.match(/\d+/g)?.map(Number) ?? [];
+  if (!invalidState.red || invalidBorderChannels.length !== 3
+    || invalidBorderChannels[0] <= invalidBorderChannels[1] * 2 || invalidBorderChannels[0] <= invalidBorderChannels[2] * 2
+    || invalidState.warnings !== 1 || !invalidState.message.includes('راجع اختيارات')) {
+    throw new Error(`Invalid choice presentation differs: ${JSON.stringify(invalidState)}`);
+  }
+  await shot("network-cart-invalid-after-next-390.png");
+  await click(".network-review-dialog li button");
+  await until("!!document.querySelector('.network-cart-editor [data-group-type=SIZE] [role=radio]')", "invalid choice editor");
+  await click(".network-cart-editor [data-group-type=SIZE] [role=radio]:not([disabled])");
+  await evalInPage(`[...document.querySelectorAll('.network-cart-editor button')].find(e => e.innerText.includes('حفظ التكوين في السلة'))?.click()`);
+  await until("!document.querySelector('.network-cart-editor')", "corrected choice saved");
+  await until("!document.querySelector('.network-cart-needs-review, .network-cart-status')", "invalid mark cleared after edit");
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.cart-message-preview-open')", "corrected choice accepted on Next");
+  results.push({ scenario: "invalid choice → one popup → edit → warning clears → Next succeeds", invalidState });
+  await shot("network-cart-corrected-390.png");
+  await navigate("/m/preview-ordersawa/cart");
+  // A persisted old quote/revision is re-priced by the real API. The browser must not
+  // accept the current amount or replace the customer's chosen instances by itself.
+  const oldCart = JSON.parse(await evalInPage("localStorage.getItem('cart:preview-ordersawa:main')"));
+  const oldLine = oldCart.items.find((line) => line.mode === "NETWORK");
+  const chosenGroups = JSON.stringify(oldLine.selection.groups);
+  oldLine.selection.configurationRevision -= 1;
+  oldLine.configurationRevision = oldLine.selection.configurationRevision;
+  oldLine.selectionKey = createSelectionKey(oldLine.selection);
+  oldLine.acceptedQuote.total = "80";
+  await evalInPage(`localStorage.setItem('cart:preview-ordersawa:main', ${JSON.stringify(JSON.stringify(oldCart))})`);
+  await navigate("/m/preview-ordersawa/cart");
+  await until("!!document.querySelector('.network-cart-item')", "old quote restored");
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.network-review-dialog .network-review-actions button:nth-child(2)')", "old price needs acceptance");
+  const priceDialog = await evalInPage("document.querySelector('.network-review-dialog')?.innerText");
+  if (!priceDialog.includes('السعر السابق') || !priceDialog.includes('السعر الحالي')) throw new Error(`Price comparison missing: ${priceDialog}`);
+  await shot("network-cart-price-changed-390.png");
+  await click(".network-review-actions button:nth-child(2)");
+  await until("!document.querySelector('.network-review-dialog')", "new price accepted");
+  const acceptedCart = JSON.parse(await evalInPage("localStorage.getItem('cart:preview-ordersawa:main')"));
+  const acceptedLine = acceptedCart.items.find((line) => line.mode === "NETWORK");
+  if (acceptedLine.acceptedQuote.total === "80" || JSON.stringify(acceptedLine.selection.groups) !== chosenGroups
+    || acceptedLine.note !== "ملاحظة اختبار" || acceptedLine.quantity !== oldLine.quantity) {
+    throw new Error("Price acceptance changed choices, note, quantity, or kept the old price");
+  }
+  await click(".cart-whatsapp");
+  await until("!!document.querySelector('.cart-message-preview-open')", "accepted current price proceeds");
+  results.push({ scenario: "stale revision and price → explicit acceptance → same choices and note", old: "80", current: acceptedLine.acceptedQuote.total });
+  await navigate("/m/preview-ordersawa/cart");
   await navigate("/m/preview-ordersawa/menu?category=demo-products&display=list");
   await until(`Number((${pizzaCard})?.querySelector('.menu-product-quantity strong')?.innerText) > 0 && !!(${pizzaCard})?.querySelector('.menu-product-quantity button:first-of-type:not([disabled])')`, "single Network line verified");
   const oneLineQuantity = await evalInPage(`(${pizzaCard})?.querySelector('.menu-product-quantity strong')?.innerText`);
@@ -231,6 +305,14 @@ try {
   await until("document.querySelector('.public-screen')?.dir === 'ltr'", "LTR cart");
   await shot("network-cart-ltr-390.png");
   results.push({ scenario: "English LTR", direction: await evalInPage("document.querySelector('.public-screen')?.dir") });
+  await navigate("/m/preview-ordersawa/menu?category=demo-products&display=list");
+  await until("!!document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .product-price em')", "English starting price");
+  const ltrStarting = await evalInPage("(() => { const e = document.querySelector('.menu-product-row[data-cart-mode=NETWORK] .product-price em')?.parentElement; return { dir: e?.dir, parts: [...(e?.children || [])].map(n => n.textContent) }; })()");
+  if (ltrStarting.dir !== "ltr" || !ltrStarting.parts[0]?.toLowerCase().includes("starting")) {
+    throw new Error(`LTR starting price order differs: ${JSON.stringify(ltrStarting)}`);
+  }
+  results.push({ scenario: "LTR starting price order", ltrStarting });
+  await navigate("/m/preview-ordersawa/cart");
   await click(".cart-whatsapp");
   await until("!!document.querySelector('.cart-message-preview-open')", "checkout verification step");
   await click(".cart-message-preview-open");
@@ -245,6 +327,34 @@ try {
   await shot("mixed-whatsapp-message-preview-390.png");
   results.push({ scenario: "trusted Mixed message preview without order creation", previewLength: message.length,
     checkoutRequests });
+  await click(".whatsapp-preview-dialog header button");
+  await click(".fulfillment-toggle button:first-child");
+  const collapsedDelivery = await evalInPage("document.querySelector('.cart-invoice-totals')?.innerText");
+  if (!collapsedDelivery.includes("Delivery fee")) throw new Error(`Collapsed invoice lost delivery fee: ${collapsedDelivery}`);
+  await click(".cart-invoice-handle");
+  const expandedDelivery = await evalInPage("document.querySelector('.cart-invoice-totals')?.innerText");
+  if (!expandedDelivery.toLowerCase().includes("subtotal") || !expandedDelivery.includes("Delivery fee")) {
+    throw new Error(`Expanded invoice lost subtotal or delivery fee: ${expandedDelivery}`);
+  }
+  results.push({ scenario: "delivery fee survives collapsed/expanded invoice", collapsedDelivery, expandedDelivery });
+  for (const count of [10, 20]) {
+    const many = JSON.parse(await evalInPage("localStorage.getItem('cart:preview-ordersawa:main')"));
+    const template = many.items.find((line) => line.mode === "NETWORK");
+    many.items = Array.from({ length: count }, (_, index) => ({ ...template, lineId: `long-invoice-${count}-${index}` }));
+    await evalInPage(`localStorage.setItem('cart:preview-ordersawa:main', ${JSON.stringify(JSON.stringify(many))})`);
+    await navigate("/m/preview-ordersawa/cart");
+    await until(`document.querySelectorAll('.network-cart-item').length === ${count}`, `${count}-line invoice restored`);
+    await click(".cart-invoice-handle");
+    await until("document.querySelector('.cart-invoice-handle')?.getAttribute('aria-expanded') === 'true'", `${count}-line invoice expanded`);
+    const scroll = await evalInPage(`(() => { const list = document.querySelector('.cart-invoice-scroll');
+      const initial = list.scrollTop; list.scrollTop = 100; return { scrollHeight: list.scrollHeight,
+        clientHeight: list.clientHeight, moved: list.scrollTop > initial }; })()`);
+    if (count === 20 && (!scroll.moved || scroll.scrollHeight <= scroll.clientHeight)) {
+      throw new Error(`Twenty-line invoice did not scroll independently: ${JSON.stringify(scroll)}`);
+    }
+    await shot(`network-invoice-${count}-lines-scroll-390.png`);
+    results.push({ scenario: `${count}-line invoice internal scrolling`, scroll });
+  }
   console.log(JSON.stringify({ origin, output, results }, null, 2));
 } finally {
   socket?.close();

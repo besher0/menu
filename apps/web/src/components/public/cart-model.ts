@@ -47,6 +47,7 @@ export type NetworkCartItem = {
   runtimeContext: PublicProductQuoteResponse["runtimeContext"];
   acceptedQuote: NetworkQuoteValue;
   proposedQuote?: NetworkQuoteValue;
+  proposedSelection?: ProductSelectionV1;
   status: NetworkCartStatus;
   issues: ConfigurationIssue[];
   note?: string;
@@ -232,17 +233,47 @@ export function applyNetworkRecheck(item: NetworkCartItem, quote: PublicProductQ
     restaurantSlug: item.restaurantSlug, quote, lineId: item.lineId
   });
   if (!refreshed || quote.selectionKey !== item.selectionKey) {
-    return { ...item, status: "INVALID", proposedQuote: undefined, issues: [{ code: "QUOTE_CONTRACT_MISMATCH", path: "$cart", message: "The current quote no longer matches this cart selection." }] };
+    return { ...item, status: "INVALID", proposedQuote: undefined, proposedSelection: undefined, issues: [{ code: "QUOTE_CONTRACT_MISMATCH", path: "$cart", message: "The current quote no longer matches this cart selection." }] };
   }
   if (refreshed.identity !== item.identity || refreshed.acceptedQuote.total !== item.acceptedQuote.total
     || JSON.stringify(refreshed.acceptedQuote.priceBreakdown) !== JSON.stringify(item.acceptedQuote.priceBreakdown)) {
-    return { ...item, status: "CHANGED", proposedQuote: refreshed.acceptedQuote, issues: [] };
+    return { ...item, status: "CHANGED", proposedQuote: refreshed.acceptedQuote, proposedSelection: undefined, issues: [] };
   }
-  return { ...item, status: "CURRENT", acceptedQuote: refreshed.acceptedQuote, proposedQuote: undefined, issues: [] };
+  return { ...item, status: "CURRENT", acceptedQuote: refreshed.acceptedQuote, proposedQuote: undefined, proposedSelection: undefined, issues: [] };
+}
+
+function sameChoicePresentation(left: readonly PriceLine[], right: readonly PriceLine[]): boolean {
+  return left.length === right.length && left.every((line, index) => {
+    const other = right[index];
+    return line.kind === other.kind && line.path === other.path && line.nodeId === other.nodeId
+      && line.label === other.label && line.instanceId === other.instanceId
+      && line.sourceProductId === other.sourceProductId && line.included === other.included;
+  });
+}
+
+/** A revision-only rebase is safe only when every displayed choice is unchanged. */
+export function applyRebasedNetworkRecheck(item: NetworkCartItem, quote: PublicProductQuoteResponse, rebased: ProductSelectionV1): NetworkCartItem {
+  const refreshed = networkCartItemFromQuote({
+    product: { id: item.productId, slug: item.slug, name: item.name, basePrice: null, currency: item.currency },
+    restaurantSlug: item.restaurantSlug, quote, lineId: item.lineId
+  });
+  if (!refreshed || quote.selectionKey !== createSelectionKey(rebased)
+    || !sameChoicePresentation(item.acceptedQuote.priceBreakdown, refreshed.acceptedQuote.priceBreakdown)) {
+    return { ...item, status: "INVALID", proposedQuote: undefined, proposedSelection: undefined,
+      issues: [{ code: "CONFIGURATION_CHANGED", path: "$cart", message: "Review the current product choices before continuing." }] };
+  }
+  if (refreshed.acceptedQuote.total === item.acceptedQuote.total
+    && JSON.stringify(refreshed.acceptedQuote.priceBreakdown) === JSON.stringify(item.acceptedQuote.priceBreakdown)) {
+    return { ...refreshed, quantity: item.quantity, note: item.note };
+  }
+  return { ...item, status: "CHANGED", proposedQuote: refreshed.acceptedQuote,
+    proposedSelection: quote.canonicalSelection, issues: [] };
 }
 
 export function acceptNetworkRecheck(item: NetworkCartItem, quote: PublicProductQuoteResponse): NetworkCartItem {
-  const refreshed = applyNetworkRecheck(item, quote);
+  const refreshed = item.proposedSelection
+    ? applyRebasedNetworkRecheck(item, quote, item.proposedSelection)
+    : applyNetworkRecheck(item, quote);
   if (item.status !== "CHANGED" || !item.proposedQuote || refreshed.status !== "CHANGED"
     || refreshed.proposedQuote?.total !== item.proposedQuote.total
     || JSON.stringify(refreshed.proposedQuote?.priceBreakdown) !== JSON.stringify(item.proposedQuote.priceBreakdown)
@@ -255,8 +286,9 @@ export function acceptNetworkRecheck(item: NetworkCartItem, quote: PublicProduct
     product: { id: item.productId, slug: item.slug, name: item.name, basePrice: null, currency: item.currency },
     restaurantSlug: item.restaurantSlug, quote, lineId: item.lineId
   });
-  if (!candidate || candidate.selectionKey !== item.selectionKey || candidate.configurationRevision !== item.configurationRevision) return refreshed;
-  return { ...candidate, quantity: item.quantity };
+  if (!candidate || candidate.selectionKey !== (item.proposedSelection ? createSelectionKey(item.proposedSelection) : item.selectionKey)
+    || (!item.proposedSelection && candidate.configurationRevision !== item.configurationRevision)) return refreshed;
+  return { ...candidate, quantity: item.quantity, note: item.note };
 }
 
 function restoreLegacy(raw: unknown, currency: string): LegacyCartItem | null {

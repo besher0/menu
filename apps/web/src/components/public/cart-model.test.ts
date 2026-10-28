@@ -5,6 +5,7 @@ import {
   acceptNetworkRecheck,
   addOrEditNetworkCartItem,
   applyNetworkRecheck,
+  applyRebasedNetworkRecheck,
   cartNeedsPreviewGate,
   createNetworkCartLineId,
   networkCartItemFromQuote,
@@ -159,7 +160,7 @@ describe("versioned public cart model", () => {
   });
 
   it("shows changed prices or sources without automatic acceptance, then accepts only the same re-quoted proposal", () => {
-    const first = item();
+    const first = { ...item(), note: "بدون بصل", quantity: 2 };
     const proposed = quote(selection(), "285.000001", 2);
     const changed = applyNetworkRecheck(first, proposed);
     expect(changed).toMatchObject({ status: "CHANGED", acceptedQuote: { total: "280.000001" }, proposedQuote: { total: "285.000001" } });
@@ -167,9 +168,29 @@ describe("versioned public cart model", () => {
     expect(movedAgain).toMatchObject({ status: "CHANGED", acceptedQuote: { total: "280.000001" }, proposedQuote: { total: "290" } });
     const accepted = acceptNetworkRecheck(changed, proposed);
     expect(accepted).toMatchObject({ status: "CURRENT", acceptedQuote: { total: "285.000001" } });
+    expect(accepted).toMatchObject({ lineId: first.lineId, quantity: 2, note: "بدون بصل" });
     expect(accepted.identity).not.toBe(first.identity);
     const differentMode = { ...proposed, linkedSourceRevisions: [{ sourceProductId: "source", mode: "LEGACY" as const, configurationRevision: 2 }] };
     expect(acceptNetworkRecheck(changed, differentMode).status).toBe("CHANGED");
+  });
+
+  it("keeps revision-changed prices pending explicit acceptance without changing choices, note, or quantity", () => {
+    const first = { ...item(), quantity: 3, note: "لا بصل" };
+    const rebased = { ...first.selection, configurationRevision: 2 };
+    const currentQuote = quote(rebased, "285.000001", 2);
+    currentQuote.priceBreakdown = currentQuote.priceBreakdown.map((line, index) => index === 0
+      ? { ...line, amount: "205", chargedAmount: "205" } : line);
+    const changed = applyRebasedNetworkRecheck(first, currentQuote, rebased);
+    expect(changed).toMatchObject({ status: "CHANGED", selectionKey: first.selectionKey,
+      proposedSelection: { configurationRevision: 2 }, proposedQuote: { total: "285.000001" } });
+    expect(acceptNetworkRecheck(changed, quote(rebased, "290", 2)).status).toBe("CHANGED");
+    const accepted = acceptNetworkRecheck(changed, currentQuote);
+    expect(accepted).toMatchObject({ status: "CURRENT", configurationRevision: 2, quantity: 3, note: "لا بصل" });
+    expect(accepted.selectionKey).toBe(createSelectionKey(rebased));
+    expect(accepted.selection.groups).toEqual(first.selection.groups);
+    const renamed = { ...currentQuote, priceBreakdown: currentQuote.priceBreakdown.map((line, index) => index === 0
+      ? { ...line, label: "New size name" } : line) };
+    expect(applyRebasedNetworkRecheck(first, renamed, rebased).status).toBe("INVALID");
   });
 
   it("rejects a forged quote contract before cart insertion", () => {

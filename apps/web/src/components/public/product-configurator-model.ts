@@ -58,6 +58,50 @@ export function linkedConfiguration(
   return sources.get(linked.sourceProductId)?.configuration ?? null;
 }
 
+/** Keep the customer's exact choice and instance IDs when only configuration revisions changed.
+ * The server quote still decides whether this selection is valid and what it costs. */
+export function rebaseSelectionRevisions(
+  selection: ProductSelectionV1,
+  configuration: ProductConfigurationV1,
+  sources: ReadonlyMap<string, PublicLinkedConfigurationSource>,
+  depth = 0
+): ProductSelectionV1 | null {
+  if (depth > 12 || selection.productId !== configuration.productId) return null;
+  const groups: GroupSelection[] = [];
+  for (const selected of selection.groups) {
+    const group = configuration.groups.find((candidate) => candidate.id === selected.groupId && candidate.type === selected.type);
+    if (!group || group.available === false) return null;
+    if (selected.type === "SIZE") {
+      if (group.type !== "SIZE") return null;
+      const size = group.sizes.find((candidate) => candidate.id === selected.sizeChoiceId && candidate.available !== false);
+      if (!size) return null;
+      const children = rebaseSelectionRevisions({ ...selection, groups: selected.children ?? [] },
+        { ...configuration, groups: size.children ?? [] }, sources, depth + 1);
+      if (!children) return null;
+      groups.push({ ...selected, children: children.groups });
+      continue;
+    }
+    if (group.type !== "OPTIONS") return null;
+    const instances: OptionSelectionInstance[] = [];
+    for (const instance of selected.instances) {
+      const option = group.options.find((candidate) => candidate.id === instance.optionId && candidate.available !== false);
+      if (!option) return null;
+      const children = rebaseSelectionRevisions({ ...selection, groups: instance.children ?? [] },
+        { ...configuration, groups: option.children ?? [] }, sources, depth + 1);
+      if (!children) return null;
+      const linked = linkedConfiguration(option, sources);
+      if (Boolean(linked) !== Boolean(instance.linkedSelection)) return null;
+      const linkedSelection = linked && instance.linkedSelection
+        ? rebaseSelectionRevisions(instance.linkedSelection, linked, sources, depth + 1) : undefined;
+      if (linked && !linkedSelection) return null;
+      instances.push({ ...instance, children: children.groups,
+        ...(linkedSelection ? { linkedSelection } : {}) });
+    }
+    groups.push({ ...selected, instances });
+  }
+  return { ...selection, configurationRevision: configuration.revision, groups };
+}
+
 function buildGroups(
   groups: readonly ConfigurationGroup[],
   sources: ReadonlyMap<string, PublicLinkedConfigurationSource>,
@@ -209,7 +253,9 @@ export function changeSizeSelection(
   }
 
   const defaults = buildGroups(target.children ?? [], sources, idFactory);
-  const children = merge(previous?.children ?? [], target.children ?? [], old?.children ?? [], defaults);
+  // If the prior size was removed, match its still-selected children against the newly
+  // chosen size by stable IDs. Reject incompatible branches instead of discarding them.
+  const children = merge(previous?.children ?? target.children ?? [], target.children ?? [], old?.children ?? [], defaults);
   if (!children) return { error: failure.label || group.label };
   const next: SizeGroupSelection = { type: "SIZE", groupId: group.id, sizeChoiceId: targetSizeId, children };
   return { selection: replaceGroupSelection(selection, next) };
