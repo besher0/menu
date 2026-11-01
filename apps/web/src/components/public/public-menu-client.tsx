@@ -2544,8 +2544,8 @@ function CartView({
   const invoiceCollapsedHeight = useRef(0);
   const invoiceSnapTimer = useRef<number | null>(null);
   const invoiceDrag = useRef<{ pointerId: number; startY: number; lastY: number; startHeight: number;
-    expandedHeight: number; startedAt: number; wasExpanded: boolean } | null>(null);
-  const invoiceWasDragged = useRef(false);
+    expandedHeight: number; startedAt: number; wasExpanded: boolean; onHandle: boolean;
+    mode: "pending" | "sheet" | "scroll"; scrollElement: HTMLElement | null } | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewedLineIds, setReviewedLineIds] = useState<Set<string>>(() => new Set());
   const [reviewModalLineIds, setReviewModalLineIds] = useState<string[] | null>(null);
@@ -2599,41 +2599,64 @@ function CartView({
 
   useEffect(() => () => { if (invoiceSnapTimer.current !== null) window.clearTimeout(invoiceSnapTimer.current); }, []);
 
-  function startInvoiceDrag(event: PointerEvent<HTMLButtonElement>) {
+  function startInvoiceDrag(event: PointerEvent<HTMLElement>) {
     const card = invoiceCardRef.current;
-    if (!card || invoiceSnapTimer.current !== null) return;
+    if (!card || invoiceSnapTimer.current !== null || !event.isPrimary) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const handle = target.closest(".cart-invoice-handle");
+    if (!handle && target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
+    // Desktop text remains selectable; touch can drag from the invoice rows.
+    if (event.pointerType === "mouse" && !handle && target.closest("dt, dd")) return;
     const height = card.getBoundingClientRect().height;
     invoiceDrag.current = { pointerId: event.pointerId, startY: event.clientY, lastY: event.clientY,
-      startHeight: height, expandedHeight: height, startedAt: performance.now(), wasExpanded: invoiceExpanded };
-    invoiceWasDragged.current = false;
+      startHeight: height, expandedHeight: height, startedAt: performance.now(), wasExpanded: invoiceExpanded,
+      onHandle: Boolean(handle), mode: "pending", scrollElement: target.closest<HTMLElement>(".cart-invoice-scroll") };
     card.style.height = `${height}px`;
     card.style.overflow = "hidden";
     card.style.transition = "none";
-    event.currentTarget.setPointerCapture(event.pointerId);
+    card.setPointerCapture(event.pointerId);
     setInvoiceDragActive(true);
   }
 
-  function moveInvoiceDrag(event: PointerEvent<HTMLButtonElement>) {
+  function moveInvoiceDrag(event: PointerEvent<HTMLElement>) {
     const drag = invoiceDrag.current;
     const card = invoiceCardRef.current;
     if (!drag || !card || event.pointerId !== drag.pointerId) return;
+    const delta = event.clientY - drag.lastY;
+    if (drag.mode === "pending" && Math.abs(event.clientY - drag.startY) > 4) {
+      drag.mode = drag.wasExpanded && drag.scrollElement
+        && (delta < 0 || drag.scrollElement.scrollTop > 0) ? "scroll" : "sheet";
+    }
+    if (drag.mode === "scroll" && drag.scrollElement) {
+      if (delta > 0 && drag.scrollElement.scrollTop <= 0) {
+        drag.mode = "sheet";
+        drag.startY = event.clientY;
+        drag.startHeight = card.getBoundingClientRect().height;
+      } else {
+        drag.scrollElement.scrollTop -= delta;
+        drag.lastY = event.clientY;
+        return;
+      }
+    }
     drag.lastY = event.clientY;
+    if (drag.mode !== "sheet") return;
     const collapsed = invoiceCollapsedHeight.current || drag.startHeight;
     const height = Math.max(collapsed, Math.min(drag.expandedHeight, drag.startHeight + drag.startY - event.clientY));
     card.style.height = `${height}px`;
-    if (Math.abs(event.clientY - drag.startY) > 4) invoiceWasDragged.current = true;
   }
 
-  function finishInvoiceDrag(event: PointerEvent<HTMLButtonElement>, cancelled = false) {
+  function finishInvoiceDrag(event: PointerEvent<HTMLElement>, cancelled = false) {
     const drag = invoiceDrag.current;
     const card = invoiceCardRef.current;
     if (!drag || !card || event.pointerId !== drag.pointerId) return;
     invoiceDrag.current = null;
-    if (!invoiceWasDragged.current && !cancelled) {
+    if (drag.mode !== "sheet") {
       card.style.height = "";
       card.style.overflow = "";
       card.style.transition = "";
       setInvoiceDragActive(false);
+      if (drag.mode === "pending" && drag.onHandle && !cancelled) setInvoiceExpanded((current) => !current);
       return;
     }
     const collapsed = invoiceCollapsedHeight.current || drag.startHeight;
@@ -2988,23 +3011,19 @@ function CartView({
         {staleLegacyNetwork ? <p>{language === "ar" ? "يوجد صنف محفوظ بصيغة السلة القديمة وأصبح يستخدم الشبكة. لم نحوله تلقائيًا؛ احذفه وأضفه بتكوين جديد قبل أي طلب." : "A saved legacy line now uses Network configuration. It was not converted; remove it and add a newly configured line."}</p> : null}
         {!showPrices ? <p>{trustedDisabledReason}</p> : null}
         {reviewedLineIds.size && networkItems.some((item) => item.status !== "CURRENT") ? <p>{language === "ar" ? "توجد عناصر تحتاج مراجعة أو اتصالًا بالخادم؛ لم تُعدل اختياراتك تلقائيًا." : "Some items need review or server access; selections were not changed automatically."}</p> : null}
-      </section> : whatsappOrderingEnabled ? <section ref={invoiceCardRef} className={`cart-checkout-card ${invoiceExpanded ? "invoice-expanded" : ""} ${invoiceDragActive ? "invoice-dragging" : ""}`}>
+      </section> : whatsappOrderingEnabled ? <section ref={invoiceCardRef} className={`cart-checkout-card ${invoiceExpanded ? "invoice-expanded" : ""} ${invoiceDragActive ? "invoice-dragging" : ""}`}
+        onPointerDown={startInvoiceDrag} onPointerMove={moveInvoiceDrag}
+        onPointerUp={finishInvoiceDrag} onPointerCancel={(event) => finishInvoiceDrag(event, true)}
+        onLostPointerCapture={(event) => finishInvoiceDrag(event, true)}>
         <button type="button" className="cart-invoice-handle" aria-label={language === "ar" ? invoiceExpanded ? "تصغير ملخص الفاتورة" : "توسيع ملخص الفاتورة" : invoiceExpanded ? "Collapse invoice" : "Expand invoice"}
           aria-expanded={invoiceExpanded}
-          onPointerDown={startInvoiceDrag}
-          onPointerMove={moveInvoiceDrag}
-          onPointerUp={finishInvoiceDrag}
-          onPointerCancel={(event) => finishInvoiceDrag(event, true)}
-          onClick={() => { if (invoiceWasDragged.current) { invoiceWasDragged.current = false; return; } setInvoiceExpanded((current) => !current); }}>
+          onClick={(event) => { if (event.detail === 0) setInvoiceExpanded((current) => !current); }}>
           <span />
         </button>
-        <div className="cart-checkout-meta">
-          <span>{t.selectedItems} <b>{cartCount}</b></span>
-          {!hasNetwork ? <span>{t.orderNumber}: {orderNumber}</span> : null}
-        </div>
+        {invoiceExpanded && !hasNetwork ? <div className="cart-checkout-meta"><span>{t.orderNumber}: {orderNumber}</span></div> : null}
         <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
-        <dl className="cart-invoice-lines">
-          {(invoiceExpanded || invoiceDragActive ? cart : cart.slice(0, 2)).map((item) => {
+        {invoiceExpanded || invoiceDragActive ? <dl className="cart-invoice-lines">
+          {cart.map((item) => {
             const heading = item.mode === "NETWORK" ? networkCartHeading(item) : item.name;
             const matching = cart.filter((line) => line.mode === "NETWORK" && networkCartHeading(line) === heading);
             const suffix = item.mode === "NETWORK" && matching.length > 1
@@ -3014,17 +3033,17 @@ function CartView({
             return <div key={item.lineId} className="cart-invoice-line"><dt dir="auto">{item.quantity} × {heading}{suffix}</dt>
               <dd>{displayCurrencyAmount(amount, item.currency)}</dd></div>;
           })}
-          {!invoiceExpanded && !invoiceDragActive && cart.length > 2 ? <div className="cart-invoice-more"><dt>{language === "ar" ? `و${cart.length - 2} أصناف أخرى` : `and ${cart.length - 2} more items`}</dt></div> : null}
-        </dl>
+        </dl> : null}
         <dl className="cart-invoice-totals">
-          {invoiceExpanded || invoiceDragActive ? <div>
+          <div>
             <dt>{t.subtotal}</dt>
             <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")}</dd>
-          </div> : null}
-          {fulfillment === "delivery" ? (
+          </div>
+          {fulfillment === "delivery" || (!invoiceExpanded && !invoiceDragActive) ? (
           <div>
               <dt>{t.deliveryFee}</dt>
-              <dd>{displayedFee === null ? language === "ar" ? "تُحدّد حسب المنطقة" : "Determined by area"
+              <dd>{fulfillment === "pickup" ? language === "ar" ? "لا تُضاف للاستلام" : "Not charged for pickup"
+                : displayedFee === null ? language === "ar" ? "تُحدّد حسب المنطقة" : "Determined by area"
                 : displayedFee === "0" ? language === "ar" ? "مجاني" : "Free"
                 : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س")}</dd>
           </div>

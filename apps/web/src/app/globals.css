@@ -1,5 +1,9 @@
 @import url("https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap");
 
+html {
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -12599,11 +12603,11 @@ body {
 
 .public-screen .cart-page-copy,
 .public-screen .network-cart-item .cart-page-copy {
-  align-self: start;
-  align-content: start;
+  align-self: stretch;
+  align-content: center;
   grid-column: 2;
   grid-row: 1;
-  padding: 2px 0 8px;
+  padding: 2px 0;
 }
 
 .public-screen .cart-page-copy b {
@@ -12719,6 +12723,7 @@ body {
   max-width: 440px;
   padding-top: 5px;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
+  touch-action: none;
 }
 
 .public-screen .cart-invoice-handle {
@@ -12745,10 +12750,20 @@ body {
 .public-screen .cart-checkout-card.invoice-expanded .cart-invoice-scroll { max-height: min(52dvh, 490px); }
 .public-screen .cart-invoice-lines { gap: 4px; margin-bottom: 10px; }
 .public-screen .cart-invoice-lines .cart-invoice-line { gap: 10px; }
-.public-screen .cart-invoice-lines dt { color: var(--color-text); flex: 1; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-.public-screen .cart-invoice-lines dd { flex: 0 0 auto; font-weight: 700; }
-.public-screen .cart-invoice-more dt { color: var(--color-muted); font-size: 11px; font-weight: 500; }
+.public-screen .cart-invoice-lines .cart-invoice-line dt,
+.public-screen .cart-invoice-lines .cart-invoice-line dd {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.public-screen .cart-invoice-lines dt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.public-screen .cart-invoice-lines dd { flex: 0 0 auto; }
 .public-screen .cart-invoice-totals { border-top: 1px solid var(--color-border); padding-top: 8px; }
+.public-screen .cart-invoice-totals > div:not(:last-child) dt,
+.public-screen .cart-invoice-totals > div:not(:last-child) dd { color: var(--color-text); }
+.public-screen .cart-invoice-totals > div:last-child dt,
+.public-screen .cart-invoice-totals > div:last-child dd { color: var(--color-secondary); }
 
 .public-screen .cart-message-preview-open {
   background: var(--color-surface);
