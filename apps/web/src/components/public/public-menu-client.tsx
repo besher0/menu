@@ -1693,6 +1693,8 @@ function MenuView({
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [newNetworkProduct, setNewNetworkProduct] = useState<PublicProduct | null>(null);
   const [managedNetworkProduct, setManagedNetworkProduct] = useState<PublicProduct | null>(null);
+  const newNetworkDialogRef = useRef<HTMLElement | null>(null);
+  const managedNetworkDialogRef = useRef<HTMLElement | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
   const spotlightPointerStartX = useRef<number | null>(null);
@@ -1709,13 +1711,27 @@ function MenuView({
   useEffect(() => {
     if (!newNetworkProduct && !managedNetworkProduct) return;
     const oldOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = newNetworkDialogRef.current ?? managedNetworkDialogRef.current;
     document.body.style.overflow = "hidden";
+    dialog?.querySelector<HTMLButtonElement>("header button")?.focus({ preventScroll: true });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { setNewNetworkProduct(null); setManagedNetworkProduct(null); }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => { document.body.style.overflow = oldOverflow; document.removeEventListener("keydown", onKeyDown); };
+    return () => { document.body.style.overflow = oldOverflow; document.removeEventListener("keydown", onKeyDown); previouslyFocused?.focus({ preventScroll: true }); };
   }, [newNetworkProduct, managedNetworkProduct]);
+
+  function keepNetworkDialogFocus(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"))
+      .filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = useMemo(() => data.categories.find((category) => category.slug === "all"), [data.categories]);
   const regularCategories = useMemo(() => data.categories.filter((category) => category.slug !== "all"), [data.categories]);
@@ -1796,7 +1812,7 @@ function MenuView({
   const productsWithoutCategory = selectedCategorySlug === "all"
     ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
     : [];
-  const headerCategories = useMemo(() => data.categories, [data.categories]);
+  const orderedCategories = useMemo(() => allCategory ? [allCategory, ...regularCategories] : regularCategories, [allCategory, regularCategories]);
 
   useEffect(() => {
     if (selectedMood || selectedCollection) {
@@ -2097,7 +2113,7 @@ function MenuView({
   function renderCategoryLanding() {
     return (
       <section className="category-banner-list category-landing-list" id="menu-categories">
-        {data.categories.map((category) => {
+        {orderedCategories.map((category) => {
           const position = parseIconPosition(category.imagePosition);
           const productsCount = category.slug === "all"
             ? visibleProducts.length
@@ -2120,10 +2136,10 @@ function MenuView({
               {category.imageUrl ? (
                 <span className="category-banner-visual" aria-hidden="true">
                   <img src={category.imageUrl} alt="" />
-                </span>
+              </span>
               ) : null}
               <div className="category-banner-copy">
-                <span>{category.name}</span>
+                <span className={category.name.length > 8 ? "category-banner-long-title" : undefined}>{category.name}</span>
                 <b>{productsCount} {t.itemCount}</b>
               </div>
               <svg className="category-banner-arrow" viewBox="0 0 38 24" aria-hidden="true">
@@ -2151,7 +2167,7 @@ function MenuView({
           <ProductImageMedia product={product} />
         </span>
         <div className="menu-product-copy">
-          <b>{product.name}</b>
+          <b dir="auto">{product.name}</b>
           <p>{product.description}</p>
           {showPrices ? (
             <ProductPrice
@@ -2216,7 +2232,7 @@ function MenuView({
           ) : null}
 
           {showNestedCategoryStrip ? <section className={`menu-category-strip category-nav-${categoryNavVariant}`} id="menu-categories" ref={categoryStripRef}>
-            {headerCategories.map((category) => {
+            {orderedCategories.map((category) => {
               const isAllCategory = category.slug === "all";
               const isActive = category.slug === highlightedCategorySlug;
               const productsCount = isAllCategory
@@ -2361,10 +2377,10 @@ function MenuView({
       ) : null}
       {newNetworkProduct ? <div className="menu-network-modal-backdrop" onMouseDown={(event) => {
         if (event.target === event.currentTarget) setNewNetworkProduct(null);
-      }}><section className="menu-network-modal" role="dialog" aria-modal="true" aria-labelledby="menu-network-new-title" dir={language === "ar" ? "rtl" : "ltr"}>
+      }}><section ref={newNetworkDialogRef} onKeyDown={keepNetworkDialogFocus} className="menu-network-modal menu-network-modal-new" role="dialog" aria-modal="true" aria-labelledby="menu-network-new-title" dir={language === "ar" ? "rtl" : "ltr"}>
         <header><h2 id="menu-network-new-title" dir="auto">{language === "ar" ? `تكوين جديد — ${newNetworkProduct.name}` : `New configuration — ${newNetworkProduct.name}`}</h2>
           <button type="button" onClick={() => setNewNetworkProduct(null)} aria-label={language === "ar" ? "إغلاق" : "Close"}><X size={20} /></button></header>
-        <div className="menu-network-modal-scroll"><ProductConfigurator key={newNetworkProduct.id}
+        <div className="menu-network-modal-scroll menu-network-modal-new-content"><ProductConfigurator key={newNetworkProduct.id}
           restaurantSlug={data.restaurant.slug} productId={newNetworkProduct.id!} currency={newNetworkProduct.currency}
           initialQuantity={1} maxQuantity={Math.max(0, 100 - menuCartCount)} freshStart editableQuantity
           onNetworkQuote={(quote, _lineId, amount = 1) => {
@@ -2372,11 +2388,11 @@ function MenuView({
             if (saved) window.setTimeout(() => setNewNetworkProduct(null), 0);
             return saved;
           }} checkoutEnabled={networkCheckoutEnabled} orderingEnabled={whatsappOrderingEnabled && networkCheckoutEnabled && showPrices}
-          showPrices={showPrices} locale={language} /></div>
+          showPrices={showPrices} showBottomBar hideBottomBarCartIcon locale={language} /></div>
       </section></div> : null}
       {managedNetworkProduct && managedNetworkLines.length ? <div className="menu-network-modal-backdrop" onMouseDown={(event) => {
         if (event.target === event.currentTarget) setManagedNetworkProduct(null);
-      }}><section className="menu-network-modal" role="dialog" aria-modal="true" aria-labelledby="menu-network-manage-title" dir={language === "ar" ? "rtl" : "ltr"}>
+      }}><section ref={managedNetworkDialogRef} onKeyDown={keepNetworkDialogFocus} className="menu-network-modal" role="dialog" aria-modal="true" aria-labelledby="menu-network-manage-title" dir={language === "ar" ? "rtl" : "ltr"}>
         <header><h2 id="menu-network-manage-title" dir="auto">{language === "ar" ? `تكوينات ${managedNetworkProduct.name} في السلة` : `${managedNetworkProduct.name} configurations in cart`}</h2>
           <button type="button" onClick={() => setManagedNetworkProduct(null)} aria-label={language === "ar" ? "إغلاق" : "Close"}><X size={20} /></button></header>
         <div className="menu-network-modal-scroll"><div className="menu-network-saved-list">

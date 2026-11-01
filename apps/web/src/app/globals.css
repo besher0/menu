@@ -6072,7 +6072,7 @@ body:has(.public-page)::-webkit-scrollbar {
   align-self: start;
   background: #ffffff;
   box-sizing: border-box;
-  direction: rtl;
+  direction: inherit;
   display: flex;
   gap: 12px;
   height: 79px;
@@ -6108,7 +6108,7 @@ body:has(.public-page)::-webkit-scrollbar {
   background: transparent;
   border: 0;
   color: #a5a1a1;
-  direction: rtl;
+  direction: inherit;
   display: grid;
   flex: 0 0 66px;
   gap: 1px;
@@ -6359,6 +6359,18 @@ body:has(.public-page)::-webkit-scrollbar {
   padding-bottom: 4px;
   position: relative;
   width: max-content;
+}
+.category-banner-copy .category-banner-long-title {
+  display: -webkit-box;
+  font-size: clamp(22px, 7vw, 30px);
+  line-height: 1.05;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  width: auto;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .category-banner-copy span::after {
@@ -6785,16 +6797,17 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .menu-product-row .menu-product-copy {
   align-content: center;
-  direction: ltr;
+  direction: rtl;
   display: grid;
   gap: 5px;
   grid-column: 1;
   grid-row: 1;
-  justify-items: end;
+  justify-items: start;
   min-width: 0;
   padding: 10px 8px 10px 58px;
-  text-align: end;
+  text-align: right;
 }
+.public-screen[dir="ltr"] .menu-product-row .menu-product-copy { direction: ltr; text-align: left; }
 
 .public-screen.prices-hidden .menu-product-row .menu-product-copy {
   align-content: center;
@@ -6812,7 +6825,7 @@ body:has(.public-page)::-webkit-scrollbar {
   color: var(--color-text-secondary, #60656f);
   direction: rtl;
   display: -webkit-box;
-  font-size: 12px;
+  font-size: 13px;
   justify-self: stretch;
   line-height: 1.45;
   margin: 0;
@@ -6821,15 +6834,16 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: right;
   width: 100%;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .menu-product-row .product-price {
   color: var(--color-secondary);
-  justify-content: flex-end;
-  justify-self: end;
+  justify-content: flex-start;
+  justify-self: start;
   line-height: 1.1;
 }
+.menu-product-row .product-price span { font-size: 19px; }
 
 .menu-product-row .menu-product-quantity {
   bottom: 8px;
@@ -6933,7 +6947,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .menu-product-card img,
 .menu-product-card .product-image-placeholder {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 1.18;
   object-fit: cover;
   width: 100%;
 }
@@ -7014,7 +7028,7 @@ body:has(.public-page)::-webkit-scrollbar {
   justify-content: center;
   padding: 12px;
   position: fixed;
-  z-index: 110;
+  z-index: 1001;
 }
 .menu-network-modal {
   background: var(--color-surface, #fff);
@@ -7036,7 +7050,36 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 .menu-network-modal > header h2 { font-size: 17px; line-height: 1.4; margin: 0 0 12px; }
 .menu-network-modal > header button { background: transparent; border: 0; color: var(--color-text); cursor: pointer; padding: 3px; }
-.menu-network-modal-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.menu-network-modal-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; }
+.menu-network-modal-new { overflow: hidden; padding: 0; }
+.menu-network-modal-new > header { padding: 16px 16px 0; }
+.menu-network-modal-new-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-inline: 0;
+}
+.menu-network-modal-new-content > [data-testid="public-product-configurator"] {
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 16px;
+}
+.menu-network-modal-new-content > .product-bottom-cart-network {
+  bottom: auto;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  left: auto;
+  max-width: none;
+  padding-bottom: max(18px, env(safe-area-inset-bottom));
+  position: relative;
+  transform: none;
+}
+.menu-network-modal-new-content .product-bottom-cart-network .product-cart-link { grid-column: 1; }
+.menu-network-modal-new-content .product-bottom-cart-network .quantity-control { grid-column: 2; }
 .menu-network-saved-list { display: grid; gap: 10px; }
 .menu-network-saved-line { border: 1px solid var(--color-border); border-radius: 14px; display: grid; gap: 7px; padding: 12px; }
 .menu-network-saved-line b { color: var(--color-text); }
@@ -7051,8 +7094,10 @@ body:has(.public-page)::-webkit-scrollbar {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: start;
   white-space: nowrap;
 }
+.menu-category-chip > span:last-of-type { direction: inherit; unicode-bidi: plaintext; }
 .menu-product-row .product-price,
 .menu-product-card .product-price {
   max-width: 100%;

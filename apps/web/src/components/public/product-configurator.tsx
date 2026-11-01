@@ -49,6 +49,7 @@ type Props = {
   orderingEnabled?: boolean;
   showPrices?: boolean;
   showBottomBar?: boolean;
+  hideBottomBarCartIcon?: boolean;
   freshStart?: boolean;
   editableQuantity?: boolean;
   locale?: "ar" | "en";
@@ -335,7 +336,7 @@ function OptionGroup({
 
 export function ProductConfigurator({ restaurantSlug, productId, currency, cartHref, cartCount = 0, initialSelection,
   editingLineId, initialQuantity = 1, maxQuantity = 100, onNetworkQuote, checkoutEnabled = false,
-  orderingEnabled = false, showPrices = true, showBottomBar = false, freshStart = false,
+  orderingEnabled = false, showPrices = true, showBottomBar = false, hideBottomBarCartIcon = false, freshStart = false,
   editableQuantity = false, locale = "ar" }: Props) {
   const [envelope, setEnvelope] = useState<PublicProductConfigurationResponse | null>(null);
   const [selection, setSelection] = useState<ProductSelectionV1 | null>(null);
@@ -520,7 +521,7 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
         <button type="button" onClick={() => setDraftQuantity((value) => Math.max(1, value - 1))} disabled={draftQuantity <= 1} aria-label={say(locale, "إنقاص الكمية", "Decrease quantity")}><Minus size={16} /></button>
       </div>
       <button type="button" className="product-cart-link" dir={locale === "ar" ? "rtl" : "ltr"} onClick={() => void continuePreview()} disabled={!canAdd}>
-        {quoteBusy ? <Loader2 size={18} className={styles.spin} /> : <ShoppingBag size={18} />}
+        {quoteBusy ? <Loader2 size={18} className={styles.spin} /> : !hideBottomBarCartIcon ? <ShoppingBag size={18} /> : null}
         <span>{editingLineId ? say(locale, "حفظ التكوين", "Save choices") : say(locale, "إضافة إلى السلة", "Add to cart")}</span>
       </button>
       {cartHref ? <a href={cartHref} className="product-network-cart-shortcut" aria-label={say(locale, "عرض السلة", "View cart")} title={say(locale, "عرض السلة", "View cart")}><ShoppingBag size={20} /><b>{cartCount}</b></a> : null}
