@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { currencyDisplayReconciliation, formatCurrencyAmount, validateCurrencyAmount } from "@menu/shared";
 import { compareMoney, createConfigurationSnapshot, createSelectionKey, multiplyMoney, sumMoney, type PriceLine, type ProductConfigurationContext, type ProductSelectionV1 } from "@menu/shared";
@@ -255,7 +255,10 @@ export class PublicWhatsappCheckoutService {
       const needsNetwork = request.items.some((line) => line.mode === "NETWORK");
       const capability = needsNetwork ? enabled("PRODUCT_CONFIGURATION") : false;
       if (needsNetwork && !capability) throw new ForbiddenException({ error: "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE" });
-      const lines: TrustedLine[] = request.items.map((line, index) => {
+      const lineErrors: { lineId: string; code: string; issues: { code: string; path: string; message: string }[] }[] = [];
+      const lineErrorStatuses: number[] = [];
+      const lines: TrustedLine[] = request.items.flatMap<TrustedLine>((line) => {
+        try {
         const product = catalog.find((candidate) => line.mode === "LEGACY"
           ? candidate.slug === line.productSlug : candidate.id === line.productId);
         if (!product || !product.isActive || !product.isAvailable || product.deletedAt) {
@@ -275,9 +278,9 @@ export class PublicWhatsappCheckoutService {
               message: "This product has an invalid price for the restaurant currency." });
           }
           const lineTotal = multiplyMoney(unitPrice, line.quantity);
-          return { mode: "LEGACY", lineId: line.lineId, productId: product.id, productName: product.name,
+          return [{ mode: "LEGACY" as const, lineId: line.lineId, productId: product.id, productName: product.name,
             quantity: line.quantity, ...note, unitPrice, lineTotal,
-            changed: line.expectedUnitPrice === undefined || compareMoney(line.expectedUnitPrice, unitPrice) !== 0 };
+            changed: line.expectedUnitPrice === undefined || compareMoney(line.expectedUnitPrice, unitPrice) !== 0 }];
         }
         if (product.configurationTree === null || product.configurationVersion < 1) {
           throw new ConflictException({ error: "WHATSAPP_PRODUCT_TYPE_CHANGED", lineId: line.lineId });
@@ -313,14 +316,40 @@ export class PublicWhatsappCheckoutService {
           priceBreakdown: snapshot.snapshot.priceLines, configurationTree: resolved.configuration,
           linkedSources: resolved.linkedProducts.map((source) => ({ productId: source.productId,
             productName: source.name, mode: source.mode, configurationTree: source.configuration })) };
-        return { mode: "NETWORK", lineId: line.lineId, productId: product.id, productName: product.name,
+        return [{ mode: "NETWORK" as const, lineId: line.lineId, productId: product.id, productName: product.name,
           quantity: line.quantity, ...note, unitPrice, lineTotal,
           changed: line.expectedUnitPrice === undefined || compareMoney(line.expectedUnitPrice, unitPrice) !== 0
             || (line.expectedLinkedSourceRevisions !== undefined
               && stableJson(line.expectedLinkedSourceRevisions) !== stableJson(result.quote.linkedSourceRevisions)),
           configurationRevision: result.quote.configurationRevision,
-          linkedSourceRevisions: result.quote.linkedSourceRevisions, display };
+          linkedSourceRevisions: result.quote.linkedSourceRevisions, display }];
+        } catch (error) {
+          if (!(error instanceof HttpException) || ![400, 409].includes(error.getStatus())) throw error;
+          const response = error.getResponse();
+          if (!response || typeof response !== "object" || Array.isArray(response)) throw error;
+          const payload = response as Record<string, unknown>;
+          if (payload.lineId !== line.lineId || typeof payload.error !== "string") throw error;
+          const issues = Array.isArray(payload.issues) ? payload.issues.filter((issue): issue is { code: string; path: string; message: string } =>
+            Boolean(issue && typeof issue === "object" && typeof issue.code === "string"
+              && typeof issue.path === "string" && typeof issue.message === "string")) : [];
+          lineErrors.push({ lineId: line.lineId, code: payload.error, issues });
+          lineErrorStatuses.push(error.getStatus());
+          return [];
+        }
       });
+      if (lineErrors.length) {
+        const priceChanges = lines.flatMap((valid) => {
+          const requested = request.items.find((item) => item.lineId === valid.lineId);
+          return requested?.expectedUnitPrice !== undefined
+            && compareMoney(requested.expectedUnitPrice, valid.unitPrice) !== 0
+            ? [{ lineId: valid.lineId, previousUnitPrice: requested.expectedUnitPrice,
+              currentUnitPrice: valid.unitPrice, quantity: valid.quantity }] : [];
+        });
+        const payload = { error: lineErrors.length === 1 ? lineErrors[0].code : "WHATSAPP_CART_REVIEW_REQUIRED",
+          lineErrors, priceChanges };
+        if (lineErrorStatuses.every((status) => status === 400)) throw new BadRequestException(payload);
+        throw new ConflictException(payload);
+      }
       const { items: _items, locale: _locale, branchSlug: _branchSlug, ...details } = request;
       const itemsSubtotal = sumMoney(lines.map((line) => line.lineTotal));
       const deliveryFee = request.fulfillmentType === "delivery" ? readDeliveryFee(dashboardSettings, restaurant.currency) : null;

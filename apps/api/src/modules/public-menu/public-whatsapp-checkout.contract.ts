@@ -77,7 +77,8 @@ export function parseWhatsappCheckoutRequest(value: unknown): WhatsappCheckoutRe
     }
     const parsed = parsePublicQuoteSelection(raw.selection);
     if (!parsed.selection || parsed.selection.productId !== raw.productId) {
-      throw new BadRequestException({ error: "INVALID_WHATSAPP_SELECTION", message: "Invalid Network selection.", issues: parsed.issues });
+      throw new BadRequestException({ error: "INVALID_WHATSAPP_SELECTION", lineId: raw.lineId,
+        message: "Invalid Network selection.", issues: parsed.issues });
     }
     if (raw.expectedLinkedSourceRevisions !== undefined && (!Array.isArray(raw.expectedLinkedSourceRevisions)
       || raw.expectedLinkedSourceRevisions.length > DEFAULT_ENGINE_LIMITS.maxNodes

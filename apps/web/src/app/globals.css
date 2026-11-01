@@ -9005,6 +9005,12 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: right;
 }
 
+.public-screen .cart-confirm-form .cart-field-error {
+  color: var(--color-error, #ed1f2b);
+  font-size: 12px;
+  text-align: start;
+}
+
 .cart-confirm-form input {
   background: #fbfbfc;
   border: 1px solid #eceef2;

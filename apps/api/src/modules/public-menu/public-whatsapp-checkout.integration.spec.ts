@@ -417,6 +417,35 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect((await prepare(request([legacyLine, networkLine]), "s6e2-r2")).status).toBe(409);
   });
 
+  it("reports every invalid line and valid-line price drift without creating an Order", async () => {
+    const before = await prisma.order.count();
+    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { isAvailable: false } });
+    await prisma.product.update({ where: { id: "s6e2-source" }, data: { isAvailable: false } });
+    await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "13.000001" } });
+    const result = await prepare(request([networkLine, comboLine, legacyLine]));
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("WHATSAPP_CART_REVIEW_REQUIRED");
+    expect(result.body.lineErrors).toEqual([
+      expect.objectContaining({ lineId: networkLine.lineId, code: "WHATSAPP_PRODUCT_UNAVAILABLE" }),
+      expect.objectContaining({ lineId: comboLine.lineId })
+    ]);
+    expect(result.body.priceChanges).toEqual([{
+      lineId: legacyLine.lineId, previousUnitPrice: "12.000001", currentUnitPrice: "13.000001", quantity: 2
+    }]);
+    expect(result.body.acceptanceToken).toBeUndefined();
+    expect(result.body.whatsappUrl).toBeUndefined();
+    expect(await prisma.order.count()).toBe(before);
+  });
+
+  it("attributes one unavailable line without blaming the remaining mixed-cart lines", async () => {
+    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { isAvailable: false } });
+    const result = await prepare(request([legacyLine, networkLine]));
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe("WHATSAPP_PRODUCT_UNAVAILABLE");
+    expect(result.body.lineErrors).toEqual([expect.objectContaining({ lineId: networkLine.lineId })]);
+    expect(result.body.priceChanges).toEqual([]);
+  });
+
   it("keeps the public feature OFF by default and refuses a missing signing key", async () => {
     delete process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT;
     expect((await prepare(request([networkLine]))).status).toBe(403);
@@ -620,7 +649,9 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
       await prisma.product.updateMany({ where: { restaurantId: "s6e2-r1" }, data: { currency: "SYP" } });
       const historicalInvalid = await prepare(request([legacyLine, networkLine]));
       expect(historicalInvalid.status).toBe(409);
-      expect(historicalInvalid.body.error).toBe("INVALID_CURRENCY_PRICE");
+      expect(historicalInvalid.body.lineErrors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ lineId: legacyLine.lineId, code: "INVALID_CURRENCY_PRICE" })
+      ]));
 
       await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12" } });
       await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: wholePizza } });

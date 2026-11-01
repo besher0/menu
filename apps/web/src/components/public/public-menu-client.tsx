@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type CSSProperties, type PointerEvent, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Pencil, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
-import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
+import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars, type PublicWhatsappLineError, type PublicWhatsappPriceChange } from "@/lib/api";
 import { getPublicProductConfiguration, getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
-import { multiplyMoney, sumMoney } from "@menu/shared";
+import { compareMoney, multiplyMoney, sumMoney } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator } from "./product-configurator";
@@ -2632,6 +2632,15 @@ function CartView({
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewedLineIds, setReviewedLineIds] = useState<Set<string>>(() => new Set());
   const [reviewModalLineIds, setReviewModalLineIds] = useState<string[] | null>(null);
+  const [checkoutLineErrors, setCheckoutLineErrors] = useState<PublicWhatsappLineError[]>([]);
+  const [checkoutPriceChanges, setCheckoutPriceChanges] = useState<PublicWhatsappPriceChange[]>([]);
+  const [checkoutReviewOpen, setCheckoutReviewOpen] = useState(false);
+  const [pendingEditedLineId, setPendingEditedLineId] = useState<string | null>(null);
+  useEffect(() => {
+    const present = new Set(cart.map((item) => item.lineId));
+    setCheckoutLineErrors((current) => current.filter((issue) => present.has(issue.lineId)));
+    setReviewedLineIds((current) => new Set([...current].filter((lineId) => present.has(lineId))));
+  }, [cart]);
   const networkEditorRef = useRef<HTMLElement | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
@@ -2898,13 +2907,42 @@ function CartView({
   const trusted = useTrustedWhatsappCheckout({ cart, restaurantSlug: data.restaurant.slug, locale: language,
     details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
       pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
-  const displayedFee = trusted.pendingPrice ? trusted.pendingPrice.draft.deliveryFee : deliveryFee;
+  useEffect(() => {
+    if (!trusted.reviewIssue) return;
+    const matching = trusted.reviewIssue.lineErrors.filter((issue) => cart.some((line) => line.lineId === issue.lineId));
+    if (!matching.length) return;
+    setCheckoutLineErrors(matching);
+    setCheckoutPriceChanges(trusted.reviewIssue.priceChanges);
+    setCheckoutReviewOpen(true);
+    setReviewedLineIds(new Set(matching.map((issue) => issue.lineId)));
+    setCartStep("review");
+  }, [trusted.reviewIssue]);
+
+  useEffect(() => {
+    if (!pendingEditedLineId) return;
+    const lineId = pendingEditedLineId;
+    setPendingEditedLineId(null);
+    void retryNetworkLine(lineId).then((result) => {
+      if (result?.status === "CURRENT" || result?.status === "CHANGED" || result?.status === "OFFLINE") {
+        setCheckoutLineErrors((current) => current.filter((issue) => issue.lineId !== lineId));
+        setReviewedLineIds((current) => { const next = new Set(current); next.delete(lineId); return next; });
+      }
+      if (result?.status === "INVALID") {
+        setCheckoutLineErrors((current) => current.map((issue) => issue.lineId === lineId
+          ? { lineId, code: result.issues[0]?.code ?? "INVALID_QUOTE_SELECTION", issues: result.issues }
+          : issue));
+      }
+      if (result?.status === "CHANGED" || result?.status === "INVALID" || result?.status === "OFFLINE") {
+        setReviewModalLineIds([lineId]);
+      }
+    });
+  }, [cart, pendingEditedLineId]);
+  const displayedFee = deliveryFee;
   const displayedItemsSubtotal = useTrustedNetworkCheckout && cartStep === "confirm"
-    ? trusted.pendingPrice?.draft.itemsSubtotal ?? trustedTotal
+    ? trustedTotal
     : useTrustedNetworkCheckout ? trustedTotal : legacySubtotal;
   const displayedOrderTotal = useTrustedNetworkCheckout
-    ? trusted.pendingPrice ? trusted.pendingPrice.draft.totalAmount
-      : fulfillment === "delivery" && deliveryFee === null ? null : sumMoney([trustedTotal, deliveryFee ?? "0"])
+    ? fulfillment === "delivery" && deliveryFee === null ? null : sumMoney([trustedTotal, deliveryFee ?? "0"])
     : total;
   useEffect(() => {
     function restoreReviewStep() {
@@ -2932,6 +2970,10 @@ function CartView({
     }
     if (cartStep === "review") {
       if (reviewBusy) return;
+      if (checkoutLineErrors.some((issue) => cart.some((item) => item.mode === "LEGACY" && item.lineId === issue.lineId))) {
+        setCheckoutReviewOpen(true);
+        return;
+      }
       if (networkItems.length) {
         setReviewBusy(true);
         const reviewed = await Promise.all(networkItems.map((item) => retryNetworkLine(item.lineId)));
@@ -2942,13 +2984,16 @@ function CartView({
         }
         const problems = reviewed.filter((item): item is NetworkCartItem => item !== null && item.status !== "CURRENT");
         if (problems.length) {
-          setReviewedLineIds(new Set(problems.filter((item) => item.status === "INVALID" || item.status === "OFFLINE").map((item) => item.lineId)));
+          setReviewedLineIds(new Set(problems.filter((item) => item.status === "INVALID").map((item) => item.lineId)));
           setReviewModalLineIds(problems.map((item) => item.lineId));
           setCheckoutError(null);
           return;
         }
       }
       setReviewedLineIds(new Set());
+      setCheckoutLineErrors([]);
+      setCheckoutPriceChanges([]);
+      setCheckoutReviewOpen(false);
       setCheckoutError(null);
       goToConfirmStep();
       return;
@@ -3007,7 +3052,7 @@ function CartView({
     setReviewedLineIds(new Set(remaining.filter((lineId) => {
       const result = results.find((item) => item?.lineId === lineId);
       const current = result ?? cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === lineId);
-      return current?.status === "INVALID" || current?.status === "OFFLINE";
+      return current?.status === "INVALID";
     })));
     setReviewModalLineIds(remaining.length ? remaining : null);
   }
@@ -3016,6 +3061,8 @@ function CartView({
     const item = cart.find((candidate): candidate is NetworkCartItem => candidate.mode === "NETWORK" && candidate.lineId === lineId);
     return item ? [item] : [];
   }) ?? [];
+  const detailsInvalid = trusted.failureCode === "INVALID_NETWORK_ORDER_DETAILS";
+  const deliveryMissing = cartStep === "confirm" && fulfillment === "delivery" && Boolean(checkoutError || detailsInvalid);
 
   return (
     <main className={`cart-page ${showPrices ? "" : "prices-hidden"} ${invoiceExpanded ? "invoice-expanded-page" : ""} ${whatsappOrderingEnabled && !(hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) ? "has-invoice" : ""}`}
@@ -3036,7 +3083,7 @@ function CartView({
                 const hasSizeChoice = item.mode === "NETWORK" && item.acceptedQuote.priceBreakdown.some((line) => line.kind === "SIZE");
 
                 return (
-                  <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""} ${item.mode === "NETWORK" && (choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId)) ? "has-network-details" : ""} ${item.mode === "NETWORK" && reviewedLineIds.has(item.lineId) && (item.status === "INVALID" || item.status === "OFFLINE") ? "network-cart-needs-review" : ""}`}>
+                  <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""} ${item.mode === "NETWORK" && (choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId)) ? "has-network-details" : ""} ${reviewedLineIds.has(item.lineId) && (item.mode === "LEGACY" || item.status !== "OFFLINE") ? "network-cart-needs-review" : ""}`}>
                     {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
                       <span className="product-image-placeholder" role="img" aria-label={item.name}>
                         <ImageIcon size={24} />
@@ -3069,7 +3116,7 @@ function CartView({
                       <Trash2 size={15} />
                     </button>
                     {item.mode === "NETWORK" && (choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId)) ? <div className="cart-card-configuration">
-                      {choiceLabels.length || hasSizeChoice ? <div className="network-cart-tools">
+                      {choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId) ? <div className="network-cart-tools">
                         {data.products.some((candidate) => candidate.id === item.productId) ? <button type="button" className="network-cart-edit"
                           onClick={() => { setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); }}
                           aria-label={language === "ar" ? `تعديل تكوين ${item.name}` : `Edit ${item.name} choices`}><Pencil size={15} />{language === "ar" ? "تعديل" : "Edit"}</button> : null}
@@ -3081,7 +3128,8 @@ function CartView({
                           <ChevronDown size={18} /></button> : null}
                       </div> : null}
                       <NetworkCartDetails item={item} language={language}
-                        expanded={expandedNetworkLines.has(item.lineId)} reviewed={reviewedLineIds.has(item.lineId)} />
+                        expanded={expandedNetworkLines.has(item.lineId)} reviewed={reviewedLineIds.has(item.lineId)}
+                        serverRejected={checkoutLineErrors.some((issue) => issue.lineId === item.lineId)} />
                     </div> : null}
                     <label className="cart-item-note cart-card-note">
                       <MessageCircle size={18} aria-hidden="true" />
@@ -3089,6 +3137,9 @@ function CartView({
                         placeholder={language === "ar" ? "إضافة ملاحظة" : "Add a note"}
                         aria-label={language === "ar" ? `ملاحظة ${item.name}` : `Note for ${item.name}`} />
                     </label>
+                    {item.mode === "LEGACY" && checkoutLineErrors.some((issue) => issue.lineId === item.lineId)
+                      ? <p className="network-cart-status status-invalid" role="alert">
+                        {language === "ar" ? "راجع هذا الصنف" : "Review this item"}</p> : null}
                   </article>
                 );
               })}
@@ -3119,9 +3170,11 @@ function CartView({
         <section className={`cart-confirm-form ${fulfillment === "pickup" ? "pickup-mode" : "delivery-mode"}`}>
           {useTrustedNetworkCheckout ? <>
             <label><span>{language === "ar" ? "اسم الزبون (اختياري)" : "Customer name (optional)"}</span>
-              <input value={customerName} maxLength={120} onChange={(event) => setCustomerName(event.target.value)} /></label>
+              <input value={customerName} maxLength={120} onChange={(event) => setCustomerName(event.target.value)} />
+              {trusted.failureField === "customerName" ? <small className="cart-field-error" role="alert">{language === "ar" ? "راجع اسم الزبون." : "Review the customer name."}</small> : null}</label>
             <label><span>{language === "ar" ? "الهاتف" : "Phone"}</span>
-              <input value={customerPhone} maxLength={40} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
+              <input value={customerPhone} maxLength={40} onChange={(event) => setCustomerPhone(event.target.value)} />
+              {trusted.failureField === "customerPhone" ? <small className="cart-field-error" role="alert">{language === "ar" ? "راجع رقم الهاتف." : "Review the phone number."}</small> : null}</label>
           </> : null}
           <div className="fulfillment-toggle">
             <button type="button" className={fulfillment === "delivery" ? "active" : ""} onClick={() => setFulfillment("delivery")}>
@@ -3138,14 +3191,19 @@ function CartView({
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Area" : "المنطقة"}</span>
                 <input value={deliveryArea} onChange={(event) => setDeliveryArea(event.target.value)} />
+                {(trusted.failureField === "deliveryArea" || (deliveryMissing && !deliveryArea.trim()))
+                  ? <small className="cart-field-error" role="alert">{language === "ar" ? "أدخل منطقة توصيل صالحة." : "Enter a valid delivery area."}</small> : null}
               </label>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Near" : "قريب من"}</span>
                 <input value={deliveryNear} onChange={(event) => setDeliveryNear(event.target.value)} />
+                {(trusted.failureField === "deliveryNear" || (deliveryMissing && !deliveryNear.trim()))
+                  ? <small className="cart-field-error" role="alert">{language === "ar" ? "أدخل معلمًا قريبًا صالحًا." : "Enter a valid nearby landmark."}</small> : null}
               </label>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Order note" : "ملاحظة للطلب"}</span>
                 <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} />
+                {trusted.failureField === "orderNote" ? <small className="cart-field-error" role="alert">{language === "ar" ? "راجع ملاحظة الطلب." : "Review the order note."}</small> : null}
               </label>
             </>
           ) : (
@@ -3153,10 +3211,12 @@ function CartView({
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Order note" : "ملاحظة"}</span>
                 <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} />
+                {trusted.failureField === "orderNote" ? <small className="cart-field-error" role="alert">{language === "ar" ? "راجع ملاحظة الطلب." : "Review the order note."}</small> : null}
               </label>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Pickup time" : "وقت الاستلام"}</span>
                 <input value={pickupTime} onChange={(event) => setPickupTime(event.target.value)} />
+                {trusted.failureField === "pickupTime" ? <small className="cart-field-error" role="alert">{language === "ar" ? "راجع موعد الاستلام." : "Review the pickup time."}</small> : null}
               </label>
             </>
           )}
@@ -3218,7 +3278,7 @@ function CartView({
         </div>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
         {useTrustedNetworkCheckout && trustedDisabledReason && !networkItems.some((item) => item.status !== "CURRENT") ? <p className="cart-message">{trustedDisabledReason}</p> : null}
-        {useTrustedNetworkCheckout && trusted.error ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
+        {useTrustedNetworkCheckout && trusted.error && cartStep === "confirm" ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
         <button
           type="button"
@@ -3230,6 +3290,27 @@ function CartView({
           {orderSubmitting || trusted.busy || reviewBusy ? t.preparingOrder : cartStep === "review" ? "التالي" : t.sendViaWhatsapp}
         </button>
       </section> : <section className="network-cart-gate" role="status">{language === "ar" ? "إرسال الطلب غير متاح لهذه القائمة حاليًا." : "Ordering is unavailable for this menu."}</section>}
+      {checkoutReviewOpen && checkoutLineErrors.length ? <div className="network-review-backdrop" role="presentation">
+        <section className="network-review-dialog" role="dialog" aria-modal="true" aria-labelledby="checkout-line-review-title" dir={language === "ar" ? "rtl" : "ltr"}>
+          <h2 id="checkout-line-review-title">{language === "ar" ? "أصناف تحتاج مراجعة" : "Items needing review"}</h2>
+          <p>{language === "ar" ? "تحققنا من الطلب، ووجدنا المشكلات التالية. بقيت السلة وبيانات الطلب كما هي." : "The order check found these issues. Your cart and order details are unchanged."}</p>
+          <ul>{checkoutLineErrors.map((issue) => {
+            const item = cart.find((line) => line.lineId === issue.lineId);
+            if (!item) return null;
+            return <li key={issue.lineId}>
+              <b dir="auto">{item.name}</b>
+              <p>{networkReviewIssueLabel(issue.issues[0]?.code ?? issue.code, language)}</p>
+              {item.mode === "NETWORK" && data.products.some((product) => product.id === item.productId)
+                ? <button type="button" onClick={() => { setEditingNetworkLineId(item.lineId); setEditingNetworkNote(item.note ?? ""); setCheckoutReviewOpen(false); }}>
+                  {language === "ar" ? "تعديل هذا الصنف" : "Edit this item"}</button>
+                : <button type="button" onClick={() => removeCartItem(item.lineId)}>
+                  {language === "ar" ? "إزالة الصنف من السلة" : "Remove item from cart"}</button>}
+            </li>;
+          })}</ul>
+          {checkoutPriceChanges.length ? <p>{language === "ar" ? "تغيّرت أيضًا أسعار أصناف صالحة؛ سنعرضها للموافقة بعد إصلاح الأصناف أعلاه." : "Prices of valid items also changed; review them after fixing the items above."}</p> : null}
+          <div className="network-review-actions"><button type="button" onClick={() => setCheckoutReviewOpen(false)}>{language === "ar" ? "العودة للسلة" : "Back to cart"}</button></div>
+        </section>
+      </div> : null}
       {reviewModalLineIds && reviewModalItems.length ? <div className="network-review-backdrop" role="presentation">
         <section className="network-review-dialog" role="dialog" aria-modal="true" aria-labelledby="network-review-title" dir={language === "ar" ? "rtl" : "ltr"}>
           <h2 id="network-review-title">{language === "ar" ? "مراجعة الأصناف" : "Review items"}</h2>
@@ -3270,7 +3351,14 @@ function CartView({
           onKeyDown={(event) => { if (event.key === "Escape") { trusted.dismissUpdatedPrice(); setCartStep("review"); } }}>
           <h2 id="price-update-title">{language === "ar" ? "تم تحديث الأسعار" : "Prices have been updated"}</h2>
           <p>{language === "ar" ? "راجع الإجمالي الجديد قبل المتابعة." : "Review the new total before continuing."}</p>
-          <ul>{trusted.pendingPrice.draft.items.map((line) => <li key={line.lineId}><span dir="auto">{line.productName} × {line.quantity}</span><b>{displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency)}</b></li>)}</ul>
+          <ul>{trusted.pendingPrice.draft.items.map((line) => {
+            const requested = trusted.pendingPrice!.request.items.find((item) => item.lineId === line.lineId);
+            const previous = requested?.expectedUnitPrice;
+            const priceChanged = previous !== undefined && compareMoney(previous, line.unitPrice) !== 0;
+            return <li key={line.lineId}><span dir="auto">{line.productName} × {line.quantity}</span>
+              <b>{priceChanged ? <><s>{displayCurrencyAmount(multiplyMoney(previous, line.quantity), trusted.pendingPrice!.draft.currency)}</s><br /></> : null}
+                {displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency)}</b></li>;
+          })}</ul>
           <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {trusted.pendingPrice.draft.totalAmount === null
             ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
             : displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
@@ -3304,9 +3392,9 @@ function CartView({
               if (!lineId || !quantity) return false;
               const saved = saveNetworkEdit(editingNetworkProduct, quote, lineId, quantity, editingNetworkNote);
               if (saved) {
-                setReviewedLineIds((current) => { const next = new Set(current); next.delete(lineId); return next; });
                 setReviewModalLineIds(null);
                 setEditingNetworkLineId(null);
+                setPendingEditedLineId(lineId);
               }
               return saved;
             }} checkoutEnabled={networkWhatsappCheckoutEnabled} orderingEnabled={whatsappOrderingEnabled && networkWhatsappCheckoutEnabled && showPrices}
@@ -3321,23 +3409,32 @@ function networkReviewIssueLabel(code: string | undefined, language: PublicLangu
   const ar = language === "ar";
   switch (code) {
     case "CONFIGURATION_REVISION_CHANGED":
+    case "LINKED_CONFIGURATION_REVISION_CHANGED":
     case "STALE_CONFIGURATION_REVISION": return ar ? "تغيّر تكوين الصنف؛ حدّث اختياراته." : "The product configuration changed; update its choices.";
+    case "INVALID_WHATSAPP_SELECTION":
+    case "INVALID_QUOTE_SELECTION": return ar ? "اختيارات الصنف غير صالحة؛ أعد تكوينه." : "The item choices are invalid; configure it again.";
     case "OPTION_UNAVAILABLE": return ar ? "أحد الخيارات المختارة لم يعد متاحًا." : "A selected option is no longer available.";
     case "LINKED_PRODUCT_UNAVAILABLE": return ar ? "أحد الأصناف المرتبطة لم يعد متاحًا." : "A linked product is no longer available.";
     case "GROUP_MIN_NOT_MET": return ar ? "أكمل الخيارات المطلوبة." : "Complete the required choices.";
     case "OPTION_MAX_EXCEEDED": return ar ? "قلّل كمية أحد الخيارات." : "Reduce an option quantity.";
-    case "PRODUCT_UNAVAILABLE": return ar ? "الصنف غير متاح حاليًا." : "The product is currently unavailable.";
+    case "PRODUCT_UNAVAILABLE":
+    case "WHATSAPP_PRODUCT_UNAVAILABLE": return ar ? "الصنف غير متاح حاليًا." : "The product is currently unavailable.";
+    case "WHATSAPP_PRODUCT_TYPE_CHANGED": return ar ? "تغيّر نوع الصنف؛ أعد إضافته من القائمة." : "This item type changed; add it again from the menu.";
+    case "WHATSAPP_CURRENCY_MISMATCH": return ar ? "عملة الصنف لا تطابق عملة القائمة." : "The item currency does not match this menu.";
+    case "WHATSAPP_SNAPSHOT_PRICE_MISMATCH": return ar ? "تغيّر سعر التكوين أثناء التحقق؛ أعد مراجعة الصنف." : "The configured price changed during verification; review the item again.";
+    case "INVALID_CURRENCY_PRICE": return ar ? "سعر الصنف غير صالح حاليًا." : "The item price is currently invalid.";
     default: return ar ? "راجع اختيارات هذا الصنف." : "Review this product's choices.";
   }
 }
 
 function NetworkCartDetails({
-  item, language, expanded, reviewed
+  item, language, expanded, reviewed, serverRejected
 }: {
   item: NetworkCartItem;
   language: PublicLanguage;
   expanded: boolean;
   reviewed: boolean;
+  serverRejected: boolean;
 }) {
   const ar = language === "ar";
   const lines = item.acceptedQuote.priceBreakdown;
@@ -3349,7 +3446,7 @@ function NetworkCartDetails({
       </li>)}
     </ul>
     </div>
-    {reviewed && (item.status === "INVALID" || item.status === "OFFLINE") ? <p className="network-cart-status status-invalid" role="alert">
+    {reviewed && (item.status === "INVALID" || serverRejected) ? <p className="network-cart-status status-invalid" role="alert">
       {ar ? "راجع اختيارات هذا الصنف" : "Review this product's choices"}
     </p> : null}
   </div>;

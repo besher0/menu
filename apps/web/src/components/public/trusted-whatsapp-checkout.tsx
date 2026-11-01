@@ -18,7 +18,9 @@ type Details = {
 export function trustedCheckoutErrorMessage(error: unknown, locale: Locale, details: Details): string {
   const ar = locale === "ar";
   if (!(error instanceof PublicWhatsappCheckoutError)) {
-    return ar ? "تعذر التحقق من الطلب. حاول مجددًا." : "Could not verify the order. Try again.";
+    return error instanceof TypeError
+      ? ar ? "تعذر الاتصال بخدمة التحقق. تحقق من الاتصال وحاول مجددًا." : "Could not reach checkout verification. Check your connection and retry."
+      : ar ? "حدث خطأ أثناء التحقق. حاول مجددًا." : "An error occurred during verification. Try again.";
   }
   if (error.code === "INVALID_NETWORK_ORDER_DETAILS") {
     if (details.fulfillmentType === "delivery") {
@@ -29,12 +31,24 @@ export function trustedCheckoutErrorMessage(error: unknown, locale: Locale, deta
     return ar ? "راجع بيانات الاستلام وحاول مجددًا." : "Review the pickup details and try again.";
   }
   if (["INVALID_QUOTE_SELECTION", "CONFIGURATION_NOT_ORDERABLE", "WHATSAPP_PRODUCT_UNAVAILABLE",
-    "WHATSAPP_PRODUCT_TYPE_CHANGED", "WHATSAPP_SNAPSHOT_PRICE_MISMATCH"].includes(error.code)) {
+    "WHATSAPP_PRODUCT_TYPE_CHANGED", "WHATSAPP_SNAPSHOT_PRICE_MISMATCH", "WHATSAPP_CART_REVIEW_REQUIRED"].includes(error.code)) {
     return ar ? "تغير أحد الأصناف أو خياراته. راجع السلة وأعد المحاولة." : "A product or its options changed. Review the cart and try again.";
   }
   if (["WHATSAPP_CHECKOUT_DISABLED", "WHATSAPP_ORDERING_DISABLED", "WHATSAPP_PRICES_HIDDEN",
     "WHATSAPP_CAPABILITY_UNAVAILABLE", "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE"].includes(error.code)) {
     return ar ? "الطلب عبر WhatsApp غير متاح حاليًا لهذا المنيو." : "WhatsApp checkout is unavailable for this menu.";
+  }
+  if (error.code === "WHATSAPP_CHECKOUT_REQUIRES_ACCEPTANCE") {
+    return ar ? "انتهت صلاحية الموافقة السابقة؛ راجع الطلب وأعد المحاولة." : "The previous approval expired; review the order and retry.";
+  }
+  if (error.code === "WHATSAPP_MESSAGE_TOO_LONG") {
+    return ar ? "رسالة الطلب طويلة جدًا؛ قلّل تفاصيل الطلب ثم حاول مجددًا." : "The order message is too long; reduce its details and retry.";
+  }
+  if (["WHATSAPP_PHONE_UNAVAILABLE", "WHATSAPP_PHONE_INVALID"].includes(error.code)) {
+    return ar ? "رقم WhatsApp الخاص بالمطعم غير متاح حاليًا. حاول لاحقًا." : "The restaurant's WhatsApp number is unavailable. Try later.";
+  }
+  if (error.status >= 500 || error.status === 429) {
+    return ar ? "خدمة التحقق غير متاحة مؤقتًا. بقيت بيانات طلبك محفوظة؛ حاول مجددًا." : "Checkout verification is temporarily unavailable. Your order details are saved; retry.";
   }
   return ar ? "تعذر إتمام التحقق من الطلب. راجع السلة وحاول مجددًا."
     : "Could not verify the order. Review the cart and try again.";
@@ -95,6 +109,9 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   const [pendingPrice, setPendingPrice] = useState<PendingPrice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failureCode, setFailureCode] = useState<string | null>(null);
+  const [failureField, setFailureField] = useState<string | null>(null);
+  const [reviewIssue, setReviewIssue] = useState<PublicWhatsappCheckoutError | null>(null);
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
   const [previewPriceChanged, setPreviewPriceChanged] = useState(false);
   const busyRef = useRef(false);
@@ -107,8 +124,21 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     attemptRef.current = null;
     setPendingPrice(null);
     setPreviewMessage(null);
+    setError(null);
+    setFailureCode(null);
+    setFailureField(null);
   }, [cart, locale, details.customerName, details.customerPhone, details.fulfillmentType,
     details.deliveryArea, details.deliveryNear, details.pickupTime, details.orderNote]);
+
+  useEffect(() => { setReviewIssue(null); }, [cart]);
+
+  function recordError(caught: unknown) {
+    setFailureCode(caught instanceof PublicWhatsappCheckoutError ? caught.code : null);
+    setFailureField(caught instanceof PublicWhatsappCheckoutError && caught.code === "INVALID_NETWORK_ORDER_DETAILS"
+      ? /^(customerName|customerPhone|deliveryArea|deliveryNear|pickupTime|orderNote)\b/.exec(caught.message)?.[1] ?? null : null);
+    setReviewIssue(caught instanceof PublicWhatsappCheckoutError && caught.lineErrors.length ? caught : null);
+    setError(trustedCheckoutErrorMessage(caught, locale, details));
+  }
 
   function request(): PublicWhatsappCheckoutRequest {
     return buildTrustedCheckoutRequest(cart, locale, details);
@@ -119,6 +149,8 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     busyRef.current = true;
     setBusy(true);
     setError(null);
+    setFailureCode(null);
+    setFailureField(null);
     setPreviewMessage(null);
     const version = editVersion.current;
     const checkoutRequest = request();
@@ -134,7 +166,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       setPreviewPriceChanged(comparison === "PRICE_CHANGED");
       setPreviewMessage(prepared.messagePreview);
     } catch (caught) {
-      if (editVersion.current === version) setError(trustedCheckoutErrorMessage(caught, locale, details));
+      if (editVersion.current === version) recordError(caught);
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -163,7 +195,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         : ar ? "انتهت صلاحية التحقق. راجع الطلب وأعد الإرسال." : "The verification expired. Review the order and try again.");
       return;
     }
-    setError(trustedCheckoutErrorMessage(caught, locale, details));
+    recordError(caught);
   }
 
   async function confirmAndOpen(checkoutRequest: PublicWhatsappCheckoutRequest, acceptanceToken: string,
@@ -204,6 +236,8 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     busyRef.current = true;
     setBusy(true);
     setError(null);
+    setFailureCode(null);
+    setFailureField(null);
     setPendingPrice(null);
     const version = editVersion.current;
     const checkoutRequest = request();
@@ -235,7 +269,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       await confirmAndOpen(checkoutRequest, prepared.acceptanceToken, idempotencyKey, displayedTotal, version, tab);
     } catch (caught) {
       tab?.close();
-      if (editVersion.current === version) setError(trustedCheckoutErrorMessage(caught, locale, details));
+      if (editVersion.current === version) recordError(caught);
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -251,6 +285,8 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     busyRef.current = true;
     setBusy(true);
     setError(null);
+    setFailureCode(null);
+    setFailureField(null);
     setPendingPrice(null);
     try {
       // Confirm independently revalidates the draft and the HMAC-bound approval.
@@ -281,7 +317,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     }
   }
 
-  return { busy, error, pendingPrice, previewMessage, previewPriceChanged, preview,
+  return { busy, error, failureCode, failureField, reviewIssue, pendingPrice, previewMessage, previewPriceChanged, preview,
     closePreview: () => setPreviewMessage(null), submit, acceptUpdatedPrice, dismissUpdatedPrice: () => setPendingPrice(null) };
 }
 

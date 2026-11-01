@@ -281,10 +281,18 @@ export type PublicWhatsappCheckoutDraft = {
   requiresExplicitAcceptance: true;
 };
 
+export type PublicWhatsappLineError = {
+  lineId: string; code: string; issues: Array<{ code: string; path: string; message: string }>;
+};
+export type PublicWhatsappPriceChange = {
+  lineId: string; previousUnitPrice: string; currentUnitPrice: string; quantity: number;
+};
+
 export class PublicWhatsappCheckoutError extends Error {
   constructor(message: string, readonly status: number, readonly code: string,
     readonly changedDraft?: PublicWhatsappCheckoutDraft, readonly acceptanceToken?: string,
-    readonly changedMessagePreview?: string) {
+    readonly changedMessagePreview?: string, readonly lineErrors: PublicWhatsappLineError[] = [],
+    readonly priceChanges: PublicWhatsappPriceChange[] = []) {
     super(message);
   }
 }
@@ -295,11 +303,17 @@ async function whatsappCheckoutPost<T>(slug: string, action: "prepare" | "confir
   });
   const payload = await response.json().catch(() => null) as {
     data?: T; error?: string; message?: string; changedDraft?: PublicWhatsappCheckoutDraft;
-    acceptanceToken?: string; changedMessagePreview?: string
+    acceptanceToken?: string; changedMessagePreview?: string; lineId?: string;
+    issues?: PublicWhatsappLineError["issues"]; lineErrors?: PublicWhatsappLineError[];
+    priceChanges?: PublicWhatsappPriceChange[]
   } | null;
+  const lineErrors = Array.isArray(payload?.lineErrors) ? payload.lineErrors
+    : typeof payload?.lineId === "string" && typeof payload?.error === "string"
+      ? [{ lineId: payload.lineId, code: payload.error, issues: Array.isArray(payload.issues) ? payload.issues : [] }] : [];
   if (!response.ok) throw new PublicWhatsappCheckoutError(payload?.message ?? "Checkout could not be verified.",
     response.status, payload?.error ?? "WHATSAPP_CHECKOUT_FAILED", payload?.changedDraft,
-    payload?.acceptanceToken, payload?.changedMessagePreview);
+    payload?.acceptanceToken, payload?.changedMessagePreview, lineErrors,
+    Array.isArray(payload?.priceChanges) ? payload.priceChanges : []);
   if (!payload?.data) throw new PublicWhatsappCheckoutError("Trusted checkout response is unavailable.", 502, "WHATSAPP_CHECKOUT_RESPONSE_INVALID");
   return payload.data;
 }
