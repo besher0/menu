@@ -146,6 +146,13 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     setError(trustedCheckoutErrorMessage(caught, locale, details));
   }
 
+  function clearFailure() {
+    setError(null);
+    setFailureCode(null);
+    setFailureField(null);
+    setReviewIssue(null);
+  }
+
   function request(): PublicWhatsappCheckoutRequest {
     return buildTrustedCheckoutRequest(cart, locale, details);
   }
@@ -324,6 +331,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   }
 
   return { busy, error, failureCode, failureField, reviewIssue, pendingPrice, previewMessage, previewPriceChanged, preview,
+    clearFailure,
     closePreview: () => setPreviewMessage(null), submit, acceptUpdatedPrice, dismissUpdatedPrice: () => setPendingPrice(null) };
 }
 

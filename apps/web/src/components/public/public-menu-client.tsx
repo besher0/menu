@@ -2908,6 +2908,9 @@ function CartView({
     details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
       pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
   useEffect(() => {
+    if (cartStep === "review" && !trusted.reviewIssue) trusted.clearFailure();
+  }, [cartStep]);
+  useEffect(() => {
     if (!trusted.reviewIssue) return;
     const matching = trusted.reviewIssue.lineErrors.filter((issue) => cart.some((line) => line.lineId === issue.lineId));
     if (!matching.length) return;
@@ -2959,6 +2962,7 @@ function CartView({
 
   function goToConfirmStep() {
     if ((hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) || !whatsappOrderingEnabled) return;
+    trusted.clearFailure();
     window.history.pushState({ cartStep: "confirm" }, "", window.location.href);
     setCartStep("confirm");
   }
@@ -3277,7 +3281,7 @@ function CartView({
         </div>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
         {useTrustedNetworkCheckout && trustedDisabledReason && !networkItems.some((item) => item.status !== "CURRENT") ? <p className="cart-message">{trustedDisabledReason}</p> : null}
-        {useTrustedNetworkCheckout && trusted.error && !trusted.reviewIssue ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
+        {useTrustedNetworkCheckout && cartStep === "confirm" && trusted.error && !trusted.reviewIssue ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
         <button
           type="button"

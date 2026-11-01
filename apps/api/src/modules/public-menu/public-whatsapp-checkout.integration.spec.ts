@@ -446,6 +446,41 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(result.body.priceChanges).toEqual([]);
   });
 
+  it("prepares and confirms a six-line Mixed cart with two pizza configurations, linked combo, notes and quantities", async () => {
+    const secondPizza = { ...networkLine, lineId: "network-pizza-large", quantity: 1,
+      selection: { ...pizzaSelection(), groups: [
+        { type: "SIZE", groupId: "sizes", sizeChoiceId: "large" },
+        { type: "OPTIONS", groupId: "toppings", instances: [] }
+      ] }, expectedUnitPrice: "300" };
+    const sixLines = [
+      { ...networkLine, lineId: "network-pizza-medium", quantity: 3, note: "test item note" },
+      { ...comboLine, quantity: 3 },
+      { ...networkLine, lineId: "network-pizza-small", quantity: 1,
+        selection: { ...pizzaSelection(), groups: [
+          { type: "SIZE", groupId: "sizes", sizeChoiceId: "small" },
+          { type: "OPTIONS", groupId: "toppings", instances: [] }
+        ] }, expectedUnitPrice: "100" },
+      { ...legacyLine, quantity: 4 },
+      secondPizza,
+      { ...legacyLine, lineId: "legacy:second", quantity: 1, note: "second test note" }
+    ];
+    for (const fulfillmentType of ["pickup", "delivery"] as const) {
+      const payload = request(sixLines, fulfillmentType === "delivery"
+        ? { fulfillmentType, deliveryArea: "Test Area", deliveryNear: "Test Landmark" }
+        : { fulfillmentType, pickupTime: "18:00" });
+      const prepared = await prepare(payload);
+      expect(prepared.status).toBe(200);
+      expect(prepared.body.draft.items).toHaveLength(6);
+      expect(prepared.body.draft.items.map((line: { lineId: string }) => line.lineId))
+        .toEqual(sixLines.map((line) => line.lineId));
+      expect(prepared.body.draft.items[0]).toMatchObject({ quantity: 3, note: "test item note" });
+      const confirmed = await confirm(payload, prepared.body.acceptanceToken);
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.draft.items).toHaveLength(6);
+      expect(confirmed.body.message).toContain(fulfillmentType === "delivery" ? "Test Area" : "18:00");
+    }
+  });
+
   it("keeps the public feature OFF by default and refuses a missing signing key", async () => {
     delete process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT;
     expect((await prepare(request([networkLine]))).status).toBe(403);
