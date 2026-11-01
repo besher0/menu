@@ -13,6 +13,7 @@ import { resolvePublicProductConfiguration } from "./public-product-configuratio
 import { quotePublicProductConfiguration } from "./public-product-quote";
 import { parseWhatsappCheckoutRequest, type WhatsappCheckoutRequest } from "./public-whatsapp-checkout.contract";
 import { readDeliveryFee } from "./delivery-fee";
+import { reserveDailyWhatsappOrderNumber } from "./daily-whatsapp-order-number";
 
 type NetworkDisplayLine = {
   snapshotVersion: 1; mode: "NETWORK"; locale: "ar" | "en"; currency: string;
@@ -33,7 +34,7 @@ type TrustedLine = {
 
 type TrustedDraft = {
   schemaVersion: 1; restaurantId: string; restaurantName: string; restaurantSlug: string;
-  branchName?: string; whatsappPhone: string; currency: string; locale: "ar" | "en";
+  branchId?: string; branchName?: string; whatsappPhone: string; currency: string; locale: "ar" | "en";
   details: Omit<WhatsappCheckoutRequest, "items" | "locale" | "branchSlug">;
   items: TrustedLine[]; itemsSubtotal: string; deliveryFee: string | null; totalAmount: string | null;
 };
@@ -123,10 +124,12 @@ function groupedMessageLines(items: TrustedLine[]): TrustedLine[] {
 }
 
 /** The message is assembled only from this request's trusted database-backed draft. */
-export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
+export function formatTrustedWhatsappDraft(draft: TrustedDraft, orderNumber?: string): string {
   const ar = draft.locale === "ar";
   const details = formatNetworkOrderDetails({ restaurantName: draft.restaurantName, ...draft.details, orderNote: undefined }, draft.locale);
-  const output = [ar ? "🧾 طلب جديد — OrderSawa" : "🧾 New order — OrderSawa", ...details.header];
+  const output = [orderNumber
+    ? ar ? `🧾 طلب جديد رقم ${orderNumber} — OrderSawa` : `🧾 New order No. ${orderNumber} — OrderSawa`
+    : ar ? "🧾 طلب جديد — OrderSawa" : "🧾 New order — OrderSawa", ...details.header];
   output.push("━━━━━━━━━━━━━━");
   for (const [index, line] of groupedMessageLines(draft.items).entries()) {
     if (line.mode === "NETWORK") {
@@ -136,7 +139,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
       output.push(...rendered.lines);
     } else {
       output.push(`${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
-      if (line.note) output.push(`*${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}*`);
+      if (line.note) output.push(`*🔸️ ${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}*`);
       output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
     }
     output.push("━━━━━━━━━━━━━━", "");
@@ -146,7 +149,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
       ? null : sumMoney([draft.itemsSubtotal, draft.deliveryFee ?? "0"]))) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
   const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.itemsSubtotal, draft.currency);
   if (draft.details.orderNote) {
-    output.push(`*${ar ? "ملاحظات الطلب" : "Order notes"}: ${formatWhatsappDisplayText(draft.details.orderNote, "$details.orderNote", 500)}*`,
+    output.push(`*🔸️ ${ar ? "ملاحظات الطلب" : "Order notes"}: ${formatWhatsappDisplayText(draft.details.orderNote, "$details.orderNote", 500)}*`,
       "━━━━━━━━━━━━━━", "");
   }
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
@@ -177,8 +180,25 @@ export class PublicWhatsappCheckoutService {
 
   private async buildDraft(slug: string, request: WhatsappCheckoutRequest): Promise<TrustedDraft> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-      const restaurants = await tx.$queryRaw<{ id: string; slug: string; name: string; currency: string; whatsappPhone: string | null }[]>`
+      return await this.prisma.$transaction((tx) => this.buildDraftInTransaction(tx, slug, request),
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 20_000 });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError
+        && (error.code === "P2034" || (error.code === "P2010"
+          && (error.meta?.code === "40001" || error.meta?.code === "40P01")))) {
+        throw new ConflictException({ error: "WHATSAPP_CHECKOUT_CONCURRENT_UPDATE",
+          message: "The menu changed while preparing checkout. Please review and try again." });
+      }
+      throw error;
+    }
+  }
+
+  private async buildDraftInTransaction(tx: Prisma.TransactionClient, slug: string,
+    request: WhatsappCheckoutRequest, forWrite = false): Promise<TrustedDraft> {
+      const restaurants = forWrite ? await tx.$queryRaw<{ id: string; slug: string; name: string; currency: string; whatsappPhone: string | null }[]>`
+        SELECT "id", "slug", "name", "currency", "whatsappPhone" FROM "Restaurant"
+        WHERE "slug" = ${slug} AND "isActive" = true AND "deletedAt" IS NULL FOR UPDATE
+      ` : await tx.$queryRaw<{ id: string; slug: string; name: string; currency: string; whatsappPhone: string | null }[]>`
         SELECT "id", "slug", "name", "currency", "whatsappPhone" FROM "Restaurant"
         WHERE "slug" = ${slug} AND "isActive" = true AND "deletedAt" IS NULL FOR SHARE
       `;
@@ -212,8 +232,8 @@ export class PublicWhatsappCheckoutService {
         && (settings as { dashboardSettings?: { showPrices?: unknown } }).dashboardSettings?.showPrices === false) {
         throw new ForbiddenException({ error: "WHATSAPP_PRICES_HIDDEN", message: "WhatsApp checkout is unavailable while menu prices are hidden." });
       }
-      const branches = await tx.$queryRaw<{ slug: string; name: string; whatsappPhone: string | null }[]>`
-        SELECT "slug", "name", "whatsappPhone" FROM "Branch"
+      const branches = await tx.$queryRaw<{ id: string; slug: string; name: string; whatsappPhone: string | null }[]>`
+        SELECT "id", "slug", "name", "whatsappPhone" FROM "Branch"
         WHERE "restaurantId" = ${restaurant.id} AND "isActive" = true AND "deletedAt" IS NULL
         ORDER BY "createdAt" ASC FOR SHARE
       `;
@@ -311,19 +331,9 @@ export class PublicWhatsappCheckoutService {
         throw new ConflictException({ error: "INVALID_CURRENCY_TOTAL", message: "The order total is invalid for the restaurant currency." });
       }
       return { schemaVersion: 1, restaurantId: restaurant.id, restaurantName: restaurant.name,
-        restaurantSlug: restaurant.slug, ...(branch ? { branchName: branch.name } : {}),
+        restaurantSlug: restaurant.slug, ...(branch ? { branchId: branch.id, branchName: branch.name } : {}),
         whatsappPhone: digits, currency: restaurant.currency, locale: request.locale, details,
         items: lines, itemsSubtotal, deliveryFee, totalAmount };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 20_000 });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError
-        && (error.code === "P2034" || (error.code === "P2010"
-          && (error.meta?.code === "40001" || error.meta?.code === "40P01")))) {
-        throw new ConflictException({ error: "WHATSAPP_CHECKOUT_CONCURRENT_UPDATE",
-          message: "The menu changed while preparing checkout. Please review and try again." });
-      }
-      throw error;
-    }
   }
 
   async prepare(slug: string, body: unknown) {
@@ -353,19 +363,90 @@ export class PublicWhatsappCheckoutService {
     const key = this.enabled();
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new BadRequestException({ error: "INVALID_WHATSAPP_CONFIRMATION" });
     const fields = body as Record<string, unknown>;
-    if (Object.keys(fields).some((field) => !["request", "acceptanceToken"].includes(field))
-      || typeof fields.acceptanceToken !== "string") throw new BadRequestException({ error: "INVALID_WHATSAPP_CONFIRMATION" });
-    const request = parseWhatsappCheckoutRequest(fields.request);
-    const draft = await this.buildDraft(slug, request);
-    const digest = sha256({ request, draft });
-    if (!verifyToken(key, fields.acceptanceToken, draft.restaurantId, digest)) {
-      throw new ConflictException({ error: "WHATSAPP_CHECKOUT_REQUIRES_ACCEPTANCE",
-        message: "The checkout changed or approval expired. Review the current prices and accept again.",
-        changedDraft: publicDraft(draft), changedMessagePreview: this.renderMessage(draft),
-        acceptanceToken: issueToken(key, draft.restaurantId, digest) });
+    if (Object.keys(fields).some((field) => !["request", "acceptanceToken", "idempotencyKey"].includes(field))
+      || typeof fields.acceptanceToken !== "string"
+      || (fields.idempotencyKey !== undefined && (typeof fields.idempotencyKey !== "string"
+        || !/^[A-Za-z0-9:_-]{16,128}$/.test(fields.idempotencyKey)))) {
+      throw new BadRequestException({ error: "INVALID_WHATSAPP_CONFIRMATION" });
     }
-    const message = this.renderMessage(draft);
-    const whatsappUrl = buildNetworkWhatsappPreviewUrl(draft.whatsappPhone, message);
-    return { draft: publicDraft(draft), message, whatsappUrl };
+    // Older clients have no explicit key; bind their replay to the accepted token.
+    const idempotencyKey = typeof fields.idempotencyKey === "string" ? fields.idempotencyKey
+      : `legacy:${sha256(fields.acceptanceToken).slice(0, 64)}`;
+    const request = parseWhatsappCheckoutRequest(fields.request);
+    const requestHash = sha256(request);
+    const restaurant = await this.prisma.restaurant.findFirst({ where: { slug, isActive: true, deletedAt: null }, select: { id: true } });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+    const replay = async () => {
+      const existing = await this.prisma.order.findUnique({ where: { restaurantId_idempotencyKey: {
+        restaurantId: restaurant.id, idempotencyKey
+      } } });
+      if (!existing) return null;
+      if (existing.requestHash !== requestHash) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
+      const snapshot = existing.cartSnapshot as Record<string, unknown> | null;
+      if (snapshot?.whatsappCheckoutVersion !== 1 || typeof snapshot.orderNumber !== "string"
+        || typeof snapshot.whatsappPhone !== "string" || !snapshot.draft || !existing.whatsappMessage) {
+        throw new ServiceUnavailableException({ error: "WHATSAPP_ORDER_REPLAY_UNAVAILABLE" });
+      }
+      return { orderId: existing.id, orderNumber: snapshot.orderNumber, draft: snapshot.draft,
+        message: existing.whatsappMessage,
+        whatsappUrl: buildNetworkWhatsappPreviewUrl(snapshot.whatsappPhone, existing.whatsappMessage), replayed: true };
+    };
+    const alreadyCommitted = await replay();
+    if (alreadyCommitted) return alreadyCommitted;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "Restaurant" WHERE "id" = ${restaurant.id} FOR UPDATE`;
+        const existing = await tx.order.findUnique({ where: { restaurantId_idempotencyKey: {
+          restaurantId: restaurant.id, idempotencyKey
+        } } });
+        if (existing) {
+          if (existing.requestHash !== requestHash) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
+          const snapshot = existing.cartSnapshot as Record<string, unknown> | null;
+          if (snapshot?.whatsappCheckoutVersion !== 1 || typeof snapshot.orderNumber !== "string"
+            || typeof snapshot.whatsappPhone !== "string" || !snapshot.draft || !existing.whatsappMessage) {
+            throw new ServiceUnavailableException({ error: "WHATSAPP_ORDER_REPLAY_UNAVAILABLE" });
+          }
+          return { orderId: existing.id, orderNumber: snapshot.orderNumber, draft: snapshot.draft,
+            message: existing.whatsappMessage,
+            whatsappUrl: buildNetworkWhatsappPreviewUrl(snapshot.whatsappPhone, existing.whatsappMessage), replayed: true };
+        }
+        const draft = await this.buildDraftInTransaction(tx, slug, request, true);
+        const digest = sha256({ request, draft });
+        if (!verifyToken(key, fields.acceptanceToken as string, draft.restaurantId, digest)) {
+          throw new ConflictException({ error: "WHATSAPP_CHECKOUT_REQUIRES_ACCEPTANCE",
+            message: "The checkout changed or approval expired. Review the current prices and accept again.",
+            changedDraft: publicDraft(draft), changedMessagePreview: this.renderMessage(draft),
+            acceptanceToken: issueToken(key, draft.restaurantId, digest) });
+        }
+        const orderNumber = await reserveDailyWhatsappOrderNumber(tx, draft.restaurantId);
+        const message = formatTrustedWhatsappDraft(draft, orderNumber);
+        const whatsappUrl = buildNetworkWhatsappPreviewUrl(draft.whatsappPhone, message);
+        const storedDraft = publicDraft(draft);
+        const snapshot = JSON.parse(JSON.stringify({ whatsappCheckoutVersion: 1, orderNumber,
+          whatsappPhone: draft.whatsappPhone, draft: storedDraft, request })) as Prisma.InputJsonValue;
+        const order = await tx.order.create({ data: {
+          restaurantId: draft.restaurantId, branchId: draft.branchId,
+          customerName: draft.details.customerName, customerPhone: draft.details.customerPhone,
+          totalAmount: new Prisma.Decimal(draft.totalAmount ?? draft.itemsSubtotal), currency: draft.currency,
+          status: "PENDING_WHATSAPP", source: "WHATSAPP", whatsappMessage: message, cartSnapshot: snapshot,
+          idempotencyKey, requestHash,
+          items: { create: draft.items.map((line) => ({
+            productId: line.productId, name: line.productName, quantity: line.quantity, note: line.note,
+            unitPrice: new Prisma.Decimal(line.unitPrice), totalPrice: new Prisma.Decimal(line.lineTotal),
+            options: line.display ? JSON.parse(JSON.stringify(line.display)) as Prisma.InputJsonValue : Prisma.JsonNull
+          })) }
+        } });
+        await tx.analyticsEvent.create({ data: { restaurantId: draft.restaurantId, branchId: draft.branchId,
+          type: "WHATSAPP_ORDER_CLICKED", metadata: { orderId: order.id, orderNumber, totalAmount: draft.totalAmount,
+            finalTotalKnown: draft.totalAmount !== null } } });
+        return { orderId: order.id, orderNumber, draft: storedDraft, message, whatsappUrl, replayed: false };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10_000, timeout: 20_000 });
+    } catch (error) {
+      const committed = await replay();
+      if (committed) return committed;
+      if (error instanceof BadRequestException || error instanceof ConflictException
+        || error instanceof ForbiddenException || error instanceof NotFoundException) throw error;
+      throw new ServiceUnavailableException({ error: "WHATSAPP_ORDER_PERSISTENCE_FAILED" });
+    }
   }
 }

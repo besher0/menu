@@ -31,6 +31,10 @@ export class PublicOrderItemDto {
 export class CreateWhatsappOrderDto {
   @IsOptional()
   @IsString()
+  idempotencyKey?: string;
+
+  @IsOptional()
+  @IsString()
   branchSlug?: string;
 
   @IsOptional()

@@ -307,9 +307,9 @@ function renderOrderDetails(value: unknown, locale: Locale): { header: string[];
     if (value) customerFields.push(`${label}: ${value}`);
   }
   footer.unshift(...customerFields);
-  if (pickupTime) footer.push(`${w.pickupTime}: 🕒 ${pickupTime}`);
+  if (pickupTime) footer.push(`🕒 ${w.pickupTime}: ${pickupTime}`);
   const orderNote = optionalSnapshotText(details, "orderNote", path, 500);
-  return { header, footer, ...(orderNote ? { orderNote: `*${w.orderNote}: ${orderNote}*` } : {}) };
+  return { header, footer, ...(orderNote ? { orderNote: `*🔸️ ${w.orderNote}: ${orderNote}*` } : {}) };
 }
 
 export function formatWhatsappDisplayText(value: string, path: string, maxLength = 200): string {
@@ -359,7 +359,7 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   const renderedChoices = renderer.render(configuration, selection, topLevelSizes.length === 1 ? topLevelSizes[0].groupId : undefined);
   const lines = [`${numbered ? `${index + 1}. ` : ""}${count} × ${name}${sizeSuffix}`, ...renderedChoices];
   if (item.note !== undefined) {
-    lines.push(`*${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}*`);
+    lines.push(`*🔸️ ${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}*`);
   }
   if (compareMoney(sumMoney(priceLines.map((entry) => money(entry.chargedAmount, `${path}.priceBreakdown.chargedAmount`))), unitPrice) !== 0) {
     throw new NetworkOrderSnapshotFormatError("UNIT_BREAKDOWN_MISMATCH", `${path}.priceBreakdown`, "Saved breakdown differs from the saved unit price.");

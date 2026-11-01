@@ -81,14 +81,14 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).toContain("1 × \u2068Juice\u2069");
     expect(message).not.toContain("3. 1 ×");
     expect(message).toContain("Total: 1070.000016 EGP");
-    expect(message).toContain("*Item note: ⁨No onion⁩*");
+    expect(message).toContain("*🔸️ Item note: ⁨No onion⁩*");
   });
 
   it("separates bold order notes before totals and keeps customer details after them", () => {
     const draft = demoDraft("pizza", "ar");
     draft.details.orderNote = "الصلصة منفصلة";
     const message = formatTrustedWhatsappDraft(draft);
-    expect(message).toContain("*ملاحظات الطلب: ⁨الصلصة منفصلة⁩*");
+    expect(message).toContain("*🔸️ ملاحظات الطلب: ⁨الصلصة منفصلة⁩*");
     expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("مجموع الأصناف"));
     expect(message.indexOf("اسم الزبون")).toBeGreaterThan(message.indexOf("الإجمالي:"));
     expect(message.replace(/[\u2066-\u2069]/g, "")).not.toMatch(/━━━━━━━━━━━━━━\s+━━━━━━━━━━━━━━/);
@@ -100,7 +100,7 @@ describe("trusted public WhatsApp message presentation", () => {
     const message = formatTrustedWhatsappDraft(arabic);
     expect(message.split("\n").filter(Boolean).every((line) => line.startsWith("\u200f"))).toBe(true);
     expect(message).toContain("طريقة الاستلام: 🍽️ استلام من المطعم");
-    expect(message).toContain("*ملاحظات الطلب: ⁨طلب طويل Demo ورقم 123⁩*");
+    expect(message).toContain("*🔸️ ملاحظات الطلب: ⁨طلب طويل Demo ورقم 123⁩*");
     expect(message).not.toContain("\u2067");
     const english = formatTrustedWhatsappDraft(demoDraft("combo", "en"));
     expect(english.startsWith("🧾 New order")).toBe(true);
@@ -111,7 +111,7 @@ describe("trusted public WhatsApp message presentation", () => {
   it("renders delivery wording and pickup time only for their matching fulfillment", () => {
     const pickup = demoDraft("pizza", "ar");
     pickup.details.pickupTime = "18:30";
-    expect(formatTrustedWhatsappDraft(pickup)).toContain("موعد الاستلام: 🕒 ⁨18:30⁩");
+    expect(formatTrustedWhatsappDraft(pickup)).toContain("🕒 موعد الاستلام: ⁨18:30⁩");
     const delivery = demoDraft("pizza", "ar");
     delivery.details.fulfillmentType = "delivery";
     delivery.details.deliveryArea = "حلب";

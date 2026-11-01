@@ -13,6 +13,8 @@ import {
 } from "./public-product-configuration";
 import { quotePublicProductConfiguration } from "./public-product-quote";
 import { formatWhatsappMessageLines } from "../orders/network-order-whatsapp-formatter";
+import { sha256 } from "../orders/network-order-contract";
+import { reserveDailyWhatsappOrderNumber } from "./daily-whatsapp-order-number";
 
 function isolateWhatsappText(value: string): string {
   const safe = value.replace(/[\r\n\u2028\u2029\t\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, " ")
@@ -281,7 +283,49 @@ export class PublicMenuService {
   }
 
   async createWhatsappOrder(restaurantSlug: string, dto: CreateWhatsappOrderDto) {
-    const restaurant = await this.prisma.restaurant.findFirst({
+    if (dto.idempotencyKey !== undefined && !/^[A-Za-z0-9:_-]{16,128}$/.test(dto.idempotencyKey)) {
+      throw new BadRequestException({ error: "INVALID_WHATSAPP_IDEMPOTENCY_KEY" });
+    }
+    const { idempotencyKey: _idempotencyKey, ...requestFields } = dto;
+    const requestHash = sha256(requestFields);
+    const restaurantId = await this.prisma.restaurant.findFirst({
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null }, select: { id: true }
+    });
+    if (!restaurantId) throw new NotFoundException("Restaurant not found");
+    const replay = async () => {
+      if (!dto.idempotencyKey) return null;
+      const existing = await this.prisma.order.findUnique({ where: { restaurantId_idempotencyKey: {
+        restaurantId: restaurantId.id, idempotencyKey: dto.idempotencyKey
+      } } });
+      if (!existing) return null;
+      if (existing.requestHash !== requestHash) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
+      const snapshot = existing.cartSnapshot as Record<string, unknown> | null;
+      if (!existing.whatsappMessage || typeof snapshot?.orderNumber !== "string" || typeof snapshot?.whatsappPhone !== "string") {
+        throw new ConflictException({ error: "WHATSAPP_ORDER_REPLAY_UNAVAILABLE" });
+      }
+      return { orderId: existing.id, orderNumber: snapshot.orderNumber, message: existing.whatsappMessage,
+        whatsappUrl: `https://wa.me/${snapshot.whatsappPhone}?text=${encodeURIComponent(existing.whatsappMessage)}`, replayed: true };
+    };
+    const alreadyCommitted = await replay();
+    if (alreadyCommitted) return alreadyCommitted;
+    try {
+    return await this.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Restaurant" WHERE "id" = ${restaurantId.id} FOR UPDATE`;
+    if (dto.idempotencyKey) {
+      const existing = await tx.order.findUnique({ where: { restaurantId_idempotencyKey: {
+        restaurantId: restaurantId.id, idempotencyKey: dto.idempotencyKey
+      } } });
+      if (existing) {
+        if (existing.requestHash !== requestHash) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
+        const snapshot = existing.cartSnapshot as Record<string, unknown> | null;
+        if (!existing.whatsappMessage || typeof snapshot?.orderNumber !== "string" || typeof snapshot?.whatsappPhone !== "string") {
+          throw new ConflictException({ error: "WHATSAPP_ORDER_REPLAY_UNAVAILABLE" });
+        }
+        return { orderId: existing.id, orderNumber: snapshot.orderNumber, message: existing.whatsappMessage,
+          whatsappUrl: `https://wa.me/${snapshot.whatsappPhone}?text=${encodeURIComponent(existing.whatsappMessage)}`, replayed: true };
+      }
+    }
+    const restaurant = await tx.restaurant.findFirst({
       where: { slug: restaurantSlug, isActive: true, deletedAt: null },
       include: {
         branches: true,
@@ -318,7 +362,8 @@ export class PublicMenuService {
     }
 
     const productSlugs = dto.items.map((item) => item.productSlug);
-    const products = await this.prisma.product.findMany({
+    await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "restaurantId" = ${restaurant.id} ORDER BY "id" FOR SHARE`;
+    const products = await tx.product.findMany({
       where: {
         restaurantId: restaurant.id,
         slug: { in: productSlugs },
@@ -358,7 +403,7 @@ export class PublicMenuService {
     const totalAmount = dto.fulfillmentType === "delivery" && deliveryFee !== null
       ? sumMoney([itemsSubtotal, deliveryFee]) : itemsSubtotal;
     const showPrices = dashboardSettings.showPrices ?? true;
-    const orderNumber = this.formatDailyOrderNumber(await this.nextDailyOrderSequence(restaurant.id));
+    const orderNumber = await reserveDailyWhatsappOrderNumber(tx, restaurant.id);
     const message = this.buildWhatsappMessage({
       restaurantName: restaurant.name,
       branchName: branch?.name,
@@ -379,7 +424,7 @@ export class PublicMenuService {
       showPrices
     });
 
-    const order = await this.prisma.order.create({
+    const order = await tx.order.create({
       data: {
         restaurantId: restaurant.id,
         branchId: branch?.id,
@@ -389,7 +434,9 @@ export class PublicMenuService {
         currency: restaurant.currency,
         status: "PENDING_WHATSAPP",
         whatsappMessage: message,
-        cartSnapshot: { ...dto, orderNumber, itemsSubtotal, deliveryFee, finalTotalKnown: dto.fulfillmentType !== "delivery" || deliveryFee !== null } as unknown as Prisma.InputJsonValue,
+        cartSnapshot: { ...dto, orderNumber, whatsappPhone: whatsappPhone.replace(/^\+/, ""),
+          itemsSubtotal, deliveryFee, finalTotalKnown: dto.fulfillmentType !== "delivery" || deliveryFee !== null } as unknown as Prisma.InputJsonValue,
+        ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey, requestHash } : {}),
         items: {
           create: items.map((item) => ({
             productId: item.product.id,
@@ -404,7 +451,7 @@ export class PublicMenuService {
       }
     });
 
-    await this.prisma.analyticsEvent.create({
+    await tx.analyticsEvent.create({
       data: {
         restaurantId: restaurant.id,
         branchId: branch?.id,
@@ -417,8 +464,15 @@ export class PublicMenuService {
       orderId: order.id,
       orderNumber,
       message,
-      whatsappUrl: `https://wa.me/${whatsappPhone.replace(/^\+/, "")}?text=${encodeURIComponent(message)}`
+      whatsappUrl: `https://wa.me/${whatsappPhone.replace(/^\+/, "")}?text=${encodeURIComponent(message)}`,
+      replayed: false
     };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10_000, timeout: 20_000 });
+    } catch (error) {
+      const committed = await replay();
+      if (committed) return committed;
+      throw error;
+    }
   }
 
   async nextWhatsappOrderNumber(restaurantSlug: string) {
@@ -938,12 +992,12 @@ export class PublicMenuService {
       ...input.items.flatMap((item): (string | null)[] => [
         `${item.quantity} × ${isolateWhatsappText(item.name)}`,
         ...item.options.map((option) => `• ${isolateWhatsappText(option)}`),
-        item.note ? `*ملاحظة الصنف: ${isolateWhatsappBoldText(item.note)}*` : null,
+        item.note ? `*🔸️ ملاحظة الصنف: ${isolateWhatsappBoldText(item.note)}*` : null,
         input.showPrices ? `إجمالي الصنف: ${displayAmount(item.totalPrice)}` : null,
         "━━━━━━━━━━━━━━",
         ""
       ]),
-      input.orderNote ? `*ملاحظات الطلب: ${isolateWhatsappBoldText(input.orderNote)}*` : null,
+      input.orderNote ? `*🔸️ ملاحظات الطلب: ${isolateWhatsappBoldText(input.orderNote)}*` : null,
       input.orderNote ? "━━━━━━━━━━━━━━" : null,
       input.orderNote ? "" : null,
       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
@@ -958,7 +1012,7 @@ export class PublicMenuService {
       input.fulfillmentType === "delivery" && input.deliveryArea ? `المنطقة: ${isolateWhatsappText(input.deliveryArea)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${isolateWhatsappText(input.deliveryNear)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryBeside ? `العنوان: ${isolateWhatsappText(input.deliveryBeside)}` : null,
-      input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: 🕒 ${isolateWhatsappText(input.pickupTime)}` : null,
+      input.fulfillmentType === "pickup" && input.pickupTime ? `🕒 وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null,
       `الوقت: ${new Date().toLocaleString("ar-SY")}`
     ];
 

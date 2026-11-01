@@ -49,6 +49,8 @@ type Props = {
   orderingEnabled?: boolean;
   showPrices?: boolean;
   showBottomBar?: boolean;
+  freshStart?: boolean;
+  editableQuantity?: boolean;
   locale?: "ar" | "en";
 };
 
@@ -333,7 +335,8 @@ function OptionGroup({
 
 export function ProductConfigurator({ restaurantSlug, productId, currency, cartHref, cartCount = 0, initialSelection,
   editingLineId, initialQuantity = 1, maxQuantity = 100, onNetworkQuote, checkoutEnabled = false,
-  orderingEnabled = false, showPrices = true, showBottomBar = false, locale = "ar" }: Props) {
+  orderingEnabled = false, showPrices = true, showBottomBar = false, freshStart = false,
+  editableQuantity = false, locale = "ar" }: Props) {
   const [envelope, setEnvelope] = useState<PublicProductConfigurationResponse | null>(null);
   const [selection, setSelection] = useState<ProductSelectionV1 | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -364,14 +367,16 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
         const sources = sourceMap(value.linkedProducts);
         const storageKey = `ordersawa:configurator:${restaurantSlug}:${productId}:r${value.configurationRevision}`;
         let initial: ProductSelectionV1 | null = null;
-        try {
-          const stored = window.sessionStorage.getItem(storageKey);
-          if (stored) {
-            const parsed = JSON.parse(stored) as ProductSelectionV1;
-            if (parsed.productId === value.productId && parsed.configurationRevision === value.configurationRevision) initial = parsed;
+        if (!freshStart) {
+          try {
+            const stored = window.sessionStorage.getItem(storageKey);
+            if (stored) {
+              const parsed = JSON.parse(stored) as ProductSelectionV1;
+              if (parsed.productId === value.productId && parsed.configurationRevision === value.configurationRevision) initial = parsed;
+            }
+          } catch {
+            // Invalid local preview drafts are ignored without affecting server data.
           }
-        } catch {
-          // Invalid local preview drafts are ignored without affecting server data.
         }
         setEnvelope(value);
         if (editingLineId && initialSelection) {
@@ -387,19 +392,19 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
         if (!cancelled) setError("تعذر تحميل شبكة التكوين العامة لهذا الصنف.");
       });
     return () => { cancelled = true; quoteGate.current.invalidate(); };
-  }, [productId, restaurantSlug, editingLineId]);
+  }, [productId, restaurantSlug, editingLineId, freshStart]);
 
   useEffect(() => { setDraftQuantity(Math.max(1, Math.min(100, initialQuantity))); }, [initialQuantity, editingLineId, productId]);
 
   useEffect(() => {
-    if (!envelope || !selection) return;
+    if (!envelope || !selection || freshStart) return;
     const storageKey = `ordersawa:configurator:${restaurantSlug}:${productId}:r${envelope.configurationRevision}`;
     try {
       window.sessionStorage.setItem(storageKey, JSON.stringify(selection));
     } catch {
       // Local draft persistence is optional and must never block configuration.
     }
-  }, [envelope, productId, restaurantSlug, selection]);
+  }, [envelope, productId, restaurantSlug, selection, freshStart]);
 
   const sources = useMemo(() => sourceMap(envelope?.linkedProducts ?? []), [envelope]);
   const preview = useMemo(
@@ -492,6 +497,13 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     </aside> : null}
 
     <div className={styles.previewGate}>
+      {editableQuantity && !showBottomBar ? <div className="quantity-control" aria-label={say(locale, "كمية التكوين الجاري", "Current configuration quantity")}>
+        <button type="button" onClick={() => setDraftQuantity((value) => Math.min(maxQuantity, value + 1))}
+          disabled={draftQuantity >= maxQuantity} aria-label={say(locale, "زيادة الكمية", "Increase quantity")}><Plus size={16} /></button>
+        <strong>{draftQuantity}</strong>
+        <button type="button" onClick={() => setDraftQuantity((value) => Math.max(1, value - 1))}
+          disabled={draftQuantity <= 1} aria-label={say(locale, "إنقاص الكمية", "Decrease quantity")}><Minus size={16} /></button>
+      </div> : null}
       {!showBottomBar ? <button type="button" onClick={() => void continuePreview()} disabled={!canAdd}>
         {quoteBusy ? say(locale, "جارٍ التحقق من السعر...", "Checking the price...") : editingLineId ? say(locale, "حفظ التكوين في السلة", "Save cart choices") : say(locale, "إضافة إلى السلة", "Add to cart")}
       </button> : null}

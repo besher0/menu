@@ -14,7 +14,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(message).toContain("حي التجربة");
     expect(message).toContain("يرجى فصل الصوص");
     expect(message).toContain("بدون بصل");
-    expect(message).toContain("*ملاحظات الطلب: ⁨يرجى فصل الصوص⁩*");
+    expect(message).toContain("*🔸️ ملاحظات الطلب: ⁨يرجى فصل الصوص⁩*");
     expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("إجمالي الطلب"));
     expect(message.split("\n").filter(Boolean).every((line) => line.startsWith("\u200f"))).toBe(true);
     expect(message).not.toContain("demo-pizza");
@@ -22,7 +22,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
 
   it("renders English pickup and accepts older snapshots with no orderDetails", () => {
     const pickup = buildNetworkWhatsappDemo("combo", "en");
-    expect(formatNetworkOrderWhatsappMessage(pickup)).toContain("Pickup time: 🕒 \u20686 PM\u2069");
+    expect(formatNetworkOrderWhatsappMessage(pickup)).toContain("🕒 Pickup time: \u20686 PM\u2069");
     const old = copy(pickup) as any;
     delete old.orderDetails;
     expect(formatNetworkOrderWhatsappMessage(old)).toContain("Order total:");

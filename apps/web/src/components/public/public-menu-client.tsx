@@ -664,6 +664,8 @@ export function PublicMenuClient({
   }
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const orderSubmittingRef = useRef(false);
+  const legacyOrderAttempt = useRef<{ payloadJson: string; idempotencyKey: string } | null>(null);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
   const [drawerTab, setDrawerTab] = useState<"hours" | null>(null);
@@ -1059,44 +1061,60 @@ export function PublicMenuClient({
   }
 
   async function sendWhatsappOrder(details?: CheckoutDetails) {
-    if (!whatsappOrderingEnabled || !cart.length || cartNeedsPreviewGate(cart, products) || orderSubmitting) {
+    if (!whatsappOrderingEnabled || !cart.length || cartNeedsPreviewGate(cart, products) || orderSubmittingRef.current) {
       return;
     }
 
+    orderSubmittingRef.current = true;
     setOrderSubmitting(true);
     setOrderMessage(null);
     const checkoutDetails = normalizeCheckoutDetails(details);
+    const request = {
+      fulfillmentType: checkoutDetails?.fulfillmentType,
+      deliveryArea: checkoutDetails?.deliveryArea,
+      deliveryNear: checkoutDetails?.deliveryNear,
+      deliveryBeside: checkoutDetails?.deliveryBeside,
+      orderNote: checkoutDetails?.orderNote,
+      pickupTime: checkoutDetails?.pickupTime,
+      items: legacyCart.map((item) => ({
+        productSlug: item.slug,
+        quantity: item.quantity,
+        ...(item.note?.trim() ? { note: item.note.trim() } : {})
+      }))
+    };
+    const payloadJson = JSON.stringify(request);
+    if (legacyOrderAttempt.current?.payloadJson !== payloadJson) {
+      legacyOrderAttempt.current = { payloadJson, idempotencyKey: window.crypto.randomUUID() };
+    }
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
 
     try {
       const response = await fetch(`${PUBLIC_API_BASE_URL}/public/menus/${data.restaurant.slug}/orders/whatsapp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fulfillmentType: checkoutDetails?.fulfillmentType,
-          deliveryArea: checkoutDetails?.deliveryArea,
-          deliveryNear: checkoutDetails?.deliveryNear,
-          deliveryBeside: checkoutDetails?.deliveryBeside,
-          orderNote: checkoutDetails?.orderNote,
-          pickupTime: checkoutDetails?.pickupTime,
-          items: legacyCart.map((item) => ({
-            productSlug: item.slug,
-            quantity: item.quantity,
-            ...(item.note?.trim() ? { note: item.note.trim() } : {})
-          }))
-        })
+        body: JSON.stringify({ ...request, idempotencyKey: legacyOrderAttempt.current.idempotencyKey })
       });
-      const payload = await response.json().catch(() => null) as { data?: { whatsappUrl?: string }; whatsappUrl?: string; message?: string } | null;
+      const payload = await response.json().catch(() => null) as { data?: { whatsappUrl?: string; orderNumber?: string }; whatsappUrl?: string; message?: string } | null;
       const nextWhatsappUrl = payload?.data?.whatsappUrl ?? payload?.whatsappUrl;
 
-      if (!response.ok || !nextWhatsappUrl) {
+      if (!response.ok || !nextWhatsappUrl?.startsWith("https://wa.me/")) {
         throw new Error(payload?.message ?? "WhatsApp order failed");
       }
-
-      window.open(nextWhatsappUrl, "_blank", "noreferrer");
+      try {
+        if (tab) tab.location.href = nextWhatsappUrl;
+        else window.location.href = nextWhatsappUrl;
+      } catch {
+        setOrderMessage(language === "ar"
+          ? `حُفظ الطلب رقم ${payload?.data?.orderNumber ?? ""}، لكن تعذّر فتح WhatsApp. اضغط مجددًا لإعادة فتحه دون طلب جديد.`
+          : "The order was saved, but WhatsApp could not open. Tap again to retry without a new order.");
+      }
     } catch {
+      tab?.close();
       setOrderMessage(t.orderError);
       // A failed server checkout must never fall back to stale browser prices.
     } finally {
+      orderSubmittingRef.current = false;
       setOrderSubmitting(false);
     }
   }
@@ -1187,6 +1205,7 @@ export function PublicMenuClient({
           getCartQuantity={getCartQuantity}
           cart={cart}
           updateCartItem={updateCartItem}
+          onNetworkQuote={(product, quote, quantity) => addNetworkQuote(product, quote, undefined, quantity)}
           networkCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true}
           language={language}
           t={t}
@@ -1615,6 +1634,7 @@ function MenuView({
   getCartQuantity,
   cart,
   updateCartItem,
+  onNetworkQuote,
   networkCheckoutEnabled,
   language,
   t,
@@ -1631,6 +1651,7 @@ function MenuView({
   getCartQuantity: (slug: string) => number;
   cart: CartItem[];
   updateCartItem: (lineId: string, quantity: number) => void;
+  onNetworkQuote: (product: PublicProduct, quote: PublicProductQuoteResponse, quantity: number) => boolean;
   networkCheckoutEnabled: boolean;
   language: PublicLanguage;
   t: PublicTranslations;
@@ -1670,6 +1691,8 @@ function MenuView({
     selectedCategoryParam || (selectedMood || selectedCollection || !showCategoryLanding ? "all" : "")
   );
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
+  const [newNetworkProduct, setNewNetworkProduct] = useState<PublicProduct | null>(null);
+  const [managedNetworkProduct, setManagedNetworkProduct] = useState<PublicProduct | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
   const spotlightTouchStartX = useRef<number | null>(null);
   const spotlightPointerStartX = useRef<number | null>(null);
@@ -1679,6 +1702,20 @@ function MenuView({
   const manualCategoryScrollUntil = useRef(0);
   const categoryStripRef = useRef<HTMLElement | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>(selectedDisplayParam);
+  const menuCartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const managedNetworkLines = managedNetworkProduct
+    ? cart.filter((line): line is NetworkCartItem => line.mode === "NETWORK" && line.productId === managedNetworkProduct.id) : [];
+
+  useEffect(() => {
+    if (!newNetworkProduct && !managedNetworkProduct) return;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setNewNetworkProduct(null); setManagedNetworkProduct(null); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = oldOverflow; document.removeEventListener("keydown", onKeyDown); };
+  }, [newNetworkProduct, managedNetworkProduct]);
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = useMemo(() => data.categories.find((category) => category.slug === "all"), [data.categories]);
   const regularCategories = useMemo(() => data.categories.filter((category) => category.slug !== "all"), [data.categories]);
@@ -2104,7 +2141,8 @@ function MenuView({
     const productClassName = `${productListLayout === "double" ? "menu-product-card" : "menu-product-row"} ${productCardVariant ? `card-${productCardVariant}` : ""}`.trim();
     const quantity = getCartQuantity(product.slug);
     const networkLines = cart.filter((line): line is NetworkCartItem => line.mode === "NETWORK" && line.productId === product.id);
-    const canConfigure = isNetworkProduct(product) && product.productConfiguration?.orderable === true
+    const networkQuantity = networkLines.reduce((sum, line) => sum + line.quantity, 0);
+    const canConfigure = Boolean(product.id) && isNetworkProduct(product) && product.productConfiguration?.orderable === true
       && whatsappOrderingEnabled && networkCheckoutEnabled && showPrices;
     const showNetworkControl = canConfigure;
     const productContent = (
@@ -2133,7 +2171,16 @@ function MenuView({
         <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
           {productContent}
         </button>
-        {showRowQuantityControls && hasLegacyOrderPrice(product) ? (
+        {showNetworkControl ? (
+          <QuantityControl
+            className="menu-product-quantity"
+            quantity={networkQuantity}
+            onDecrease={() => setManagedNetworkProduct(product)}
+            onIncrease={() => setNewNetworkProduct(product)}
+            label={product.name}
+            increaseDisabled={menuCartCount >= 100}
+          />
+        ) : showRowQuantityControls && hasLegacyOrderPrice(product) ? (
           <QuantityControl
             className="menu-product-quantity"
             quantity={quantity}
@@ -2141,20 +2188,6 @@ function MenuView({
             onIncrease={() => addToCart(product)}
             label={product.name}
           />
-        ) : showNetworkControl && networkLines.length <= 1 ? (
-          <QuantityControl
-            className="menu-product-quantity"
-            quantity={networkLines[0]?.quantity ?? 0}
-            onDecrease={() => { const line = networkLines[0]; if (line) updateCartItem(line.lineId, line.quantity - 1); }}
-            onIncrease={() => { const line = networkLines[0]; if (line) updateCartItem(line.lineId, line.quantity + 1); else openProduct(product); }}
-            label={product.name}
-            increaseDisabled={cart.reduce((sum, line) => sum + line.quantity, 0) >= 100 || Boolean(networkLines[0] && networkLines[0].status !== "CURRENT")}
-          />
-        ) : showNetworkControl ? (
-          <button type="button" className="menu-network-configure" onClick={() => openProduct(product)}
-            aria-label={language === "ar" ? `اختيار تكوين جديد لـ ${product.name}` : `Choose another configuration for ${product.name}`}>
-            <Plus size={14} />
-          </button>
         ) : null}
       </article>
     );
@@ -2326,6 +2359,38 @@ function MenuView({
           onClose={() => setSelectedProduct(null)}
         />
       ) : null}
+      {newNetworkProduct ? <div className="menu-network-modal-backdrop" onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setNewNetworkProduct(null);
+      }}><section className="menu-network-modal" role="dialog" aria-modal="true" aria-labelledby="menu-network-new-title" dir={language === "ar" ? "rtl" : "ltr"}>
+        <header><h2 id="menu-network-new-title" dir="auto">{language === "ar" ? `تكوين جديد — ${newNetworkProduct.name}` : `New configuration — ${newNetworkProduct.name}`}</h2>
+          <button type="button" onClick={() => setNewNetworkProduct(null)} aria-label={language === "ar" ? "إغلاق" : "Close"}><X size={20} /></button></header>
+        <div className="menu-network-modal-scroll"><ProductConfigurator key={newNetworkProduct.id}
+          restaurantSlug={data.restaurant.slug} productId={newNetworkProduct.id!} currency={newNetworkProduct.currency}
+          initialQuantity={1} maxQuantity={Math.max(0, 100 - menuCartCount)} freshStart editableQuantity
+          onNetworkQuote={(quote, _lineId, amount = 1) => {
+            const saved = onNetworkQuote(newNetworkProduct, quote, amount);
+            if (saved) window.setTimeout(() => setNewNetworkProduct(null), 0);
+            return saved;
+          }} checkoutEnabled={networkCheckoutEnabled} orderingEnabled={whatsappOrderingEnabled && networkCheckoutEnabled && showPrices}
+          showPrices={showPrices} locale={language} /></div>
+      </section></div> : null}
+      {managedNetworkProduct && managedNetworkLines.length ? <div className="menu-network-modal-backdrop" onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setManagedNetworkProduct(null);
+      }}><section className="menu-network-modal" role="dialog" aria-modal="true" aria-labelledby="menu-network-manage-title" dir={language === "ar" ? "rtl" : "ltr"}>
+        <header><h2 id="menu-network-manage-title" dir="auto">{language === "ar" ? `تكوينات ${managedNetworkProduct.name} في السلة` : `${managedNetworkProduct.name} configurations in cart`}</h2>
+          <button type="button" onClick={() => setManagedNetworkProduct(null)} aria-label={language === "ar" ? "إغلاق" : "Close"}><X size={20} /></button></header>
+        <div className="menu-network-modal-scroll"><div className="menu-network-saved-list">
+          {managedNetworkLines.map((line) => <article key={line.lineId} className="menu-network-saved-line">
+            <b dir="auto">{networkCartHeading(line)}</b>
+            <p dir="auto">{networkCartChoiceLabels(line.acceptedQuote.priceBreakdown).slice(0, 4).map((choice) => choice.label).join(" • ")}</p>
+            {line.note ? <small dir="auto">{language === "ar" ? "ملاحظة:" : "Note:"} {line.note}</small> : null}
+            <QuantityControl quantity={line.quantity} label={networkCartHeading(line)}
+              onIncrease={() => updateCartItem(line.lineId, line.quantity + 1)}
+              onDecrease={() => updateCartItem(line.lineId, line.quantity - 1)}
+              increaseDisabled={menuCartCount >= 100 || line.status !== "CURRENT"} />
+          </article>)}
+        </div></div>
+      </section></div> : null}
     </main>
   );
 }
@@ -3128,7 +3193,7 @@ function CartView({
           </div>
           <div>
             <dt>{t.total}</dt>
-            <dd>{cartStep === "review" ? displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")
+            <dd className={cartStep === "confirm" && displayedOrderTotal === null ? "cart-total-pending" : undefined}>{cartStep === "review" ? displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")
               : displayedOrderTotal === null
               ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
               : displayCurrencyAmount(displayedOrderTotal, data.restaurant.currency ?? "ل.س")}</dd>
@@ -3230,7 +3295,6 @@ function CartView({
               return saved;
             }} checkoutEnabled={networkWhatsappCheckoutEnabled} orderingEnabled={whatsappOrderingEnabled && networkWhatsappCheckoutEnabled && showPrices}
             showPrices={showPrices} locale={language} />
-          <button type="button" className="network-cart-editor-cancel" onClick={() => setEditingNetworkLineId(null)}>{language === "ar" ? "إلغاء" : "Cancel"}</button>
         </section>
       </div> : null}
     </main>

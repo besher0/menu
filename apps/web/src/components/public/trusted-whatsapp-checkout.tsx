@@ -99,10 +99,12 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   const [previewPriceChanged, setPreviewPriceChanged] = useState(false);
   const busyRef = useRef(false);
   const editVersion = useRef(0);
+  const attemptRef = useRef<{ requestJson: string; idempotencyKey: string; acceptanceToken: string } | null>(null);
   const ar = locale === "ar";
 
   useEffect(() => {
     editVersion.current += 1;
+    attemptRef.current = null;
     setPendingPrice(null);
     setPreviewMessage(null);
   }, [cart, locale, details.customerName, details.customerPhone, details.fulfillmentType,
@@ -165,9 +167,9 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   }
 
   async function confirmAndOpen(checkoutRequest: PublicWhatsappCheckoutRequest, acceptanceToken: string,
-    displayedTotal: string, version: number, tab: Window | null) {
+    idempotencyKey: string, displayedTotal: string, version: number, tab: Window | null) {
     try {
-      const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken);
+      const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken, idempotencyKey);
       if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");
       if (editVersion.current !== version) { tab?.close(); return; }
       const comparison = compareTrustedDraft(result.draft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
@@ -176,8 +178,13 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         setError(ar ? "تغير الطلب أثناء التحقق. راجعه وأعد الإرسال." : "The order changed during verification. Review and retry.");
         return;
       }
-      if (tab) tab.location.href = result.whatsappUrl;
-      else window.location.href = result.whatsappUrl;
+      try {
+        if (tab) tab.location.href = result.whatsappUrl;
+        else window.location.href = result.whatsappUrl;
+      } catch {
+        setError(ar ? `حُفظ الطلب رقم ${result.orderNumber}، لكن تعذّر فتح WhatsApp. اضغط الزر مجددًا لإعادة فتحه دون إنشاء طلب جديد.`
+          : `Order ${result.orderNumber} was saved, but WhatsApp could not open. Tap again to retry without a new order.`);
+      }
     } catch (caught) {
       tab?.close();
       handleConfirmationError(caught, checkoutRequest, displayedTotal, version);
@@ -193,13 +200,20 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     }
     // Reserve a tab during the click; it stays blank until both server calls succeed.
     const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
     busyRef.current = true;
     setBusy(true);
     setError(null);
     setPendingPrice(null);
     const version = editVersion.current;
     const checkoutRequest = request();
+    const requestJson = JSON.stringify(checkoutRequest);
     try {
+      if (attemptRef.current?.requestJson === requestJson) {
+        await confirmAndOpen(checkoutRequest, attemptRef.current.acceptanceToken,
+          attemptRef.current.idempotencyKey, displayedTotal, version, tab);
+        return;
+      }
       const prepared = await preparePublicWhatsappCheckout(restaurantSlug, checkoutRequest);
       if (editVersion.current !== version) { tab?.close(); return; }
       const comparison = compareTrustedDraft(prepared.draft, checkoutRequest, displayedTotal, restaurantSlug, locale, displayedFee);
@@ -216,7 +230,9 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         return;
       }
       // The user's send click accepts only the total already visible in the original invoice.
-      await confirmAndOpen(checkoutRequest, prepared.acceptanceToken, displayedTotal, version, tab);
+      const idempotencyKey = window.crypto.randomUUID();
+      attemptRef.current = { requestJson, idempotencyKey, acceptanceToken: prepared.acceptanceToken };
+      await confirmAndOpen(checkoutRequest, prepared.acceptanceToken, idempotencyKey, displayedTotal, version, tab);
     } catch (caught) {
       tab?.close();
       if (editVersion.current === version) setError(trustedCheckoutErrorMessage(caught, locale, details));
@@ -229,6 +245,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   async function acceptUpdatedPrice() {
     if (!pendingPrice || busyRef.current) return;
     const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
     const version = editVersion.current;
     const { request: checkoutRequest, acceptanceToken, draft } = pendingPrice;
     busyRef.current = true;
@@ -237,7 +254,10 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     setPendingPrice(null);
     try {
       // Confirm independently revalidates the draft and the HMAC-bound approval.
-      const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken);
+      const idempotencyKey = attemptRef.current?.requestJson === JSON.stringify(checkoutRequest)
+        ? attemptRef.current.idempotencyKey : window.crypto.randomUUID();
+      attemptRef.current = { requestJson: JSON.stringify(checkoutRequest), idempotencyKey, acceptanceToken };
+      const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken, idempotencyKey);
       if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");
       if (editVersion.current !== version) { tab?.close(); return; }
       if (JSON.stringify(result.draft) !== JSON.stringify(draft)) {
@@ -245,8 +265,13 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         setError(ar ? "تغير الطلب مرة أخرى. راجع السلة وأعد المحاولة." : "The order changed again. Review the cart and retry.");
         return;
       }
-      if (tab) tab.location.href = result.whatsappUrl;
-      else window.location.href = result.whatsappUrl;
+      try {
+        if (tab) tab.location.href = result.whatsappUrl;
+        else window.location.href = result.whatsappUrl;
+      } catch {
+        setError(ar ? `حُفظ الطلب رقم ${result.orderNumber}، لكن تعذّر فتح WhatsApp. اضغط الزر مجددًا لإعادة فتحه دون إنشاء طلب جديد.`
+          : `Order ${result.orderNumber} was saved, but WhatsApp could not open. Tap again to retry without a new order.`);
+      }
     } catch (caught) {
       tab?.close();
       handleConfirmationError(caught, checkoutRequest, draft.itemsSubtotal, version, draft);

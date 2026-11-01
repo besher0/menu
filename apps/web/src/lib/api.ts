@@ -308,8 +308,10 @@ export function preparePublicWhatsappCheckout(slug: string, request: PublicWhats
   return whatsappCheckoutPost<{ draft: PublicWhatsappCheckoutDraft; messagePreview: string; acceptanceToken: string }>(slug, "prepare", request);
 }
 
-export function confirmPublicWhatsappCheckout(slug: string, request: PublicWhatsappCheckoutRequest, acceptanceToken: string) {
-  return whatsappCheckoutPost<{ draft: PublicWhatsappCheckoutDraft; message: string; whatsappUrl: string }>(slug, "confirm", { request, acceptanceToken });
+export function confirmPublicWhatsappCheckout(slug: string, request: PublicWhatsappCheckoutRequest,
+  acceptanceToken: string, idempotencyKey: string) {
+  return whatsappCheckoutPost<{ orderId: string; orderNumber: string; draft: PublicWhatsappCheckoutDraft;
+    message: string; whatsappUrl: string; replayed: boolean }>(slug, "confirm", { request, acceptanceToken, idempotencyKey });
 }
 
 type ApiResponse<T> = {

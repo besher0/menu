@@ -86,7 +86,8 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     return { status: response.status, body: await response.json() as Record<string, any> };
   }
   const prepare = (body: unknown, slug?: string) => post("prepare", body, slug);
-  const confirm = (body: unknown, token: string, slug?: string) => post("confirm", { request: body, acceptanceToken: token }, slug);
+  const confirm = (body: unknown, token: string, slug?: string, idempotencyKey?: string) => post("confirm",
+    { request: body, acceptanceToken: token, ...(idempotencyKey ? { idempotencyKey } : {}) }, slug);
   const setShowPrices = (showPrices: boolean) => prisma.restaurantThemeSettings.update({
     where: { restaurantId: "s6e2-r1" },
     data: { settings: { ...ABO_MALEK_THEME, dashboardSettings: { showPrices }, publicUi: { whatsappOrderingEnabled: true } } }
@@ -265,7 +266,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(sent.body.message).toContain("مجموع الأصناف: 554.00001 EGP");
   });
 
-  it("binds the actual fee to trusted acceptance and leaves rejected checkout without Orders", async () => {
+  it("binds the actual fee to trusted acceptance and saves only the accepted checkout", async () => {
     const payload = request([legacyLine, networkLine], { fulfillmentType: "delivery",
       deliveryArea: "Area A", deliveryNear: "School", deliveryBeside: "Building 5" });
     const before = await prisma.order.count();
@@ -285,7 +286,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     const accepted = await confirm(payload, stale.body.acceptanceToken);
     expect(accepted.status).toBe(200);
     expect(accepted.body.message).toContain("رسوم التوصيل: مجاني");
-    expect(await prisma.order.count()).toBe(before);
+    expect(await prisma.order.count()).toBe(before + 1);
     await setDeliveryFee(null);
   });
 
@@ -363,7 +364,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(sent.body.message.indexOf("First pizza")).toBeLessThan(sent.body.message.indexOf("Extra pizza"));
     expect(sent.body.message.indexOf("First pizza")).toBeLessThan(sent.body.message.indexOf("Second pizza"));
     expect(sent.body.message.indexOf("Second pizza")).toBeLessThan(sent.body.message.indexOf("Extra pizza"));
-    expect(sent.body.message.match(/↳ ⁨Source Pizza⁩/g)).toHaveLength(3);
+    expect(sent.body.message.match(/• 1 × ⁨(?:First|Second|Extra) pizza⁩ — ⁨Source Pizza⁩/g)).toHaveLength(3);
   });
 
   it("keeps identical trusted lines grouped beneath the WhatsApp URL limit", async () => {
@@ -518,7 +519,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     const pending = await submitLegacy();
     expect(pending.status).toBe(201);
     expect(pending.body.message).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
-    expect(pending.body.message).not.toContain("الإجمالي:");
+    expect(pending.body.message).toContain("الإجمالي: يُحدّد بعد رسوم التوصيل");
     expect(await prisma.order.count()).toBe(before + 3);
   });
 
@@ -533,11 +534,12 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(confirmed.body.whatsappUrl).toContain("wa.me/201000000000");
     await prisma.restaurant.update({ where: { id: "s6e2-r1" }, data: { whatsappPhone: "201000000002" } });
     const stale = await confirm(payload, prepared.body.acceptanceToken);
-    expect(stale.status).toBe(409);
-    expect(stale.body.changedDraft).toBeDefined();
+    expect(stale.status).toBe(200);
+    expect(stale.body.orderId).toBe(confirmed.body.orderId);
+    expect(stale.body.whatsappUrl).toContain("wa.me/201000000000");
   });
 
-  it("keeps a small concurrent trusted checkout wave safe without writing Orders", async () => {
+  it("keeps a small concurrent trusted checkout wave numbered without duplicate numbers", async () => {
     const before = await prisma.order.count();
     const payload = request([legacyLine, networkLine]);
     const prepared = await Promise.all(Array.from({ length: 5 }, () => prepare(payload)));
@@ -558,7 +560,53 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
       if (result.status === 200) expect(result.body.draft.totalAmount).toBe("554.00001");
       else expect(result.body.error).toBe("WHATSAPP_CHECKOUT_CONCURRENT_UPDATE");
     }
-    expect(await prisma.order.count()).toBe(before);
+    const successful = confirmed.filter((result) => result.status === 200);
+    expect(await prisma.order.count()).toBe(before + successful.length);
+    expect(new Set(successful.map((result) => result.body.orderNumber)).size).toBe(successful.length);
+  });
+
+  it("replays one numbered Network order for concurrent confirms and response-loss retry", async () => {
+    const payload = request([networkLine]);
+    const prepared = await prepare(payload);
+    expect(prepared.status).toBe(200);
+    const key = `network-retry-${randomBytes(12).toString("hex")}`;
+    const beforeOrders = await prisma.order.count();
+    const beforeEvents = await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } });
+    const concurrent = await Promise.all(Array.from({ length: 3 }, () => confirm(payload, prepared.body.acceptanceToken, undefined, key)));
+    expect(concurrent.every((result) => result.status === 200)).toBe(true);
+    expect(new Set(concurrent.map((result) => result.body.orderId)).size).toBe(1);
+    expect(new Set(concurrent.map((result) => result.body.orderNumber)).size).toBe(1);
+    expect(concurrent[0].body.message).toContain(`طلب جديد رقم ${concurrent[0].body.orderNumber}`);
+    expect(await prisma.order.count()).toBe(beforeOrders + 1);
+    expect(await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } })).toBe(beforeEvents + 1);
+    const replayed = await confirm(payload, prepared.body.acceptanceToken, undefined, key);
+    expect(replayed.body.orderId).toBe(concurrent[0].body.orderId);
+    expect(replayed.body.replayed).toBe(true);
+    const changed = await confirm({ ...payload, orderNote: "Changed" }, prepared.body.acceptanceToken, undefined, key);
+    expect(changed.status).toBe(409);
+    expect(changed.body.error).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
+
+  it("replays one numbered Legacy order for a double click and keeps a separate Mixed number", async () => {
+    const key = `legacy-retry-${randomBytes(12).toString("hex")}`;
+    const payload = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup", idempotencyKey: key };
+    const beforeOrders = await prisma.order.count();
+    const beforeEvents = await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } });
+    const legacy = await Promise.all(Array.from({ length: 2 }, () => fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload)
+    }).then(async (response) => ({ status: response.status, body: await response.json() as Record<string, any> }))));
+    expect(legacy.every((result) => result.status === 201)).toBe(true);
+    expect(legacy[0].body.orderId).toBe(legacy[1].body.orderId);
+    expect(legacy[0].body.orderNumber).toBe(legacy[1].body.orderNumber);
+    const mixedPayload = request([legacyLine, networkLine]);
+    const prepared = await prepare(mixedPayload);
+    const mixed = await confirm(mixedPayload, prepared.body.acceptanceToken, undefined,
+      `mixed-${randomBytes(12).toString("hex")}`);
+    expect(mixed.status).toBe(200);
+    expect(mixed.body.orderNumber).not.toBe(legacy[0].body.orderNumber);
+    expect(mixed.body.message).toContain(`طلب جديد رقم ${mixed.body.orderNumber}`);
+    expect(await prisma.order.count()).toBe(beforeOrders + 2);
+    expect(await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } })).toBe(beforeEvents + 2);
   });
 
   it("rejects historical fractional SYP prices and formats a valid mixed draft without changing exact totals", async () => {
