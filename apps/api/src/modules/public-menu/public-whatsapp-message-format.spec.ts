@@ -33,7 +33,11 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).not.toMatch(/📏 الأحجام — كبير/);
     expect(message).not.toContain("الحجم:");
     expect(message).not.toContain("Configuration Revision");
-    expect(message).toContain("إجمالي الطلب: 530.000008 EGP");
+    expect(message).toContain("الإجمالي: 530.000008 EGP");
+    expect(message).toContain("رسوم التوصيل: لا تُضاف للاستلام");
+    expect(message.indexOf("بيتزا مارغريتا")).toBeGreaterThan(message.indexOf("━━━━━━━━━━━━━━"));
+    expect(message.indexOf("اسم الزبون")).toBeGreaterThan(message.indexOf("مجموع الأصناف"));
+    expect(message).not.toContain("الفرع:");
   });
 
   it("preserves every repeated linked instance and English source choices", () => {
@@ -75,7 +79,7 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).toContain("No onion");
     expect(message).toContain("1 × \u2068Juice\u2069");
     expect(message).not.toContain("3. 1 ×");
-    expect(message).toContain("Order total: 1070.000016 EGP");
+    expect(message).toContain("Total: 1070.000016 EGP");
   });
 
   it("rejects an inconsistent trusted line before presentation grouping", () => {
@@ -89,11 +93,10 @@ describe("trusted public WhatsApp message presentation", () => {
     draft.details.fulfillmentType = "delivery";
     draft.details.deliveryArea = "منطقة تجريبية";
     draft.details.deliveryNear = "معلم تجريبي";
-    draft.details.deliveryBeside = "عنوان تجريبي";
     draft.deliveryFee = "10";
     draft.totalAmount = "540.000008";
     expect(formatTrustedWhatsappDraft(draft)).toContain("رسوم التوصيل: 10 EGP");
-    expect(formatTrustedWhatsappDraft(draft)).toContain("إجمالي الطلب: 540.000008 EGP");
+    expect(formatTrustedWhatsappDraft(draft)).toContain("الإجمالي: 540.000008 EGP");
     draft.deliveryFee = "0";
     draft.totalAmount = draft.itemsSubtotal;
     expect(formatTrustedWhatsappDraft(draft)).toContain("رسوم التوصيل: مجاني");
@@ -101,6 +104,7 @@ describe("trusted public WhatsApp message presentation", () => {
     draft.totalAmount = null;
     const pending = formatTrustedWhatsappDraft(draft);
     expect(pending).toContain("رسوم التوصيل: تُحدّد حسب المنطقة");
-    expect(pending).not.toContain("إجمالي الطلب:");
+    expect(pending).toContain("الإجمالي: يُحدّد بعد رسوم التوصيل");
+    expect(pending).not.toContain("بجانب:");
   });
 });

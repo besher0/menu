@@ -75,8 +75,8 @@ function parseDetails(body: Record<string, unknown>): NetworkOrderDetails {
     details.fulfillmentType = body.fulfillmentType;
   }
   if (details.fulfillmentType === "delivery") {
-    if (!details.deliveryArea || !details.deliveryNear || !details.deliveryBeside || details.pickupTime) {
-      fail("INVALID_NETWORK_ORDER_DETAILS", "Delivery requires area, near and beside; pickupTime is not applicable.");
+    if (!details.deliveryArea || !details.deliveryNear || details.pickupTime) {
+      fail("INVALID_NETWORK_ORDER_DETAILS", "Delivery requires area and near; pickupTime is not applicable.");
     }
   } else if (details.deliveryArea || details.deliveryNear || details.deliveryBeside
     || (details.pickupTime && details.fulfillmentType !== "pickup")) {

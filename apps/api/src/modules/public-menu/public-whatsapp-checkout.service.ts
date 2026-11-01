@@ -7,7 +7,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { sha256, stableJson } from "../orders/network-order-contract";
 import {
   buildNetworkWhatsappPreviewUrl, formatNetworkOrderDetails, formatNetworkSnapshotLine,
-  formatWhatsappDisplayText, NetworkOrderSnapshotFormatError
+  formatWhatsappDisplayText, formatWhatsappMessageLines, NetworkOrderSnapshotFormatError
 } from "../orders/network-order-whatsapp-formatter";
 import { resolvePublicProductConfiguration } from "./public-product-configuration";
 import { quotePublicProductConfiguration } from "./public-product-quote";
@@ -127,8 +127,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
   const ar = draft.locale === "ar";
   const details = formatNetworkOrderDetails({ restaurantName: draft.restaurantName, ...draft.details }, draft.locale);
   const output = [ar ? "🧾 طلب جديد — OrderSawa" : "🧾 New order — OrderSawa", ...details.header];
-  if (draft.branchName) output.push(`${ar ? "الفرع" : "Branch"}: ${formatWhatsappDisplayText(draft.branchName, "$branchName")}`);
-  output.push("");
+  output.push("━━━━━━━━━━━━━━");
   for (const [index, line] of groupedMessageLines(draft.items).entries()) {
     if (line.mode === "NETWORK") {
       if (!line.display) throw new Error("NETWORK_DRAFT_DISPLAY_MISSING");
@@ -147,13 +146,16 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
       ? null : sumMoney([draft.itemsSubtotal, draft.deliveryFee ?? "0"]))) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
   const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.itemsSubtotal, draft.currency);
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  output.push(...details.footer);
   output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.itemsSubtotal, draft.currency)}`);
-  if (draft.details.fulfillmentType === "delivery") output.push(`${ar ? "رسوم التوصيل" : "Delivery fee"}: ${draft.deliveryFee === null
-    ? ar ? "تُحدّد حسب المنطقة" : "Determined by area"
+  output.push(`${ar ? "رسوم التوصيل" : "Delivery fee"}: ${draft.details.fulfillmentType !== "delivery"
+    ? ar ? "لا تُضاف للاستلام" : "Not charged for pickup"
+    : draft.deliveryFee === null ? ar ? "تُحدّد حسب المنطقة" : "Determined by area"
     : draft.deliveryFee === "0" ? ar ? "مجاني" : "Free" : formatCurrencyAmount(draft.deliveryFee, draft.currency)}`);
-  if (draft.totalAmount !== null) output.push(`${ar ? "💵 إجمالي الطلب" : "💵 Order total"}: ${formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
-  return output.join("\n");
+  output.push(`${ar ? "💵 الإجمالي" : "💵 Total"}: ${draft.totalAmount === null
+    ? ar ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
+    : formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
+  output.push("", ...details.footer);
+  return formatWhatsappMessageLines(output, draft.locale);
 }
 
 @Injectable()

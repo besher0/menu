@@ -8618,7 +8618,7 @@ body:has(.public-page)::-webkit-scrollbar {
 .checkout-steps {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   margin: 2px 0 4px;
   max-width: 100%;
   padding-inline: 24px;
@@ -8631,13 +8631,21 @@ body:has(.public-page)::-webkit-scrollbar {
   background: linear-gradient(90deg, #cbd1dc 0 50%, var(--color-secondary) 50% 100%);
   content: "";
   height: 1px;
-  left: 14%;
+  left: 25%;
   position: absolute;
-  right: 14%;
+  right: 25%;
   top: 18px;
 }
 
-.checkout-steps:has(div:nth-child(3).active)::before {
+.public-screen[dir="ltr"] .checkout-steps::before {
+  background: linear-gradient(90deg, var(--color-secondary) 0 50%, #cbd1dc 50% 100%);
+}
+
+.public-screen[dir="ltr"] .checkout-steps:has(div:nth-child(2).active)::before {
+  background: var(--color-secondary);
+}
+
+.checkout-steps:has(div:nth-child(2).active)::before {
   background: var(--color-secondary);
 }
 
@@ -8756,7 +8764,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .cart-page-copy b {
-  color: #201217;
+  color: #151922;
   display: block;
   font-size: 18px;
   font-weight: 900;

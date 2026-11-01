@@ -11,7 +11,7 @@ import type { CartItem } from "./cart-model";
 type Locale = "ar" | "en";
 type Details = {
   customerName: string; customerPhone: string; fulfillmentType: "pickup" | "delivery";
-  deliveryArea: string; deliveryNear: string; deliveryBeside: string;
+  deliveryArea: string; deliveryNear: string;
   pickupTime: string; orderNote: string;
 };
 type PendingPrice = {
@@ -38,7 +38,7 @@ export function compareTrustedDraft(draft: PublicWhatsappCheckoutDraft, checkout
   return draft.items.some((line) => line.changed) ? "SOURCE_CHANGED" : "CURRENT";
 }
 
-/** Checkout behavior only. CartView owns the original three-step visual shell. */
+/** Checkout behavior only. CartView owns the two-step visual shell. */
 export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, details, disabledReason, displayedFee }: {
   cart: readonly CartItem[]; restaurantSlug: string; locale: Locale; details: Details; disabledReason?: string;
   displayedFee: string | null;
@@ -57,7 +57,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     setPendingPrice(null);
     setPreviewMessage(null);
   }, [cart, locale, details.customerName, details.customerPhone, details.fulfillmentType,
-    details.deliveryArea, details.deliveryNear, details.deliveryBeside, details.pickupTime, details.orderNote]);
+    details.deliveryArea, details.deliveryNear, details.pickupTime, details.orderNote]);
 
   function request(): PublicWhatsappCheckoutRequest {
     return {
@@ -66,7 +66,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       ...(details.customerPhone.trim() ? { customerPhone: details.customerPhone.trim() } : {}),
       fulfillmentType: details.fulfillmentType,
       ...(details.fulfillmentType === "delivery" ? {
-        deliveryArea: details.deliveryArea.trim(), deliveryNear: details.deliveryNear.trim(), deliveryBeside: details.deliveryBeside.trim()
+        deliveryArea: details.deliveryArea.trim(), deliveryNear: details.deliveryNear.trim()
       } : details.pickupTime.trim() ? { pickupTime: details.pickupTime.trim() } : {}),
       ...(details.orderNote.trim() ? { orderNote: details.orderNote.trim() } : {}),
       items: cart.map((item) => item.mode === "LEGACY" ? {
@@ -160,8 +160,8 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
   async function submit(displayedTotal: string) {
     if (disabledReason || !cart.length || busyRef.current) return;
     if (details.fulfillmentType === "delivery"
-      && (!details.deliveryArea.trim() || !details.deliveryNear.trim() || !details.deliveryBeside.trim())) {
-      setError(ar ? "أدخل منطقة التوصيل والعلامة القريبة والتفاصيل." : "Enter the delivery area, nearby landmark and address detail.");
+      && (!details.deliveryArea.trim() || !details.deliveryNear.trim())) {
+      setError(ar ? "أدخل منطقة التوصيل والعلامة القريبة." : "Enter the delivery area and nearby landmark.");
       return;
     }
     // Reserve a tab during the click; it stays blank until both server calls succeed.

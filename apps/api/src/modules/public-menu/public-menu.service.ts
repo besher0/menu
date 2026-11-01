@@ -12,6 +12,13 @@ import {
   type PublicProductConfigurationResponse
 } from "./public-product-configuration";
 import { quotePublicProductConfiguration } from "./public-product-quote";
+import { formatWhatsappMessageLines } from "../orders/network-order-whatsapp-formatter";
+
+function isolateWhatsappText(value: string): string {
+  const safe = value.replace(/[\r\n\u2028\u2029\t\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, " ")
+    .replace(/\s+/g, " ").trim();
+  return `\u2068${safe}\u2069`;
+}
 
 // Network activation must not overwrite the merchant-controlled availability flag.
 // The legacy order path requires both legacy persistence markers; the Network
@@ -917,45 +924,38 @@ export class PublicMenuService {
     const displayDifference = input.showPrices
       ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.itemsSubtotal, input.currency)
       : null;
-    const lines = [
-      `طلب جديد من ${input.restaurantName}`,
-      `رقم الطلب: ${input.orderNumber}`,
-      "",
-      input.branchName ? `الفرع: ${input.branchName}` : null,
-      input.customerName ? `الزبون: ${input.customerName}` : null,
-      input.customerPhone ? `الهاتف: ${input.customerPhone}` : null,
-      input.fulfillmentType ? `طريقة الاستلام: ${input.fulfillmentType === "delivery" ? "توصيل دليفري" : "استلام من المطعم"}` : null,
-      input.fulfillmentType === "delivery" && input.deliveryArea ? `المنطقة: ${input.deliveryArea}` : null,
-      input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${input.deliveryNear}` : null,
-      input.fulfillmentType === "delivery" && input.deliveryBeside ? `جانب: ${input.deliveryBeside}` : null,
-      input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: ${input.pickupTime}` : null,
-      "",
-      "العناصر:",
-      ...input.items.flatMap((item, index) => [
-        `${index + 1}- ${item.quantity}x ${item.name}`,
-        item.options.length ? `الإضافات: ${item.options.join(", ")}` : null,
-        item.note ? `ملاحظة: ${item.note}` : null,
-        input.showPrices ? `السعر: ${currencyDisplayScale(input.currency) === null
-          ? `${formatDecimalForDisplay(item.totalPrice, 2)} ${input.currency}`
-          : formatCurrencyAmount(item.totalPrice, input.currency)}` : null,
+    const displayAmount = (value: string) => currencyDisplayScale(input.currency) === null
+      ? `${formatDecimalForDisplay(value, 2)} ${input.currency}` : formatCurrencyAmount(value, input.currency);
+    const lines: (string | null)[] = [
+      `🧾 طلب جديد — OrderSawa #${input.orderNumber}`,
+      `المطعم: ${isolateWhatsappText(input.restaurantName)}`,
+      input.fulfillmentType ? `طريقة الاستلام: ${input.fulfillmentType === "delivery" ? "توصيل" : "استلام من المطعم"}` : null,
+      "━━━━━━━━━━━━━━",
+      ...input.items.flatMap((item): (string | null)[] => [
+        `${item.quantity} × ${isolateWhatsappText(item.name)}`,
+        ...item.options.map((option) => `• ${isolateWhatsappText(option)}`),
+        item.note ? `ملاحظة الصنف: ${isolateWhatsappText(item.note)}` : null,
+        input.showPrices ? `إجمالي الصنف: ${displayAmount(item.totalPrice)}` : null,
         ""
       ]),
       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
-      input.showPrices ? `مجموع الأصناف: ${currencyDisplayScale(input.currency) === null
-        ? `${formatDecimalForDisplay(input.itemsSubtotal, 2)} ${input.currency}`
-        : formatCurrencyAmount(input.itemsSubtotal, input.currency)}` : null,
-      input.showPrices && input.fulfillmentType === "delivery" ? `رسوم التوصيل: ${input.deliveryFee === null ? "تُحدّد حسب المنطقة" : input.deliveryFee === "0" ? "مجاني" : formatCurrencyAmount(input.deliveryFee, input.currency)}` : null,
-      input.showPrices && (input.fulfillmentType !== "delivery" || input.deliveryFee !== null) ? `الإجمالي: ${currencyDisplayScale(input.currency) === null
-        ? `${formatDecimalForDisplay(input.totalAmount, 2)} ${input.currency}`
-        : formatCurrencyAmount(input.totalAmount, input.currency)}` : null,
-      input.orderNote ? "" : null,
-      input.orderNote ? "ملاحظة الطلب:" : null,
-      input.orderNote ?? null,
+      input.showPrices ? `مجموع الأصناف: ${displayAmount(input.itemsSubtotal)}` : null,
+      input.showPrices ? `رسوم التوصيل: ${input.fulfillmentType !== "delivery" ? "لا تُضاف للاستلام"
+        : input.deliveryFee === null ? "تُحدّد حسب المنطقة" : input.deliveryFee === "0" ? "مجاني" : formatCurrencyAmount(input.deliveryFee, input.currency)}` : null,
+      input.showPrices ? `الإجمالي: ${input.fulfillmentType === "delivery" && input.deliveryFee === null
+        ? "يُحدّد بعد رسوم التوصيل" : displayAmount(input.totalAmount)}` : null,
       "",
+      input.customerName ? `الاسم: ${isolateWhatsappText(input.customerName)}` : null,
+      input.customerPhone ? `الهاتف: ${isolateWhatsappText(input.customerPhone)}` : null,
+      input.fulfillmentType === "delivery" && input.deliveryArea ? `المنطقة: ${isolateWhatsappText(input.deliveryArea)}` : null,
+      input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${isolateWhatsappText(input.deliveryNear)}` : null,
+      input.fulfillmentType === "delivery" && input.deliveryBeside ? `العنوان: ${isolateWhatsappText(input.deliveryBeside)}` : null,
+      input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null,
+      input.orderNote ? `ملاحظات الطلب: ${isolateWhatsappText(input.orderNote)}` : null,
       `الوقت: ${new Date().toLocaleString("ar-SY")}`
     ];
 
-    return lines.filter(Boolean).join("\n");
+    return formatWhatsappMessageLines(lines, "ar");
   }
 
   private async nextDailyOrderSequence(restaurantId: string) {

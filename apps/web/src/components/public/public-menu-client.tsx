@@ -2529,7 +2529,6 @@ function CartView({
   const [fulfillment, setFulfillment] = useState<FulfillmentType>("pickup");
   const [deliveryArea, setDeliveryArea] = useState("");
   const [deliveryNear, setDeliveryNear] = useState("");
-  const [deliveryBeside, setDeliveryBeside] = useState("");
   const [orderNote, setOrderNote] = useState("");
   const [pickupTime, setPickupTime] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -2769,7 +2768,7 @@ function CartView({
         : undefined;
   const trusted = useTrustedWhatsappCheckout({ cart, restaurantSlug: data.restaurant.slug, locale: language,
     details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
-      deliveryBeside, pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
+      pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
   const displayedFee = trusted.pendingPrice ? trusted.pendingPrice.draft.deliveryFee : deliveryFee;
   const displayedItemsSubtotal = useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.itemsSubtotal ?? trustedTotal : legacySubtotal;
   const displayedOrderTotal = useTrustedNetworkCheckout
@@ -2859,8 +2858,8 @@ function CartView({
     }
 
     if (fulfillment === "delivery") {
-      if (!deliveryArea.trim() || !deliveryNear.trim() || !deliveryBeside.trim()) {
-        setCheckoutError("يرجى تعبئة المنطقة وقريب من وجانب قبل إرسال الطلب.");
+      if (!deliveryArea.trim() || !deliveryNear.trim()) {
+        setCheckoutError(language === "ar" ? "يرجى تعبئة المنطقة وقريب من قبل إرسال الطلب." : "Enter the delivery area and nearby landmark before sending.");
         return;
       }
     }
@@ -2876,7 +2875,6 @@ function CartView({
             fulfillmentType: fulfillment,
             deliveryArea,
             deliveryNear,
-            deliveryBeside,
             orderNote
           }
         : {
@@ -3024,7 +3022,7 @@ function CartView({
           {useTrustedNetworkCheckout ? <>
             <label><span>{language === "ar" ? "اسم الزبون (اختياري)" : "Customer name (optional)"}</span>
               <input value={customerName} maxLength={120} onChange={(event) => setCustomerName(event.target.value)} /></label>
-            <label><span>{language === "ar" ? "الهاتف (اختياري)" : "Phone (optional)"}</span>
+            <label><span>{language === "ar" ? "الهاتف" : "Phone"}</span>
               <input value={customerPhone} maxLength={40} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
           </> : null}
           <div className="fulfillment-toggle">
@@ -3041,30 +3039,26 @@ function CartView({
             <>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Area" : "المنطقة"}</span>
-                <input value={deliveryArea} onChange={(event) => setDeliveryArea(event.target.value)} placeholder="حلب الجديدة" />
+                <input value={deliveryArea} onChange={(event) => setDeliveryArea(event.target.value)} />
               </label>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Near" : "قريب من"}</span>
-                <input value={deliveryNear} onChange={(event) => setDeliveryNear(event.target.value)} placeholder="مشفى الشهباء" />
-              </label>
-              <label>
-                <span>{useTrustedNetworkCheckout && language === "en" ? "Address details" : "جانب"}</span>
-                <input value={deliveryBeside} onChange={(event) => setDeliveryBeside(event.target.value)} placeholder="صيدلية باسل" />
+                <input value={deliveryNear} onChange={(event) => setDeliveryNear(event.target.value)} />
               </label>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Order note" : "ملاحظة للطلب"}</span>
-                <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="ملاحظة" />
+                <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} />
               </label>
             </>
           ) : (
             <>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Order note" : "ملاحظة"}</span>
-                <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} placeholder="ملاحظة" />
+                <input value={orderNote} onChange={(event) => setOrderNote(event.target.value)} />
               </label>
               <label>
                 <span>{useTrustedNetworkCheckout && language === "en" ? "Pickup time" : "وقت الاستلام"}</span>
-                <input value={pickupTime} onChange={(event) => setPickupTime(event.target.value)} placeholder="اسرع وقت" />
+                <input value={pickupTime} onChange={(event) => setPickupTime(event.target.value)} />
               </label>
             </>
           )}
@@ -3108,7 +3102,6 @@ function CartView({
             <dt>{t.subtotal}</dt>
             <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
-          {fulfillment === "delivery" || (!invoiceExpanded && !invoiceDragActive) ? (
           <div>
               <dt>{t.deliveryFee}</dt>
               <dd>{fulfillment === "pickup" ? language === "ar" ? "لا تُضاف للاستلام" : "Not charged for pickup"
@@ -3116,7 +3109,6 @@ function CartView({
                 : displayedFee === "0" ? language === "ar" ? "مجاني" : "Free"
                 : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
-          ) : null}
           <div>
             <dt>{t.total}</dt>
             <dd>{displayedOrderTotal === null
@@ -3169,7 +3161,7 @@ function CartView({
           <button type="button" onClick={trusted.closePreview} aria-label={language === "ar" ? "إغلاق المعاينة" : "Close preview"}><X size={20} /></button></header>
         {trusted.previewPriceChanged ? <p role="alert">{language === "ar" ? "تغير السعر. هذه معاينة للسعر الحالي فقط؛ يلزم قبول السعر الجديد قبل الإرسال." : "The price changed. This previews the current price only; you must accept it before sending."}</p> : null}
         <p>{language === "ar" ? "هذه رسالة نصية فقط. المعاينة لا تنشئ طلبًا ولا تفتح WhatsApp." : "Plain text only. Preview does not create an order or open WhatsApp."}</p>
-        <pre dir="auto">{trusted.previewMessage}</pre>
+        <pre dir={language === "ar" ? "rtl" : "ltr"}>{trusted.previewMessage}</pre>
         <button type="button" onClick={() => { void navigator.clipboard.writeText(trusted.previewMessage ?? "").then(() => setPreviewCopied(true)); }}>
           {previewCopied ? language === "ar" ? "تم النسخ" : "Copied" : language === "ar" ? "نسخ النص" : "Copy text"}
         </button>
@@ -3268,11 +3260,10 @@ function NetworkCartDetails({
 
 function CheckoutSteps({ active }: { active: "review" | "confirm" }) {
   const steps = [
-    { number: 1, label: "إنشاء طلب" },
-    { number: 2, label: "تفقد السلة" },
-    { number: 3, label: "التحقق" }
+    { number: 1, label: "تفقد السلة" },
+    { number: 2, label: "التحقق" }
   ];
-  const activeNumber = active === "review" ? 2 : 3;
+  const activeNumber = active === "review" ? 1 : 2;
 
   return (
     <section className="checkout-steps" aria-label="خطوات الطلب">

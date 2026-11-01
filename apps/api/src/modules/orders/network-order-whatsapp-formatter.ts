@@ -63,7 +63,7 @@ const words = {
   ar: { title: "🧾 طلب OrderSawa", required: "مطلوب", optional: "اختياري",
     unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي",
     restaurant: "المطعم", customer: "اسم الزبون", phone: "هاتف الزبون", fulfillment: "طريقة الاستلام",
-    pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "بالقرب من", beside: "بجانب",
+    pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "قريب من", beside: "العنوان",
     pickupTime: "موعد الاستلام", orderNote: "ملاحظات الطلب", itemNote: "ملاحظة الصنف" },
   en: { title: "🧾 OrderSawa order", required: "required", optional: "optional",
     unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price",
@@ -261,13 +261,8 @@ function renderOrderDetails(value: unknown, locale: Locale): { header: string[];
   if (details.restaurantName === undefined) {
     throw new NetworkOrderSnapshotFormatError("MISSING_SNAPSHOT_TEXT", `${path}.restaurantName`, "Historical restaurant name is missing.");
   }
-  const fields = [
-    ["restaurantName", w.restaurant], ["customerName", w.customer], ["customerPhone", w.phone]
-  ] as const;
-  for (const [key, label] of fields) {
-    const value = optionalSnapshotText(details, key, path);
-    if (value) header.push(`${label}: ${value}`);
-  }
+  const restaurantName = optionalSnapshotText(details, "restaurantName", path);
+  if (restaurantName) header.push(`${w.restaurant}: ${restaurantName}`);
   const fulfillment = details.fulfillmentType;
   if (fulfillment !== undefined) {
     if (fulfillment !== "pickup" && fulfillment !== "delivery") {
@@ -280,10 +275,10 @@ function renderOrderDetails(value: unknown, locale: Locale): { header: string[];
   ] as const;
   for (const [key, label] of addressFields) {
     const value = optionalSnapshotText(details, key, path);
-    if (value) header.push(`${label}: ${value}`);
+    if (value) footer.push(`${label}: ${value}`);
   }
   const pickupTime = optionalSnapshotText(details, "pickupTime", path);
-  if (fulfillment === "delivery" && (!details.deliveryArea || !details.deliveryNear || !details.deliveryBeside || pickupTime)) {
+  if (fulfillment === "delivery" && (!details.deliveryArea || !details.deliveryNear || pickupTime)) {
     throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_FULFILLMENT", path, "Saved delivery address is incomplete.");
   }
   if (fulfillment !== "delivery" && (details.deliveryArea || details.deliveryNear || details.deliveryBeside)) {
@@ -292,7 +287,13 @@ function renderOrderDetails(value: unknown, locale: Locale): { header: string[];
   if (fulfillment !== "pickup" && pickupTime) {
     throw new NetworkOrderSnapshotFormatError("INVALID_SNAPSHOT_FULFILLMENT", path, "Saved pickup time has no pickup mode.");
   }
-  if (pickupTime) header.push(`${w.pickupTime}: ${pickupTime}`);
+  const customerFields: string[] = [];
+  for (const [key, label] of [["customerName", w.customer], ["customerPhone", w.phone]] as const) {
+    const value = optionalSnapshotText(details, key, path);
+    if (value) customerFields.push(`${label}: ${value}`);
+  }
+  footer.unshift(...customerFields);
+  if (pickupTime) footer.push(`${w.pickupTime}: ${pickupTime}`);
   const orderNote = optionalSnapshotText(details, "orderNote", path, 500);
   if (orderNote) footer.push(`${w.orderNote}: ${orderNote}`);
   return { header, footer };
@@ -304,6 +305,12 @@ export function formatWhatsappDisplayText(value: string, path: string, maxLength
 
 export function formatNetworkOrderDetails(value: unknown, locale: Locale) {
   return renderOrderDetails(value, locale);
+}
+
+/** Isolate each Arabic message line, including mixed Latin names and numerals, without changing saved values. */
+export function formatWhatsappMessageLines(lines: (string | null)[], locale: Locale): string {
+  return lines.filter((line): line is string => line !== null).map((line) =>
+    line && locale === "ar" ? `\u2067${line}\u2069` : line).join("\n");
 }
 
 export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, currency: string, index: number, numbered = true): { lines: string[]; lineTotal: string } {
@@ -376,8 +383,8 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
   }
   const reconciliation = currencyDisplayReconciliation(lineTotals, total, currency);
   if (reconciliation) output.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  output.push(...details.footer);
   output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency)}`);
+  output.push(...details.footer);
   return output.join("\n");
 }
 

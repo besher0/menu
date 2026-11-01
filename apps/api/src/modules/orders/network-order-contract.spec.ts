@@ -20,6 +20,7 @@ describe("Stage 6C test-only order contract", () => {
 
   it("matches current pickup and delivery field rules and rejects unsafe details", () => {
     expect(parseNetworkOrderRequest({ ...draft, fulfillmentType: "pickup", pickupTime: "6 PM" }, false).pickupTime).toBe("6 PM");
+    expect(parseNetworkOrderRequest({ ...draft, fulfillmentType: "delivery", deliveryArea: "District", deliveryNear: "Park" }, false).deliveryBeside).toBeUndefined();
     expect(() => parseNetworkOrderRequest({ ...draft, fulfillmentType: "delivery", deliveryArea: "District" }, false)).toThrow();
     expect(() => parseNetworkOrderRequest({ ...draft, fulfillmentType: "pickup", deliveryArea: "District" }, false)).toThrow();
     expect(() => parseNetworkOrderRequest({ ...draft, pickupTime: "6 PM" }, false)).toThrow();

@@ -34,7 +34,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     malformed.orderDetails.customerName = "A".repeat(201);
     expect(() => formatNetworkOrderWhatsappMessage(malformed)).toThrow(/INVALID_SNAPSHOT_DISPLAY_TEXT/);
     malformed.orderDetails.customerName = "Demo";
-    delete malformed.orderDetails.deliveryBeside;
+    delete malformed.orderDetails.deliveryNear;
     expect(() => formatNetworkOrderWhatsappMessage(malformed)).toThrow(/INVALID_SNAPSHOT_FULFILLMENT/);
   });
   it("renders Arabic Pizza size, nested sauce, included highest-priced cheese, quantity, free option and six decimals", () => {
