@@ -933,7 +933,7 @@ export class PublicMenuService {
     const lines: (string | null)[] = [
       `🧾 طلب جديد — OrderSawa #${input.orderNumber}`,
       `المطعم: ${isolateWhatsappText(input.restaurantName)}`,
-      input.fulfillmentType ? `طريقة الاستلام: ${input.fulfillmentType === "delivery" ? "توصيل" : "استلام من المطعم"}` : null,
+      input.fulfillmentType ? `طريقة الاستلام: ${input.fulfillmentType === "delivery" ? "🛵 توصيل دليفري" : "🍽️ استلام من المطعم"}` : null,
       "━━━━━━━━━━━━━━",
       ...input.items.flatMap((item): (string | null)[] => [
         `${item.quantity} × ${isolateWhatsappText(item.name)}`,
@@ -943,8 +943,7 @@ export class PublicMenuService {
         "━━━━━━━━━━━━━━",
         ""
       ]),
-      input.orderNote ? "*ملاحظات الطلب:*" : null,
-      input.orderNote ? `*${isolateWhatsappBoldText(input.orderNote)}*` : null,
+      input.orderNote ? `*ملاحظات الطلب: ${isolateWhatsappBoldText(input.orderNote)}*` : null,
       input.orderNote ? "━━━━━━━━━━━━━━" : null,
       input.orderNote ? "" : null,
       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
@@ -959,7 +958,7 @@ export class PublicMenuService {
       input.fulfillmentType === "delivery" && input.deliveryArea ? `المنطقة: ${isolateWhatsappText(input.deliveryArea)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${isolateWhatsappText(input.deliveryNear)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryBeside ? `العنوان: ${isolateWhatsappText(input.deliveryBeside)}` : null,
-      input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null,
+      input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: 🕒 ${isolateWhatsappText(input.pickupTime)}` : null,
       `الوقت: ${new Date().toLocaleString("ar-SY")}`
     ];
 

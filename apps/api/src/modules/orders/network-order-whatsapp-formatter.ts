@@ -63,12 +63,12 @@ const words = {
   ar: { title: "🧾 طلب OrderSawa",
     unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي",
     restaurant: "المطعم", customer: "اسم الزبون", phone: "هاتف الزبون", fulfillment: "طريقة الاستلام",
-    pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "قريب من", beside: "العنوان",
+    pickup: "🍽️ استلام من المطعم", delivery: "🛵 توصيل دليفري", area: "المنطقة", near: "قريب من", beside: "العنوان",
     pickupTime: "موعد الاستلام", orderNote: "ملاحظات الطلب", itemNote: "ملاحظة الصنف" },
   en: { title: "🧾 OrderSawa order",
     unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price",
     restaurant: "Restaurant", customer: "Customer", phone: "Customer phone", fulfillment: "Fulfillment",
-    pickup: "Pickup", delivery: "Delivery", area: "Area", near: "Near", beside: "Beside",
+    pickup: "🍽️ Pickup", delivery: "🛵 Delivery", area: "Area", near: "Near", beside: "Beside",
     pickupTime: "Pickup time", orderNote: "Order note", itemNote: "Item note" }
 } as const;
 
@@ -250,7 +250,7 @@ function optionalSnapshotText(details: JsonObject, key: string, path: string, ma
   return display(nonempty(value, `${path}.${key}`), `${path}.${key}`, maxLength);
 }
 
-function renderOrderDetails(value: unknown, locale: Locale): { header: string[]; footer: string[] } {
+function renderOrderDetails(value: unknown, locale: Locale): { header: string[]; footer: string[]; orderNote?: string } {
   if (value === undefined) return { header: [], footer: [] }; // Stage 6C snapshots predate these fields.
   const path = "$snapshot.orderDetails";
   const details = object(value, path);
@@ -292,10 +292,9 @@ function renderOrderDetails(value: unknown, locale: Locale): { header: string[];
     if (value) customerFields.push(`${label}: ${value}`);
   }
   footer.unshift(...customerFields);
-  if (pickupTime) footer.push(`${w.pickupTime}: ${pickupTime}`);
+  if (pickupTime) footer.push(`${w.pickupTime}: 🕒 ${pickupTime}`);
   const orderNote = optionalSnapshotText(details, "orderNote", path, 500);
-  if (orderNote) footer.push(`${w.orderNote}: ${orderNote}`);
-  return { header, footer };
+  return { header, footer, ...(orderNote ? { orderNote: `*${w.orderNote}: ${orderNote}*` } : {}) };
 }
 
 export function formatWhatsappDisplayText(value: string, path: string, maxLength = 200): string {
@@ -306,10 +305,10 @@ export function formatNetworkOrderDetails(value: unknown, locale: Locale) {
   return renderOrderDetails(value, locale);
 }
 
-/** Isolate each Arabic message line, including mixed Latin names and numerals, without changing saved values. */
+/** RLM must precede the content: an outer RLI is ignored when resolving the paragraph's first strong character. */
 export function formatWhatsappMessageLines(lines: (string | null)[], locale: Locale): string {
   return lines.filter((line): line is string => line !== null).map((line) =>
-    line && locale === "ar" ? `\u2067${line}\u2069` : line).join("\n");
+    line && locale === "ar" ? `\u200f${line}` : line).join("\n");
 }
 
 export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, currency: string, index: number, numbered = true): { lines: string[]; lineTotal: string } {
@@ -381,10 +380,11 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
     throw new NetworkOrderSnapshotFormatError("ORDER_TOTAL_MISMATCH", "$snapshot.totalAmount", "Saved order total differs from line totals.");
   }
   const reconciliation = currencyDisplayReconciliation(lineTotals, total, currency);
+  if (details.orderNote) output.push(details.orderNote, "━━━━━━━━━━━━━━", "");
   if (reconciliation) output.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
   output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency)}`);
   output.push(...details.footer);
-  return output.join("\n");
+  return formatWhatsappMessageLines(output, locale);
 }
 
 /** Link construction is separate from formatting. It never contacts WhatsApp. */

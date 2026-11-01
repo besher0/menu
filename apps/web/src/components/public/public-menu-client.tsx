@@ -2552,7 +2552,10 @@ function CartView({
   const networkEditorRef = useRef<HTMLElement | null>(null);
   const productBySlug = useMemo(() => new Map(data.products.map((product) => [product.slug, product])), [data.products]);
   const cartSlugs = useMemo(() => new Set(cart.map((item) => item.slug)), [cart]);
-  const related = data.products.filter((product) => !cartSlugs.has(product.slug)).slice(0, 8);
+  // The original rail has no candidates when every Demo product is already in the cart.
+  // In that case offer the same real menu products for another quantity/configuration.
+  const outsideCart = data.products.filter((product) => !cartSlugs.has(product.slug));
+  const related = (outsideCart.length ? outsideCart : data.products).slice(0, 8);
   const networkItems = cart.filter((item): item is NetworkCartItem => item.mode === "NETWORK");
   const staleLegacyNetwork = cart.some((item) => {
     const product = productBySlug.get(item.slug);

@@ -88,11 +88,39 @@ describe("trusted public WhatsApp message presentation", () => {
     const draft = demoDraft("pizza", "ar");
     draft.details.orderNote = "الصلصة منفصلة";
     const message = formatTrustedWhatsappDraft(draft);
-    expect(message).toContain("*ملاحظات الطلب:*");
-    expect(message).toContain("*⁨الصلصة منفصلة⁩*");
+    expect(message).toContain("*ملاحظات الطلب: ⁨الصلصة منفصلة⁩*");
     expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("مجموع الأصناف"));
     expect(message.indexOf("اسم الزبون")).toBeGreaterThan(message.indexOf("الإجمالي:"));
     expect(message.replace(/[\u2066-\u2069]/g, "")).not.toMatch(/━━━━━━━━━━━━━━\s+━━━━━━━━━━━━━━/);
+  });
+
+  it("starts every nonempty Arabic line with a strong RTL mark but leaves English LTR", () => {
+    const arabic = demoDraft("combo", "ar");
+    arabic.details.orderNote = "طلب طويل Demo ورقم 123";
+    const message = formatTrustedWhatsappDraft(arabic);
+    expect(message.split("\n").filter(Boolean).every((line) => line.startsWith("\u200f"))).toBe(true);
+    expect(message).toContain("طريقة الاستلام: 🍽️ استلام من المطعم");
+    expect(message).toContain("*ملاحظات الطلب: ⁨طلب طويل Demo ورقم 123⁩*");
+    expect(message).not.toContain("\u2067");
+    const english = formatTrustedWhatsappDraft(demoDraft("combo", "en"));
+    expect(english.startsWith("🧾 New order")).toBe(true);
+    expect(english).toContain("Fulfillment: 🍽️ Pickup");
+    expect(english).not.toContain("\u200f");
+  });
+
+  it("renders delivery wording and pickup time only for their matching fulfillment", () => {
+    const pickup = demoDraft("pizza", "ar");
+    pickup.details.pickupTime = "18:30";
+    expect(formatTrustedWhatsappDraft(pickup)).toContain("موعد الاستلام: 🕒 ⁨18:30⁩");
+    const delivery = demoDraft("pizza", "ar");
+    delivery.details.fulfillmentType = "delivery";
+    delivery.details.deliveryArea = "حلب";
+    delivery.details.deliveryNear = "الباسل";
+    delivery.deliveryFee = null;
+    delivery.totalAmount = null;
+    const message = formatTrustedWhatsappDraft(delivery);
+    expect(message).toContain("طريقة الاستلام: 🛵 توصيل دليفري");
+    expect(message).not.toContain("موعد الاستلام:");
   });
 
   it("rejects an inconsistent trusted line before presentation grouping", () => {
