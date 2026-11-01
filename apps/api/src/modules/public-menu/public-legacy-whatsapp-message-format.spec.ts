@@ -16,7 +16,7 @@ describe("persisted Legacy WhatsApp message presentation", () => {
 
   it("uses the persisted order number, keeps preparation details and puts customer details last", () => {
     const message = formatter({ ...base, customerName: "خالد", orderNote: "ملاحظة حقيقية" });
-    expect(message).toContain("🧾 طلب جديد — OrderSawa #003");
+    expect(message).toContain("🧾 طلب جديد رقم 003 — OrderSawa");
     expect(message).not.toContain("الفرع:");
     expect(message).toContain("2 × ⁨بيتزا Demo⁩");
     expect(message).toContain("• ⁨زيتون⁩");

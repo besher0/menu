@@ -44,7 +44,7 @@ describe("trusted public WhatsApp message presentation", () => {
   it("preserves every repeated linked instance and English source choices", () => {
     const message = formatTrustedWhatsappDraft(demoDraft("combo", "en"));
     expect(message).toContain("Family combo");
-    expect(message.match(/↳ \u2068Source pizza\u2069/g)).toHaveLength(3);
+    expect(message.match(/• 1 × ⁨(?:First pizza|Extra pizza)⁩ — ⁨Source pizza⁩/g)).toHaveLength(3);
     expect(message).toContain("Large");
     expect(message).toContain("Medium");
     expect(message).not.toContain("Component choices");

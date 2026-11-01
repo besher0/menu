@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createElement, type PointerEvent, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createElement, type CSSProperties, type PointerEvent, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Pencil, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { getPublicProductConfiguration, getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
@@ -2533,6 +2533,7 @@ function CartView({
   const [pickupTime, setPickupTime] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [checkoutDraftSlug, setCheckoutDraftSlug] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [previewCopied, setPreviewCopied] = useState(false);
   const [expandedNetworkLines, setExpandedNetworkLines] = useState<Set<string>>(() => new Set());
@@ -2540,6 +2541,7 @@ function CartView({
   const [editingNetworkNote, setEditingNetworkNote] = useState("");
   const [invoiceExpanded, setInvoiceExpanded] = useState(false);
   const [invoiceDragActive, setInvoiceDragActive] = useState(false);
+  const [invoiceClearance, setInvoiceClearance] = useState(300);
   const invoiceCardRef = useRef<HTMLElement | null>(null);
   const invoiceCollapsedHeight = useRef(0);
   const invoiceSnapTimer = useRef<number | null>(null);
@@ -2575,11 +2577,54 @@ function CartView({
   const editingNetworkItem = cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingNetworkLineId);
   const editingNetworkProduct = editingNetworkItem ? data.products.find((product) => product.id === editingNetworkItem.productId) : undefined;
 
+  useEffect(() => {
+    setFulfillment("pickup");
+    setCustomerName("");
+    setCustomerPhone("");
+    setDeliveryArea("");
+    setDeliveryNear("");
+    setOrderNote("");
+    setPickupTime("");
+    try {
+      const saved = window.sessionStorage.getItem(`ordersawa:checkout-draft:${data.restaurant.slug}`);
+      const draft = saved ? JSON.parse(saved) as Record<string, unknown> : null;
+      if (draft?.version === 1) {
+        if (draft.fulfillment === "pickup" || draft.fulfillment === "delivery") setFulfillment(draft.fulfillment);
+        const restore = (key: string, max: number) => typeof draft[key] === "string" ? draft[key].slice(0, max) : "";
+        setCustomerName(restore("customerName", 120));
+        setCustomerPhone(restore("customerPhone", 40));
+        setDeliveryArea(restore("deliveryArea", 200));
+        setDeliveryNear(restore("deliveryNear", 200));
+        setOrderNote(restore("orderNote", 500));
+        setPickupTime(restore("pickupTime", 120));
+      }
+    } catch { /* Storage may be disabled; in-memory draft still works. */ }
+    setCheckoutDraftSlug(data.restaurant.slug);
+  }, [data.restaurant.slug]);
+
+  useEffect(() => {
+    if (checkoutDraftSlug !== data.restaurant.slug) return;
+    try {
+      window.sessionStorage.setItem(`ordersawa:checkout-draft:${data.restaurant.slug}`, JSON.stringify({
+        version: 1, fulfillment, customerName, customerPhone, deliveryArea, deliveryNear, orderNote, pickupTime
+      }));
+    } catch { /* Storage may be disabled; in-memory draft still works. */ }
+  }, [checkoutDraftSlug, data.restaurant.slug, fulfillment, customerName, customerPhone,
+    deliveryArea, deliveryNear, orderNote, pickupTime]);
+
   useLayoutEffect(() => {
     const card = invoiceCardRef.current;
     if (!card || invoiceDragActive || invoiceExpanded) return;
-    invoiceCollapsedHeight.current = card.getBoundingClientRect().height;
-  }, [invoiceDragActive, invoiceExpanded, cart.length, fulfillment, deliveryFee]);
+    const measure = () => {
+      const height = card.getBoundingClientRect().height;
+      invoiceCollapsedHeight.current = height;
+      setInvoiceClearance((current) => Math.abs(current - height) > 1 ? height : current);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [invoiceDragActive, invoiceExpanded, cart.length, cartStep, fulfillment, deliveryFee]);
 
   useLayoutEffect(() => {
     const card = invoiceCardRef.current;
@@ -2773,45 +2818,13 @@ function CartView({
     details: { customerName, customerPhone, fulfillmentType: fulfillment, deliveryArea, deliveryNear,
       pickupTime, orderNote }, disabledReason: trustedDisabledReason, displayedFee: deliveryFee });
   const displayedFee = trusted.pendingPrice ? trusted.pendingPrice.draft.deliveryFee : deliveryFee;
-  const displayedItemsSubtotal = useTrustedNetworkCheckout ? trusted.pendingPrice?.draft.itemsSubtotal ?? trustedTotal : legacySubtotal;
+  const displayedItemsSubtotal = useTrustedNetworkCheckout && cartStep === "confirm"
+    ? trusted.pendingPrice?.draft.itemsSubtotal ?? trustedTotal
+    : useTrustedNetworkCheckout ? trustedTotal : legacySubtotal;
   const displayedOrderTotal = useTrustedNetworkCheckout
     ? trusted.pendingPrice ? trusted.pendingPrice.draft.totalAmount
       : fulfillment === "delivery" && deliveryFee === null ? null : sumMoney([trustedTotal, deliveryFee ?? "0"])
     : total;
-  const [orderNumber, setOrderNumber] = useState("001");
-
-  useEffect(() => {
-    if (!cart.length || hasNetwork || !whatsappOrderingEnabled) {
-      setOrderNumber("001");
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadOrderNumber() {
-      try {
-        const response = await fetch(`${PUBLIC_API_BASE_URL}/public/menus/${encodeURIComponent(data.restaurant.slug)}/orders/next-number`);
-        const payload = await response.json().catch(() => null) as { data?: { orderNumber?: string | number }; orderNumber?: string | number } | null;
-        const rawOrderNumber = payload?.data?.orderNumber ?? payload?.orderNumber;
-        const nextOrderNumber = typeof rawOrderNumber === "number" ? String(rawOrderNumber).padStart(3, "0") : rawOrderNumber;
-
-        if (!cancelled && nextOrderNumber) {
-          setOrderNumber(nextOrderNumber);
-        }
-      } catch {
-        if (!cancelled) {
-          setOrderNumber("001");
-        }
-      }
-    }
-
-    loadOrderNumber();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cart.length, data.restaurant.slug, hasNetwork, whatsappOrderingEnabled]);
-
   useEffect(() => {
     function restoreReviewStep() {
       setCartStep("review");
@@ -2924,7 +2937,8 @@ function CartView({
   }) ?? [];
 
   return (
-    <main className={`cart-page ${showPrices ? "" : "prices-hidden"} ${invoiceExpanded ? "invoice-expanded-page" : ""}`}>
+    <main className={`cart-page ${showPrices ? "" : "prices-hidden"} ${invoiceExpanded ? "invoice-expanded-page" : ""} ${whatsappOrderingEnabled && !(hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) ? "has-invoice" : ""}`}
+      style={{ "--cart-invoice-clearance": `${invoiceClearance}px` } as CSSProperties}>
       <CheckoutSteps active={cartStep} />
 
       {cartStep === "review" ? (
@@ -3086,7 +3100,6 @@ function CartView({
           onClick={(event) => { if (event.detail === 0) setInvoiceExpanded((current) => !current); }}>
           <span /><ChevronDown size={13} aria-hidden="true" />
         </button>
-        {invoiceExpanded && !hasNetwork ? <div className="cart-checkout-meta"><span>{t.orderNumber}: {orderNumber}</span></div> : null}
         <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
         {invoiceExpanded || invoiceDragActive ? <dl className="cart-invoice-lines">
           {cart.map((item) => {
@@ -3107,14 +3120,16 @@ function CartView({
           </div>
           <div>
               <dt>{t.deliveryFee}</dt>
-              <dd>{fulfillment === "pickup" ? language === "ar" ? "لا تُضاف للاستلام" : "Not charged for pickup"
+              <dd>{cartStep === "review" ? language === "ar" ? "تُحدَّد في الخطوة التالية" : "Determined in the next step"
+                : fulfillment === "pickup" ? language === "ar" ? "لا يوجد" : "None"
                 : displayedFee === null ? language === "ar" ? "تُحدّد حسب المنطقة" : "Determined by area"
                 : displayedFee === "0" ? language === "ar" ? "مجاني" : "Free"
                 : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
           <div>
             <dt>{t.total}</dt>
-            <dd>{displayedOrderTotal === null
+            <dd>{cartStep === "review" ? displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")
+              : displayedOrderTotal === null
               ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
               : displayCurrencyAmount(displayedOrderTotal, data.restaurant.currency ?? "ل.س")}</dd>
           </div>
@@ -3253,7 +3268,6 @@ function NetworkCartDetails({
         <span dir="auto">{line.label}</span>
       </li>)}
     </ul>
-    {item.note?.trim() ? <p className="network-cart-note" dir="auto">{ar ? "ملاحظة:" : "Note:"} {item.note}</p> : null}
     </div>
     {reviewed && (item.status === "INVALID" || item.status === "OFFLINE") ? <p className="network-cart-status status-invalid" role="alert">
       {ar ? "راجع اختيارات هذا الصنف" : "Review this product's choices"}

@@ -78,14 +78,26 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("combo", "ar"));
     expect(message).toContain("كومبو عائلي");
     expect(message).not.toMatch(/\(مطلوب\)|\(اختياري\)/);
-    expect(message).toContain("↳ \u2068بيتزا المصدر\u2069");
+    expect(message).toContain("1 × \u2068بيتزا أولى\u2069 — \u2068بيتزا المصدر\u2069 — \u2068كبير\u2069");
+    expect(message).toContain("1 × \u2068بيتزا أولى\u2069 — \u2068بيتزا المصدر\u2069 — \u2068وسط\u2069");
     expect(message).not.toContain("ORIGINAL");
     expect(message).not.toContain("CUSTOM");
     expect(message).toContain("كبير");
     expect(message).toContain("وسط");
     expect(message).toContain("43 EGP");
-    expect(message.match(/↳ \u2068بيتزا المصدر\u2069/g)).toHaveLength(3);
+    expect(message.match(/• 1 × ⁨بيتزا/g)).toHaveLength(3);
+    expect(message).not.toContain("📏");
     expect(message).not.toContain("اختيارات المكوّن");
+  });
+
+  it("uses a complete linked option label once and keeps each English size with its own source", () => {
+    const snapshot = copy(buildNetworkWhatsappDemo("combo", "en")) as any;
+    snapshot.items[0].configurationTree.groups[0].options[0].label = "First pizza — Source pizza";
+    const message = formatNetworkOrderWhatsappMessage(snapshot);
+    expect(message).toContain("1 × ⁨First pizza — Source pizza⁩ — ⁨Large⁩");
+    expect(message).toContain("1 × ⁨First pizza — Source pizza⁩ — ⁨Medium⁩");
+    expect(message).not.toContain("Source pizza⁩ — ⁨Source pizza");
+    expect(message).not.toContain("Pizza sizes —");
   });
 
   it("renders combo options in historical menu order even when instance IDs sort oppositely", () => {
@@ -102,7 +114,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     const beforeTotal = item.lineTotal;
     const message = formatNetworkOrderWhatsappMessage(snapshot);
     expect(message.indexOf("بيتزا أولى")).toBeLessThan(message.indexOf("بيتزا إضافية"));
-    expect(message.match(/↳ ⁨بيتزا المصدر⁩/g)).toHaveLength(3);
+    expect(message.match(/• 1 × ⁨بيتزا/g)).toHaveLength(3);
     expect(item.lineTotal).toBe(beforeTotal);
     expect(snapshot.totalAmount).toBe(beforeTotal);
   });
@@ -113,7 +125,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     snapshot.items[0].currency = "SYP";
     const message = formatNetworkOrderWhatsappMessage(snapshot);
     expect(message).toContain("إجمالي الطلب: 43 SYP");
-    expect(message.match(/↳ ⁨بيتزا المصدر⁩/g)).toHaveLength(3);
+    expect(message.match(/• 1 × ⁨بيتزا/g)).toHaveLength(3);
     expect(message).not.toMatch(/مشمول|مجاني|\.00 SYP/);
   });
 
@@ -128,7 +140,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     item.lineTotal = item.unitPrice;
     snapshot.totalAmount = item.unitPrice;
     const message = formatNetworkOrderWhatsappMessage(snapshot);
-    expect(message).toContain("📏 ⁨أحجام البيتزا⁩ — ⁨كبير⁩");
+    expect(message).toContain("1 × ⁨بيتزا أولى⁩ — ⁨بيتزا المصدر⁩ — ⁨كبير⁩");
     expect(message).not.toContain("0 EGP");
     expect(message).not.toMatch(/📏.*مجاني/);
     expect(message).toContain(`إجمالي الطلب: ${item.unitPrice} EGP`);

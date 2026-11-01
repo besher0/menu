@@ -121,7 +121,8 @@ class LineRenderer {
     return this.rendered;
   }
 
-  private groups(groupsValue: unknown, selectionsValue: unknown, prefix: string, depth: number, headingSizeGroupId?: string) {
+  private groups(groupsValue: unknown, selectionsValue: unknown, prefix: string, depth: number,
+    headingSizeGroupId?: string, headingSizeDepth = 0) {
     if (depth > 24) throw new NetworkOrderSnapshotFormatError("SNAPSHOT_DEPTH_LIMIT", prefix, "Nested selection is too deep.");
     const groups = array(groupsValue, `${prefix}.configuration`) as ConfigurationGroup[];
     const selections = array(selectionsValue, prefix) as GroupSelection[];
@@ -150,7 +151,7 @@ class LineRenderer {
         if (!size) throw new NetworkOrderSnapshotFormatError("UNKNOWN_SIZE", groupPath, "Selected size has no historical label.");
         this.price(groupPath, "SIZE", size.id);
         const sizeLabel = display(nonempty(size.label, `${groupPath}.${size.id}.label`), `${groupPath}.${size.id}.label`);
-        if (!(depth === 0 && groupId === headingSizeGroupId)) {
+        if (!(depth === headingSizeDepth && groupId === headingSizeGroupId)) {
           this.rendered.push(`${pad}📏 ${groupLabel} — ${sizeLabel}`);
         }
         this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1);
@@ -211,8 +212,6 @@ class LineRenderer {
             continue;
           }
           flushLeafUnits();
-          this.rendered.push(`${pad}  • 1 × ${label}`);
-          this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
           if (option.linkedProduct) {
             const sourceId = option.linkedProduct.sourceProductId;
             const source = this.sources.find((candidate) => candidate.productId === sourceId);
@@ -230,10 +229,26 @@ class LineRenderer {
               throw new NetworkOrderSnapshotFormatError("LINKED_SNAPSHOT_IDENTITY_MISMATCH", instancePath, "Linked snapshot identity or revision differs.");
             }
             const linkedName = display(nonempty(source.productName, `${instancePath}.linkedName`), `${instancePath}.linkedName`);
-            this.rendered.push(`${pad}    ↳ ${linkedName}`);
-            this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3);
+            const linkedSizes = linkedConfiguration.groups.filter((group) => group.type === "SIZE");
+            const linkedSize = linkedSizes.length === 1
+              ? linkedSizes[0].sizes.find((size) => record.linkedSelection?.groups.some((selection) =>
+                selection.type === "SIZE" && selection.groupId === linkedSizes[0].id && selection.sizeChoiceId === size.id))
+              : undefined;
+            const sizeLabel = linkedSize
+              ? display(nonempty(linkedSize.label, `${instancePath}.linkedSize`), `${instancePath}.linkedSize`) : undefined;
+            const visibleLabel = label.slice(1, -1);
+            const visibleSource = linkedName.slice(1, -1);
+            const sourceSuffix = visibleLabel === visibleSource || visibleLabel.endsWith(` — ${visibleSource}`)
+              ? "" : ` — ${linkedName}`;
+            this.rendered.push(`${pad}  • 1 × ${label}${sourceSuffix}${sizeLabel ? ` — ${sizeLabel}` : ""}`);
+            this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
+            this.groups(linkedConfiguration.groups, record.linkedSelection.groups, `${instancePath}.linked`, depth + 3,
+              sizeLabel ? linkedSizes[0].id : undefined, depth + 3);
           } else if (record.linkedSelection) {
             throw new NetworkOrderSnapshotFormatError("UNEXPECTED_LINKED_SELECTION", instancePath, "Non-linked option has a linked selection.");
+          } else {
+            this.rendered.push(`${pad}  • 1 × ${label}`);
+            this.groups(option.children ?? [], record.children ?? [], `${instancePath}.children`, depth + 2);
           }
         }
         flushLeafUnits();

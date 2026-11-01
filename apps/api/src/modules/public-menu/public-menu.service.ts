@@ -931,7 +931,7 @@ export class PublicMenuService {
     const displayAmount = (value: string) => currencyDisplayScale(input.currency) === null
       ? `${formatDecimalForDisplay(value, 2)} ${input.currency}` : formatCurrencyAmount(value, input.currency);
     const lines: (string | null)[] = [
-      `🧾 طلب جديد — OrderSawa #${input.orderNumber}`,
+      `🧾 طلب جديد رقم ${input.orderNumber} — OrderSawa`,
       `المطعم: ${isolateWhatsappText(input.restaurantName)}`,
       input.fulfillmentType ? `طريقة الاستلام: ${input.fulfillmentType === "delivery" ? "🛵 توصيل دليفري" : "🍽️ استلام من المطعم"}` : null,
       "━━━━━━━━━━━━━━",

@@ -8603,11 +8603,20 @@ body:has(.public-page)::-webkit-scrollbar {
   gap: 12px;
   margin-inline: 0;
   max-width: 100%;
-  min-height: calc(100dvh - 120px);
+  min-height: 0;
   min-width: 0;
   overflow-x: clip;
-  padding-bottom: 330px;
+  padding-bottom: 24px;
   width: 100%;
+}
+
+.cart-page.has-invoice {
+  padding-bottom: calc(var(--cart-invoice-clearance, 300px) + 16px);
+}
+
+/* The fixed checkout sheet replaces the footer clearance on the cart page. */
+.public-screen.view-cart:has(.cart-page.has-invoice) {
+  padding-bottom: 0;
 }
 
 .cart-page > * {
