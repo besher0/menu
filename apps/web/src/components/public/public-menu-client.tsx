@@ -3154,13 +3154,12 @@ function CartView({
 
           <ProductRail
             title={t.youMayLike}
+            recommendation
             products={related}
             restaurantSlug={data.restaurant.slug}
             t={t}
             fillPlaceholders={false}
             showPrices={showPrices}
-            onAddToCart={addToCart}
-            networkConfigureEnabled={whatsappOrderingEnabled && showPrices && networkWhatsappCheckoutEnabled}
             showViewAll={false}
             returnHref={restaurantPath(data.restaurant.slug, "/cart", useSubdomainRoutes)}
             useSubdomainRoutes={useSubdomainRoutes}
@@ -3804,14 +3803,13 @@ function ProductView({
         ) : (
           <ProductRail
             title={t.youMayLike}
+            recommendation
             products={related}
             restaurantSlug={data.restaurant.slug}
             t={t}
             fillPlaceholders={false}
             showPrices={showPrices}
             showViewAll={false}
-            onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
-            networkConfigureEnabled={whatsappOrderingEnabled && showPrices && networkWhatsappCheckoutEnabled}
             returnHref={currentProductHref}
             useSubdomainRoutes={useSubdomainRoutes}
           />
@@ -3888,6 +3886,7 @@ function VertigoRelatedProducts({
 
 function ProductRail({
   title,
+  recommendation = false,
   products,
   restaurantSlug,
   t,
@@ -3902,6 +3901,7 @@ function ProductRail({
   useSubdomainRoutes
 }: {
   title: string;
+  recommendation?: boolean;
   products: PublicProduct[];
   restaurantSlug: string;
   t: PublicTranslations;
@@ -4007,7 +4007,7 @@ function ProductRail({
   };
 
   return (
-    <section className="product-rail">
+    <section className={`product-rail${recommendation ? " recommendation-rail" : ""}`}>
       <div className="rail-head">
         <h2>
           <Flame size={18} />

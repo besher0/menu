@@ -7112,6 +7112,23 @@ body:has(.public-page)::-webkit-scrollbar {
   white-space: nowrap;
 }
 
+/* Public menu card typography only; shared by Legacy and Network products. */
+.menu-product-row .menu-product-copy > b { font-size: 16px; }
+.menu-product-row .product-price span { font-size: 17px; }
+.menu-product-card .menu-product-copy > b { font-size: 14px; }
+.menu-product-card .product-price span { font-size: 16px; }
+.menu-product-card .menu-product-copy { padding-bottom: 17px; }
+.menu-product-row .product-price small,
+.menu-product-card .product-price small { font-size: 10.5px; }
+.menu-product-row .product-price em,
+.menu-product-card .product-price em { font-size: 9.75px; }
+.menu-product-row.card-horizontal-contained .menu-product-copy > b { font-size: 19.25px; }
+.menu-product-row.card-horizontal-contained .product-price span { font-size: 14px; }
+.menu-product-row.card-horizontal-contained .product-price small { font-size: 11.5px; }
+
+/* Recommendation cards remain full-width links without a cart-action gutter. */
+.recommendation-rail .rail-product b { padding-left: 8px; }
+
 .menu-empty-products {
   align-items: center;
   background: #fff;
