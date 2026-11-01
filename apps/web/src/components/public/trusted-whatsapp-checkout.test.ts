@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PublicWhatsappCheckoutDraft, PublicWhatsappCheckoutRequest } from "@/lib/api";
-import { compareTrustedDraft } from "./trusted-whatsapp-checkout";
+import { PublicWhatsappCheckoutError, type PublicWhatsappCheckoutDraft, type PublicWhatsappCheckoutRequest } from "@/lib/api";
+import { buildTrustedCheckoutRequest, compareTrustedDraft, trustedCheckoutErrorMessage } from "./trusted-whatsapp-checkout";
 
 const request: PublicWhatsappCheckoutRequest = {
   locale: "ar", fulfillmentType: "pickup",
@@ -45,5 +45,35 @@ describe("trusted checkout visible-invoice acceptance", () => {
     expect(compare({ ...draft, items: [...draft.items].reverse() })).toBe("INVALID");
     expect(compare({ ...draft, items: [{ ...draft.items[0], quantity: 3 }, draft.items[1]] })).toBe("INVALID");
     expect(compare({ ...draft, items: [{ ...draft.items[0], lineId: "other" }, draft.items[1]] })).toBe("INVALID");
+  });
+});
+
+describe("checkout delivery fields and customer-safe errors", () => {
+  const details = {
+    customerName: "", customerPhone: "", fulfillmentType: "delivery" as const,
+    deliveryArea: " حلب ", deliveryNear: " الباسل ", pickupTime: "old pickup time", orderNote: ""
+  };
+
+  it("sends only the active fulfillment fields, even when stale state contains a pickup time", () => {
+    const delivery = buildTrustedCheckoutRequest([], "ar", details);
+    expect(delivery).toMatchObject({ fulfillmentType: "delivery", deliveryArea: "حلب", deliveryNear: "الباسل" });
+    expect(delivery).not.toHaveProperty("deliveryBeside");
+    expect(delivery).not.toHaveProperty("pickupTime");
+    const pickup = buildTrustedCheckoutRequest([], "ar", { ...details, fulfillmentType: "pickup" });
+    expect(pickup.pickupTime).toBe("old pickup time");
+    expect(pickup).not.toHaveProperty("deliveryArea");
+    expect(pickup).not.toHaveProperty("deliveryNear");
+  });
+
+  it("never shows raw server field names or English validation text on an Arabic menu", () => {
+    const staleServer = new PublicWhatsappCheckoutError(
+      "Delivery requires area, near and beside; pickupTime is not applicable.", 400, "INVALID_NETWORK_ORDER_DETAILS");
+    const message = trustedCheckoutErrorMessage(staleServer, "ar", details);
+    expect(message).toContain("عنوان التوصيل");
+    expect(message).not.toMatch(/beside|pickupTime|Delivery/);
+    expect(trustedCheckoutErrorMessage(staleServer, "ar", { ...details, deliveryArea: "" })).toBe("يرجى إدخال منطقة التوصيل.");
+    expect(trustedCheckoutErrorMessage(staleServer, "en", { ...details, deliveryNear: "" })).toBe("Enter a nearby landmark for delivery.");
+    expect(trustedCheckoutErrorMessage(new PublicWhatsappCheckoutError("internal SQL detail", 500, "UNKNOWN"), "ar", details))
+      .not.toContain("SQL");
   });
 });

@@ -65,7 +65,8 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
   it("renders English LTR labels and exact persisted amounts", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("pizza", "en"));
     expect(message).toContain("Pizza Margherita");
-    expect(message).toMatch(/Toppings.*\(optional\)/);
+    expect(message).toMatch(/Toppings.*:/);
+    expect(message).not.toMatch(/\(optional\)|\(required\)/);
     expect(message).toContain("Extra cheese");
     expect(message).toContain("Line total: 530.000008 EGP");
   });
@@ -73,7 +74,7 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
   it("keeps ORIGINAL and CUSTOM instances, repeated source identity, and independent sizes in a required Combo", () => {
     const message = formatNetworkOrderWhatsappMessage(buildNetworkWhatsappDemo("combo", "ar"));
     expect(message).toContain("كومبو عائلي");
-    expect(message).toContain("(مطلوب)");
+    expect(message).not.toMatch(/\(مطلوب\)|\(اختياري\)/);
     expect(message).toContain("↳ \u2068بيتزا المصدر\u2069");
     expect(message).not.toContain("ORIGINAL");
     expect(message).not.toContain("CUSTOM");

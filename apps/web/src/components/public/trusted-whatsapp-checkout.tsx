@@ -14,6 +14,55 @@ type Details = {
   deliveryArea: string; deliveryNear: string;
   pickupTime: string; orderNote: string;
 };
+
+export function trustedCheckoutErrorMessage(error: unknown, locale: Locale, details: Details): string {
+  const ar = locale === "ar";
+  if (!(error instanceof PublicWhatsappCheckoutError)) {
+    return ar ? "تعذر التحقق من الطلب. حاول مجددًا." : "Could not verify the order. Try again.";
+  }
+  if (error.code === "INVALID_NETWORK_ORDER_DETAILS") {
+    if (details.fulfillmentType === "delivery") {
+      if (!details.deliveryArea.trim()) return ar ? "يرجى إدخال منطقة التوصيل." : "Enter the delivery area.";
+      if (!details.deliveryNear.trim()) return ar ? "يرجى إدخال أقرب معلم للتوصيل." : "Enter a nearby landmark for delivery.";
+      return ar ? "تعذر التحقق من عنوان التوصيل. راجع بياناته وحاول مجددًا." : "Could not verify the delivery address. Review it and try again.";
+    }
+    return ar ? "راجع بيانات الاستلام وحاول مجددًا." : "Review the pickup details and try again.";
+  }
+  if (["INVALID_QUOTE_SELECTION", "CONFIGURATION_NOT_ORDERABLE", "WHATSAPP_PRODUCT_UNAVAILABLE",
+    "WHATSAPP_PRODUCT_TYPE_CHANGED", "WHATSAPP_SNAPSHOT_PRICE_MISMATCH"].includes(error.code)) {
+    return ar ? "تغير أحد الأصناف أو خياراته. راجع السلة وأعد المحاولة." : "A product or its options changed. Review the cart and try again.";
+  }
+  if (["WHATSAPP_CHECKOUT_DISABLED", "WHATSAPP_ORDERING_DISABLED", "WHATSAPP_PRICES_HIDDEN",
+    "WHATSAPP_CAPABILITY_UNAVAILABLE", "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE"].includes(error.code)) {
+    return ar ? "الطلب عبر WhatsApp غير متاح حاليًا لهذا المنيو." : "WhatsApp checkout is unavailable for this menu.";
+  }
+  return ar ? "تعذر إتمام التحقق من الطلب. راجع السلة وحاول مجددًا."
+    : "Could not verify the order. Review the cart and try again.";
+}
+
+export function buildTrustedCheckoutRequest(cart: readonly CartItem[], locale: Locale, details: Details): PublicWhatsappCheckoutRequest {
+  return {
+    locale,
+    ...(details.customerName.trim() ? { customerName: details.customerName.trim() } : {}),
+    ...(details.customerPhone.trim() ? { customerPhone: details.customerPhone.trim() } : {}),
+    fulfillmentType: details.fulfillmentType,
+    ...(details.fulfillmentType === "delivery" ? {
+      deliveryArea: details.deliveryArea.trim(), deliveryNear: details.deliveryNear.trim()
+    } : details.pickupTime.trim() ? { pickupTime: details.pickupTime.trim() } : {}),
+    ...(details.orderNote.trim() ? { orderNote: details.orderNote.trim() } : {}),
+    items: cart.map((item) => item.mode === "LEGACY" ? {
+      mode: "LEGACY" as const, lineId: item.lineId, productSlug: item.slug,
+      quantity: item.quantity, ...(item.note?.trim() ? { note: item.note.trim() } : {}),
+      expectedUnitPrice: item.priceText ?? String(item.price)
+    } : {
+      mode: "NETWORK" as const, lineId: item.lineId, productId: item.productId,
+      quantity: item.quantity, selection: item.selection,
+      ...(item.note?.trim() ? { note: item.note.trim() } : {}),
+      expectedUnitPrice: item.acceptedQuote.total,
+      expectedLinkedSourceRevisions: item.acceptedQuote.linkedSourceRevisions
+    })
+  };
+}
 type PendingPrice = {
   request: PublicWhatsappCheckoutRequest; draft: PublicWhatsappCheckoutDraft;
   acceptanceToken: string; messagePreview: string;
@@ -60,27 +109,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     details.deliveryArea, details.deliveryNear, details.pickupTime, details.orderNote]);
 
   function request(): PublicWhatsappCheckoutRequest {
-    return {
-      locale,
-      ...(details.customerName.trim() ? { customerName: details.customerName.trim() } : {}),
-      ...(details.customerPhone.trim() ? { customerPhone: details.customerPhone.trim() } : {}),
-      fulfillmentType: details.fulfillmentType,
-      ...(details.fulfillmentType === "delivery" ? {
-        deliveryArea: details.deliveryArea.trim(), deliveryNear: details.deliveryNear.trim()
-      } : details.pickupTime.trim() ? { pickupTime: details.pickupTime.trim() } : {}),
-      ...(details.orderNote.trim() ? { orderNote: details.orderNote.trim() } : {}),
-      items: cart.map((item) => item.mode === "LEGACY" ? {
-        mode: "LEGACY" as const, lineId: item.lineId, productSlug: item.slug,
-        quantity: item.quantity, ...(item.note?.trim() ? { note: item.note.trim() } : {}),
-        expectedUnitPrice: item.priceText ?? String(item.price)
-      } : {
-        mode: "NETWORK" as const, lineId: item.lineId, productId: item.productId,
-        quantity: item.quantity, selection: item.selection,
-        ...(item.note?.trim() ? { note: item.note.trim() } : {}),
-        expectedUnitPrice: item.acceptedQuote.total,
-        expectedLinkedSourceRevisions: item.acceptedQuote.linkedSourceRevisions
-      })
-    };
+    return buildTrustedCheckoutRequest(cart, locale, details);
   }
 
   async function preview() {
@@ -103,8 +132,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       setPreviewPriceChanged(comparison === "PRICE_CHANGED");
       setPreviewMessage(prepared.messagePreview);
     } catch (caught) {
-      if (editVersion.current === version) setError(caught instanceof PublicWhatsappCheckoutError ? caught.message
-        : ar ? "تعذر تجهيز معاينة الرسالة." : "Could not prepare the message preview.");
+      if (editVersion.current === version) setError(trustedCheckoutErrorMessage(caught, locale, details));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -133,8 +161,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         : ar ? "انتهت صلاحية التحقق. راجع الطلب وأعد الإرسال." : "The verification expired. Review the order and try again.");
       return;
     }
-    setError(caught instanceof PublicWhatsappCheckoutError ? caught.message
-      : ar ? "لم يُفتح WhatsApp لأن التحقق فشل." : "WhatsApp was not opened because verification failed.");
+    setError(trustedCheckoutErrorMessage(caught, locale, details));
   }
 
   async function confirmAndOpen(checkoutRequest: PublicWhatsappCheckoutRequest, acceptanceToken: string,
@@ -192,8 +219,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
       await confirmAndOpen(checkoutRequest, prepared.acceptanceToken, displayedTotal, version, tab);
     } catch (caught) {
       tab?.close();
-      if (editVersion.current === version) setError(caught instanceof PublicWhatsappCheckoutError ? caught.message
-        : ar ? "تعذر التحقق من الطلب. حاول مجددًا." : "Could not verify the order. Try again.");
+      if (editVersion.current === version) setError(trustedCheckoutErrorMessage(caught, locale, details));
     } finally {
       busyRef.current = false;
       setBusy(false);

@@ -20,6 +20,10 @@ function isolateWhatsappText(value: string): string {
   return `\u2068${safe}\u2069`;
 }
 
+function isolateWhatsappBoldText(value: string): string {
+  return isolateWhatsappText(value.replace(/\*/g, "＊"));
+}
+
 // Network activation must not overwrite the merchant-controlled availability flag.
 // The legacy order path requires both legacy persistence markers; the Network
 // configurator is preview-only until trusted ordering is implemented in Stage 6.
@@ -934,10 +938,16 @@ export class PublicMenuService {
       ...input.items.flatMap((item): (string | null)[] => [
         `${item.quantity} × ${isolateWhatsappText(item.name)}`,
         ...item.options.map((option) => `• ${isolateWhatsappText(option)}`),
-        item.note ? `ملاحظة الصنف: ${isolateWhatsappText(item.note)}` : null,
+        item.note ? `*ملاحظة الصنف: ${isolateWhatsappBoldText(item.note)}*` : null,
         input.showPrices ? `إجمالي الصنف: ${displayAmount(item.totalPrice)}` : null,
+        "━━━━━━━━━━━━━━",
         ""
       ]),
+      input.orderNote ? "━━━━━━━━━━━━━━" : null,
+      input.orderNote ? "*ملاحظات الطلب:*" : null,
+      input.orderNote ? `*${isolateWhatsappBoldText(input.orderNote)}*` : null,
+      input.orderNote ? "━━━━━━━━━━━━━━" : null,
+      input.orderNote ? "" : null,
       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
       input.showPrices ? `مجموع الأصناف: ${displayAmount(input.itemsSubtotal)}` : null,
       input.showPrices ? `رسوم التوصيل: ${input.fulfillmentType !== "delivery" ? "لا تُضاف للاستلام"
@@ -951,7 +961,6 @@ export class PublicMenuService {
       input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${isolateWhatsappText(input.deliveryNear)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryBeside ? `العنوان: ${isolateWhatsappText(input.deliveryBeside)}` : null,
       input.fulfillmentType === "pickup" && input.pickupTime ? `وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null,
-      input.orderNote ? `ملاحظات الطلب: ${isolateWhatsappText(input.orderNote)}` : null,
       `الوقت: ${new Date().toLocaleString("ar-SY")}`
     ];
 

@@ -33,6 +33,7 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).not.toMatch(/📏 الأحجام — كبير/);
     expect(message).not.toContain("الحجم:");
     expect(message).not.toContain("Configuration Revision");
+    expect(message).not.toMatch(/\(اختياري\)|\(مطلوب\)|أعلى إضافتين مجانًا/);
     expect(message).toContain("الإجمالي: 530.000008 EGP");
     expect(message).toContain("رسوم التوصيل: لا تُضاف للاستلام");
     expect(message.indexOf("بيتزا مارغريتا")).toBeGreaterThan(message.indexOf("━━━━━━━━━━━━━━"));
@@ -80,6 +81,17 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).toContain("1 × \u2068Juice\u2069");
     expect(message).not.toContain("3. 1 ×");
     expect(message).toContain("Total: 1070.000016 EGP");
+    expect(message).toContain("*Item note: ⁨No onion⁩*");
+  });
+
+  it("separates bold order notes before totals and keeps customer details after them", () => {
+    const draft = demoDraft("pizza", "ar");
+    draft.details.orderNote = "الصلصة منفصلة";
+    const message = formatTrustedWhatsappDraft(draft);
+    expect(message).toContain("*ملاحظات الطلب:*");
+    expect(message).toContain("*⁨الصلصة منفصلة⁩*");
+    expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("مجموع الأصناف"));
+    expect(message.indexOf("اسم الزبون")).toBeGreaterThan(message.indexOf("الإجمالي:"));
   });
 
   it("rejects an inconsistent trusted line before presentation grouping", () => {

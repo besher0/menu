@@ -125,7 +125,7 @@ function groupedMessageLines(items: TrustedLine[]): TrustedLine[] {
 /** The message is assembled only from this request's trusted database-backed draft. */
 export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
   const ar = draft.locale === "ar";
-  const details = formatNetworkOrderDetails({ restaurantName: draft.restaurantName, ...draft.details }, draft.locale);
+  const details = formatNetworkOrderDetails({ restaurantName: draft.restaurantName, ...draft.details, orderNote: undefined }, draft.locale);
   const output = [ar ? "🧾 طلب جديد — OrderSawa" : "🧾 New order — OrderSawa", ...details.header];
   output.push("━━━━━━━━━━━━━━");
   for (const [index, line] of groupedMessageLines(draft.items).entries()) {
@@ -136,7 +136,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
       output.push(...rendered.lines);
     } else {
       output.push(`${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
-      if (line.note) output.push(`${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}`);
+      if (line.note) output.push(`*${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}*`);
       output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
     }
     output.push("━━━━━━━━━━━━━━", "");
@@ -145,6 +145,10 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
     || draft.totalAmount !== (draft.details.fulfillmentType === "delivery" && draft.deliveryFee === null
       ? null : sumMoney([draft.itemsSubtotal, draft.deliveryFee ?? "0"]))) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
   const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.itemsSubtotal, draft.currency);
+  if (draft.details.orderNote) {
+    output.push("━━━━━━━━━━━━━━", `*${ar ? "ملاحظات الطلب" : "Order notes"}:*`,
+      `*${formatWhatsappDisplayText(draft.details.orderNote, "$details.orderNote", 500)}*`, "━━━━━━━━━━━━━━", "");
+  }
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
   output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.itemsSubtotal, draft.currency)}`);
   output.push(`${ar ? "رسوم التوصيل" : "Delivery fee"}: ${draft.details.fulfillmentType !== "delivery"

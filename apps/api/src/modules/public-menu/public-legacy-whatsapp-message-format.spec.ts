@@ -20,11 +20,13 @@ describe("persisted Legacy WhatsApp message presentation", () => {
     expect(message).not.toContain("الفرع:");
     expect(message).toContain("2 × ⁨بيتزا Demo⁩");
     expect(message).toContain("• ⁨زيتون⁩");
-    expect(message).toContain("ملاحظة الصنف: ⁨بدون بصل⁩");
+    expect(message).toContain("*ملاحظة الصنف: ⁨بدون بصل⁩*");
     expect(message.indexOf("مجموع الأصناف")).toBeGreaterThan(message.indexOf("إجمالي الصنف"));
     expect(message.indexOf("الاسم:")).toBeGreaterThan(message.indexOf("الإجمالي:"));
     expect(message).toContain("رسوم التوصيل: لا تُضاف للاستلام");
-    expect(message).toContain("ملاحظات الطلب: ⁨ملاحظة حقيقية⁩");
+    expect(message).toContain("*ملاحظات الطلب:*");
+    expect(message).toContain("*⁨ملاحظة حقيقية⁩*");
+    expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("مجموع الأصناف"));
   });
 
   it("keeps unknown delivery fee explicit and never invents a final amount or address", () => {

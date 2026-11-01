@@ -60,12 +60,12 @@ function display(value: string, path: string, maxLength = 200): string {
 }
 
 const words = {
-  ar: { title: "🧾 طلب OrderSawa", required: "مطلوب", optional: "اختياري",
+  ar: { title: "🧾 طلب OrderSawa",
     unit: "سعر الوحدة", each: "للوحدة", line: "إجمالي الصنف", total: "إجمالي الطلب", base: "السعر الأساسي",
     restaurant: "المطعم", customer: "اسم الزبون", phone: "هاتف الزبون", fulfillment: "طريقة الاستلام",
     pickup: "استلام من المطعم", delivery: "توصيل", area: "المنطقة", near: "قريب من", beside: "العنوان",
     pickupTime: "موعد الاستلام", orderNote: "ملاحظات الطلب", itemNote: "ملاحظة الصنف" },
-  en: { title: "🧾 OrderSawa order", required: "required", optional: "optional",
+  en: { title: "🧾 OrderSawa order",
     unit: "Unit price", each: "each", line: "Line total", total: "Order total", base: "Base price",
     restaurant: "Restaurant", customer: "Customer", phone: "Customer phone", fulfillment: "Fulfillment",
     pickup: "Pickup", delivery: "Delivery", area: "Area", near: "Near", beside: "Beside",
@@ -173,8 +173,7 @@ class LineRenderer {
           }
           continue;
         }
-        const requirement = groupNode.min && Number(groupNode.min) > 0 ? words[this.locale].required : words[this.locale].optional;
-        this.rendered.push(`${pad}➕ ${groupLabel} (${requirement}):`);
+        this.rendered.push(`${pad}➕ ${groupLabel}:`);
         const instanceIds = new Set<string>();
         const optionCounts = new Map<string, number>();
         const leafUnits = new Map<string, { label: string; count: number }>();
@@ -346,7 +345,7 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   const renderedChoices = renderer.render(configuration, selection, topLevelSizes.length === 1 ? topLevelSizes[0].groupId : undefined);
   const lines = [`${numbered ? `${index + 1}. ` : ""}${count} × ${name}${sizeSuffix}`, ...renderedChoices];
   if (item.note !== undefined) {
-    lines.push(`${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}`);
+    lines.push(`*${words[locale].itemNote}: ${display(nonempty(item.note, `${path}.note`), `${path}.note`, 500)}*`);
   }
   if (compareMoney(sumMoney(priceLines.map((entry) => money(entry.chargedAmount, `${path}.priceBreakdown.chargedAmount`))), unitPrice) !== 0) {
     throw new NetworkOrderSnapshotFormatError("UNIT_BREAKDOWN_MISMATCH", `${path}.priceBreakdown`, "Saved breakdown differs from the saved unit price.");
