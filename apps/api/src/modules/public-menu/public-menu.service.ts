@@ -943,7 +943,6 @@ export class PublicMenuService {
         "━━━━━━━━━━━━━━",
         ""
       ]),
-      input.orderNote ? "━━━━━━━━━━━━━━" : null,
       input.orderNote ? "*ملاحظات الطلب:*" : null,
       input.orderNote ? `*${isolateWhatsappBoldText(input.orderNote)}*` : null,
       input.orderNote ? "━━━━━━━━━━━━━━" : null,

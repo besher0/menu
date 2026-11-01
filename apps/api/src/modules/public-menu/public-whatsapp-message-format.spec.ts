@@ -92,6 +92,7 @@ describe("trusted public WhatsApp message presentation", () => {
     expect(message).toContain("*⁨الصلصة منفصلة⁩*");
     expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("مجموع الأصناف"));
     expect(message.indexOf("اسم الزبون")).toBeGreaterThan(message.indexOf("الإجمالي:"));
+    expect(message.replace(/[\u2066-\u2069]/g, "")).not.toMatch(/━━━━━━━━━━━━━━\s+━━━━━━━━━━━━━━/);
   });
 
   it("rejects an inconsistent trusted line before presentation grouping", () => {

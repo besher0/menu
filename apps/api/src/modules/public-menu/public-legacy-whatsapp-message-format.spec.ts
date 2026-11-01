@@ -27,6 +27,7 @@ describe("persisted Legacy WhatsApp message presentation", () => {
     expect(message).toContain("*ملاحظات الطلب:*");
     expect(message).toContain("*⁨ملاحظة حقيقية⁩*");
     expect(message.indexOf("ملاحظات الطلب")).toBeLessThan(message.indexOf("مجموع الأصناف"));
+    expect(message.replace(/[\u2066-\u2069]/g, "")).not.toMatch(/━━━━━━━━━━━━━━\s+━━━━━━━━━━━━━━/);
   });
 
   it("keeps unknown delivery fee explicit and never invents a final amount or address", () => {

@@ -146,7 +146,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft): string {
       ? null : sumMoney([draft.itemsSubtotal, draft.deliveryFee ?? "0"]))) throw new Error("WHATSAPP_DRAFT_TOTAL_MISMATCH");
   const reconciliation = currencyDisplayReconciliation(draft.items.map((item) => item.lineTotal), draft.itemsSubtotal, draft.currency);
   if (draft.details.orderNote) {
-    output.push("━━━━━━━━━━━━━━", `*${ar ? "ملاحظات الطلب" : "Order notes"}:*`,
+    output.push(`*${ar ? "ملاحظات الطلب" : "Order notes"}:*`,
       `*${formatWhatsappDisplayText(draft.details.orderNote, "$details.orderNote", 500)}*`, "━━━━━━━━━━━━━━", "");
   }
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);

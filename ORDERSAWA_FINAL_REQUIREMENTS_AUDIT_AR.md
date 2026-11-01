@@ -13,7 +13,7 @@
 | مصدر Backend الحالي | `network-order-contract.ts:78`: يتطلب `deliveryArea` و`deliveryNear` فقط؛ `deliveryBeside` اختياري. |
 | مصدر Frontend الحالي | `trusted-whatsapp-checkout.tsx`: يبني Delivery بالمنطقة و«قريب من» فقط؛ لا يرسل `pickupTime` القديم. |
 
-السبب الحقيقي للخطأ المصوَّر هو أن عملية API على 5001 بدأت قبل تحديث الكود وبقيت تخدم العقد القديم؛ ليس خطأ بيانات أدخلها الزبون. أُضيف اختبار انحدار لبناء الطلب مع State قديم، ورسائل عربية/إنجليزية آمنة تعتمد Error Code بدل عرض `error.message` الخام. **إصلاح تجربة الرابط الخارجي لم يكتمل بعد**: لم يمكن إيقاف PID 19680 من صلاحيات الجلسة (`Access denied`)، ولذلك لم أُعد تشغيله أو أدّعِ أن الصورة لم تعد قابلة للتكرار على 4G. ينبغي إيقاف هذه العملية بإذن مالكها ثم تشغيل API 5001 بالكود الحالي، وإعادة فحص الرابط بعد ذلك.
+السبب الحقيقي للخطأ المصوَّر هو أن عملية API على 5001 بدأت قبل تحديث الكود وبقيت تخدم العقد القديم؛ ليس خطأ بيانات أدخلها الزبون. أُضيف اختبار انحدار لبناء الطلب مع State قديم، ورسائل عربية/إنجليزية آمنة تعتمد Error Code بدل عرض `error.message` الخام. بعد أن أوقف المؤسس PID 19680، شغّلت API 5001 بالكود الحالي عبر PowerShell 7. نجح من المتصفح عبر Proxy 3210 اختبار Mixed Delivery دون `beside` حتى معاينة الرسالة وTrusted Confirm؛ فُتح رابط WhatsApp لرقم Demo دون إرسال الرسالة. **التحقق من رابط 4G ما زال متوقفًا لأن Cloudflare Tunnel أصبح Down، لا بسبب Checkout المحلي.**
 
 ## مصفوفة القرارات
 
@@ -58,11 +58,11 @@
 
 | البند | المسؤول/الدليل الحالي | الحالة والإجراء |
 |---|---|---|
-| Delivery يتطلب المنطقة و«قريب من» فقط | `network-order-contract.ts:78` واختبار Contract وHTTP 5002 | متحقق على الكود الحالي؛ **تعطل خارجيًا** بسبب API 5001 القديم. |
-| تبديل Pickup/Delivery مع State قديم | `buildTrustedCheckoutRequest` واختباره الجديد | متحقق Unit: لا يرسل `pickupTime` في Delivery ولا حقول Delivery في Pickup. Reload ببيانات قديمة لم يُختبر Browser. |
+| Delivery يتطلب المنطقة و«قريب من» فقط | `network-order-contract.ts:78`، HTTP وBrowser على API 5001 المعاد تشغيله | متحقق محليًا عبر مسار Proxy الخارجي؛ اختبار 4G ينتظر عودة Tunnel. |
+| تبديل Pickup/Delivery مع State قديم | `buildTrustedCheckoutRequest` واختباره الجديد؛ Browser: وقت Pickup قديم ثم Delivery | متحقق Unit وBrowser محليًا: Delivery نجح بلا `pickupTime` ولا `beside`. Reload ببيانات قديمة لم يُختبر Browser. |
 | Legacy-only دون تغيير قواعده | `public-menu.service.ts` واختبارات Legacy؛ لم تُعدَّل آلية الحفظ | متحقق Unit؛ لم أُنشئ Order جديدًا على Demo في هذه الجولة. |
-| Network/Mixed Prepare/Confirm | Trusted hook وخدمة API؛ معاينة Mixed من Browser على 5002 نجحت | متحقق للـPrepare/Preview المحلي؛ Confirm كامل للنسخة الحالية لم يُنفذ. |
-| رسائل أخطاء عربية/إنجليزية غير تقنية | `trusted-whatsapp-checkout.tsx` واختباره (6 حالات) | متحقق Unit؛ الرابط الخارجي يحتاج إعادة تشغيل API لاختبارها مع خطأ حقيقي. |
+| Network/Mixed Prepare/Confirm | Trusted hook وخدمة API؛ Browser Mixed على 5001 ولّد رابط WhatsApp الصحيح | متحقق لـMixed محليًا عبر Proxy 3210؛ Network-only و4G ليسا مثبتين بهذه الجولة. |
+| رسائل أخطاء عربية/إنجليزية غير تقنية | `trusted-whatsapp-checkout.tsx` واختباره (6 حالات) | متحقق Unit؛ ظهورها من رابط 4G يحتاج Tunnel وحدث خطأ حقيقي. |
 | `null`/`0`/موجب لرسوم Delivery | `delivery-fee.ts` و`public-whatsapp-checkout.service.ts:306` واختبارات الرسوم السابقة | كود فقط لهذه الجولة؛ لا تعديل لقيم المطعم المحفوظة. |
 | Pickup بلا رسوم؛ لا إجمالي نهائي مجهول | الخدمة نفسها؛ Browser Preview المحلي عرض «تُحدّد حسب المنطقة» دون إجمالي وهمي | متحقق للرسوم المجهولة؛ الثابتة/المجانية مثبتة باختبارات سابقة لا الحالية. |
 | حفظ رسوم المطعم الصحيح وتغير السعر | Dashboard service وTrusted Confirm؛ تقارير/اختبارات سابقة | كود فقط لهذه الجولة؛ يحتاج اختبار Disposable متكامل. |
@@ -79,7 +79,7 @@
 | بقاء المنتجات/الأحجام/الخيارات والكميات بلا أسعار إضافات فردية أو حجم مكرر | Formatter واختباراته، Preview Mixed المحلي | متحقق نصيًا محليًا؛ API الخارجي القديم لم يُحدَّث بعد. |
 | ملاحظة الصنف وطلبه عريضتان، الطلب قبل المجاميع | تعديل Formatter وLegacy/Trusted services، 27 اختبار Formatter ناجح | متحقق Unit؛ تنسيق WhatsApp Android يحتاج تأكيد الهاتف. |
 | بيانات الزبون بعد الإجمالي | Legacy/Trusted formatter واختباراته | متحقق Unit. |
-| Legacy/Network/Mixed وPreview/Copy بلا إرسال | اختبارات Formatter وBrowser Mixed Preview، لا إرسال | متحقق للمعاينة Mixed؛ الإرسال/Confirm الكامل لم يُختبر بهذه الجولة. |
+| Legacy/Network/Mixed وPreview/Copy بلا إرسال | اختبارات Formatter وBrowser Mixed Preview/Confirm، لا إرسال | متحقق لـMixed محليًا حتى رابط WhatsApp؛ بقية الأنواع غير مثبتة بهذه الجولة. |
 | رقم مطعم Demo `+963937325860` | Public API/تقارير Demo السابقة؛ لم يُعدَّل رقم محفوظ | كود فقط لهذه الجولة؛ لم أكتب على DB. |
 | إزالة Dark Mode من الإعدادات/المتغيرات | بحث المصدر وجد `color-scheme: light` فقط في CSS، بلا مفتاح Dark Mode صريح ضمن الملفات المفحوصة | كود فقط؛ لا يكفي لإثبات حذف كل المسارات القديمة. لا أحذف شيئًا بلا تحليل اعتماد أوسع. |
 
@@ -94,8 +94,9 @@
 | Root Typecheck | نجح. |
 | API وWeb Build | نجحا؛ Next ولّد 27 صفحة. |
 | `git diff --check` | نجح. |
-| HTTP API محلي | 5001 أعاد العقد القديم؛ 5002 قبل Delivery بلا `beside` ووصل لتحقق التكوين. |
-| Browser على `127.0.0.1:3211` | فتح منتج Network، عرض «قد يعجبك أيضاً»، سلة Mixed، Delivery ببيانات صحيحة، معاينة Trusted WhatsApp ظهرت دون خطأ `beside`. لا رسالة أُرسلت. |
+| HTTP API محلي | قبل إعادة التشغيل: 5001 أعاد العقد القديم، و5002 قبل Delivery بلا `beside`. بعد إعادة التشغيل: Browser عبر 3210/5001 أكمل Mixed Delivery. |
+| Browser على `127.0.0.1:3210` | سلة Mixed، وقت Pickup قديم ثم Delivery ببيانات المنطقة و«قريب من» دون `beside`، معاينة ثم Trusted Confirm ولّد رابط `api.whatsapp.com` برقم `963937325860`. لم تُرسل رسالة. |
+| Browser على `127.0.0.1:3211` | فتح منتج Network و«قد يعجبك أيضاً» وPreview Mixed محلي. |
 | Browser 360/390/430 | قياس DOM للفواتير الموسعة: لا تجاوز أفقي، أعمدة السعر ثابتة بعد الاستقرار؛ Touch خلال Snap غير مثبت. |
 | Android/4G | صورة المؤسس تثبت الخطأ القديم فقط. لم أختبر جهازه أو دخوله إلى Cloudflare Access. |
 | PostgreSQL Disposable للتغييرات المدمرة | لم يكتمل: قاعدة الاختبار المطلوبة غير متاحة بهوية PostgreSQL صالحة؛ لم أشغّل اختبارات قد تحذف صفوفًا على Demo. |
@@ -108,7 +109,7 @@
 
 ## حالة الخدمات والرابط
 
-وقت الفحص: PostgreSQL Demo يستمع على 55448، API الخارجي 5001 (PID 19680)، Web الخارجي 3102 (PID 10232)، Proxy 3210 (PID 14348)، API المحلي 5002، Web المحلي 3103، Proxy 3211؛ عملية `cloudflared` موجودة. فتح الرابط خارجيًا من Browser بلا جلسة حوّل إلى صفحة Cloudflare Access، مما يثبت وجود بوابة وصول، **ولا يثبت** صلاحيات البريد أو مدة 24 ساعة أو سلامة الصفحة بعد تسجيل الدخول. رقم Commit الذي بُنيت عليه العمليات القديمة لا يمكن استنتاجه بثقة من PID؛ توقيت بدء 5001 ونتيجة HTTP يثبتان أنه لا يطابق عقد Backend الحالي. لم أغيّر DNS أو Access أو Tunnel أو قاعدة Demo. الرابط `https://rydtest.ordersawa.com` **غير جاهز للاعتماد الآن** حتى يُعاد تشغيل 5001 وتُجرى تجربة Delivery من الهاتف.
+وقت الفحص بعد الاستكمال: PostgreSQL Demo يستمع على 55448، API 5001 الجديد (PID 22148 وقت الفحص)، Web 3102، Proxy 3210؛ بقيت خدمات QA 5002/3103/3211. تطبيق Cloudflare يربط `rydtest.ordersawa.com` إلى `http://127.0.0.1:3210`، لكن لوحة Overview أظهرت `Down` و`0 Active replicas`. فتح الرابط بلا جلسة حوّل إلى صفحة Cloudflare Access، مما يثبت وجود بوابة وصول، **ولا يثبت** وصول الطلب بعدها إلى Origin أو مدة الجلسة. ملف اعتماد Tunnel موجود خارج المستودع لكن ACL تمنع هوية CodexSandboxOffline من الوصول إليه؛ طُلب من المؤسس تشغيل الموصل من حساب Windows الخاص به دون مشاركة Token. لم أغيّر DNS أو Access أو إعداد Tunnel أو قاعدة Demo. الرابط `https://rydtest.ordersawa.com` **غير جاهز للاعتماد الآن** حتى يعود Tunnel ويتأكد المؤسس من Delivery على 4G.
 
 ## الملفات المعدلة ضمن هذه الجولة
 
@@ -120,7 +121,7 @@
 
 ## المتبقي قبل القبول
 
-1. إيقاف API 5001 القديم بصلاحيات مالكه، ثم تشغيله من الكود الحالي **مع إعدادات Demo نفسها**؛ إعادة فحص Network/Mixed Delivery وWhatsApp Preview عبر `https://rydtest.ordersawa.com`. لا تُشغّل Seed ولا تغيّر Cloudflare Access/DNS.
+1. تشغيل الموصل الأصلي `cloudflared` من حساب Windows القادر على قراءة ملف Token المحلي، ثم تأكيد `Healthy` وفتح Network/Mixed Delivery وWhatsApp Preview عبر `https://rydtest.ordersawa.com` على 4G. لا تُشغّل Seed ولا تغيّر Cloudflare Access/DNS.
 2. إعداد PostgreSQL Disposable منفصلة ثم تنفيذ دورة تغيّر الأسعار وتعطيل الخيارات/إصلاح التكوين، ورسوم `null/0/موجب` وLegacy/Network/Mixed Confirm بلا لمس Demo.
 3. اختبار Android فعلي لحركة Bottom Sheet، 10/20 صنفًا، وعرض Markdown العريض داخل WhatsApp، ثم تأكيد المؤسس للوصول من 4G واستمرار جلسة Access.
 
