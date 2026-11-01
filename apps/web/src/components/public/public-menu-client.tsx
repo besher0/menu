@@ -31,6 +31,7 @@ import {
   type NetworkCartItem
 } from "./cart-model";
 import { cartDisplayedTotal, useTrustedWhatsappCheckout } from "./trusted-whatsapp-checkout";
+import { invoiceDragHeight, shouldExpandInvoice } from "./invoice-sheet-motion";
 
 type PublicLanguage = "ar" | "en";
 type CategoryProductListLayout = "single" | "double";
@@ -2544,7 +2545,7 @@ function CartView({
   const invoiceCollapsedHeight = useRef(0);
   const invoiceSnapTimer = useRef<number | null>(null);
   const invoiceDrag = useRef<{ pointerId: number; startY: number; lastY: number; startHeight: number;
-    expandedHeight: number; startedAt: number; wasExpanded: boolean; onHandle: boolean;
+    expandedHeight: number; lastMoveAt: number; velocity: number; wasExpanded: boolean; onHandle: boolean;
     mode: "pending" | "sheet" | "scroll"; scrollElement: HTMLElement | null } | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewedLineIds, setReviewedLineIds] = useState<Set<string>>(() => new Set());
@@ -2599,6 +2600,85 @@ function CartView({
 
   useEffect(() => () => { if (invoiceSnapTimer.current !== null) window.clearTimeout(invoiceSnapTimer.current); }, []);
 
+  function snapInvoiceCard(card: HTMLElement, expandedHeight: number, wasExpanded: boolean,
+    velocity: number, moved: boolean, cancelled: boolean) {
+    const collapsed = invoiceCollapsedHeight.current || card.getBoundingClientRect().height;
+    const currentHeight = card.getBoundingClientRect().height;
+    const open = shouldExpandInvoice({ collapsed, expanded: expandedHeight, current: currentHeight,
+      wasExpanded, velocity, moved, cancelled });
+    setInvoiceExpanded(open);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    card.style.transition = reduced ? "none" : "height 180ms ease-out";
+    card.style.height = `${open ? expandedHeight : collapsed}px`;
+    invoiceSnapTimer.current = window.setTimeout(() => {
+      card.style.height = "";
+      card.style.overflow = "";
+      card.style.transition = "";
+      setInvoiceDragActive(false);
+      invoiceSnapTimer.current = null;
+    }, reduced ? 0 : 190);
+  }
+
+  // Let the browser own touch scrolling only after the sheet has snapped open.
+  // At the top of that native list, a downward touch can hand control back to the sheet.
+  useEffect(() => {
+    if (!invoiceExpanded) return;
+    const card = invoiceCardRef.current;
+    const scroll = card?.querySelector<HTMLElement>(".cart-invoice-scroll");
+    if (!card || !scroll) return;
+    let touch: { id: number; startY: number; lastY: number; lastMoveAt: number;
+      velocity: number; dragging: boolean; startHeight: number } | null = null;
+    const onStart = (event: globalThis.TouchEvent) => {
+      if (event.touches.length !== 1 || invoiceSnapTimer.current !== null) return;
+      const point = event.touches[0];
+      touch = { id: point.identifier, startY: point.clientY, lastY: point.clientY,
+        lastMoveAt: performance.now(), velocity: 0, dragging: false, startHeight: 0 };
+    };
+    const onMove = (event: globalThis.TouchEvent) => {
+      if (!touch || event.touches.length !== 1 || event.touches[0].identifier !== touch.id) return;
+      const y = event.touches[0].clientY;
+      const now = performance.now();
+      const delta = y - touch.lastY;
+      if (!touch.dragging) {
+        if (scroll.scrollTop > 0 || y - touch.startY <= 6 || !event.cancelable) {
+          touch.lastY = y;
+          touch.lastMoveAt = now;
+          if (scroll.scrollTop > 0 || y < touch.startY) touch.startY = y;
+          return;
+        }
+        touch.dragging = true;
+        touch.startY = y;
+        touch.startHeight = card.getBoundingClientRect().height;
+        card.style.height = `${touch.startHeight}px`;
+        card.style.overflow = "hidden";
+        card.style.transition = "none";
+        setInvoiceDragActive(true);
+      }
+      event.preventDefault();
+      touch.velocity = -delta / Math.max(1, now - touch.lastMoveAt);
+      touch.lastY = y;
+      touch.lastMoveAt = now;
+      const collapsed = invoiceCollapsedHeight.current || touch.startHeight;
+      card.style.height = `${invoiceDragHeight(collapsed, touch.startHeight, touch.startHeight, touch.startY, y)}px`;
+    };
+    const onEnd = (event: globalThis.TouchEvent) => {
+      if (!touch || !Array.from(event.changedTouches).some((point) => point.identifier === touch?.id)) return;
+      if (touch.dragging) snapInvoiceCard(card, touch.startHeight, true, touch.velocity,
+        Math.abs(touch.startY - touch.lastY) > 20, event.type === "touchcancel");
+      touch = null;
+    };
+    scroll.addEventListener("touchstart", onStart, { passive: true });
+    scroll.addEventListener("touchmove", onMove, { passive: false });
+    scroll.addEventListener("touchend", onEnd);
+    scroll.addEventListener("touchcancel", onEnd);
+    return () => {
+      scroll.removeEventListener("touchstart", onStart);
+      scroll.removeEventListener("touchmove", onMove);
+      scroll.removeEventListener("touchend", onEnd);
+      scroll.removeEventListener("touchcancel", onEnd);
+    };
+  }, [invoiceExpanded]);
+
   function startInvoiceDrag(event: PointerEvent<HTMLElement>) {
     const card = invoiceCardRef.current;
     if (!card || invoiceSnapTimer.current !== null || !event.isPrimary) return;
@@ -2606,11 +2686,12 @@ function CartView({
     if (!(target instanceof Element)) return;
     const handle = target.closest(".cart-invoice-handle");
     if (!handle && target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
+    if (invoiceExpanded && event.pointerType === "touch" && target.closest(".cart-invoice-scroll")) return;
     // Desktop text remains selectable; touch can drag from the invoice rows.
     if (event.pointerType === "mouse" && !handle && target.closest("dt, dd")) return;
     const height = card.getBoundingClientRect().height;
     invoiceDrag.current = { pointerId: event.pointerId, startY: event.clientY, lastY: event.clientY,
-      startHeight: height, expandedHeight: height, startedAt: performance.now(), wasExpanded: invoiceExpanded,
+      startHeight: height, expandedHeight: height, lastMoveAt: performance.now(), velocity: 0, wasExpanded: invoiceExpanded,
       onHandle: Boolean(handle), mode: "pending", scrollElement: target.closest<HTMLElement>(".cart-invoice-scroll") };
     card.style.height = `${height}px`;
     card.style.overflow = "hidden";
@@ -2624,6 +2705,9 @@ function CartView({
     const card = invoiceCardRef.current;
     if (!drag || !card || event.pointerId !== drag.pointerId) return;
     const delta = event.clientY - drag.lastY;
+    const now = performance.now();
+    if (delta) drag.velocity = -delta / Math.max(1, now - drag.lastMoveAt);
+    drag.lastMoveAt = now;
     if (drag.mode === "pending" && Math.abs(event.clientY - drag.startY) > 4) {
       drag.mode = drag.wasExpanded && drag.scrollElement
         && (delta < 0 || drag.scrollElement.scrollTop > 0) ? "scroll" : "sheet";
@@ -2633,6 +2717,7 @@ function CartView({
         drag.mode = "sheet";
         drag.startY = event.clientY;
         drag.startHeight = card.getBoundingClientRect().height;
+        drag.velocity = 0;
       } else {
         drag.scrollElement.scrollTop -= delta;
         drag.lastY = event.clientY;
@@ -2642,7 +2727,7 @@ function CartView({
     drag.lastY = event.clientY;
     if (drag.mode !== "sheet") return;
     const collapsed = invoiceCollapsedHeight.current || drag.startHeight;
-    const height = Math.max(collapsed, Math.min(drag.expandedHeight, drag.startHeight + drag.startY - event.clientY));
+    const height = invoiceDragHeight(collapsed, drag.expandedHeight, drag.startHeight, drag.startY, event.clientY);
     card.style.height = `${height}px`;
   }
 
@@ -2659,24 +2744,8 @@ function CartView({
       if (drag.mode === "pending" && drag.onHandle && !cancelled) setInvoiceExpanded((current) => !current);
       return;
     }
-    const collapsed = invoiceCollapsedHeight.current || drag.startHeight;
-    const currentHeight = card.getBoundingClientRect().height;
-    const distance = drag.startY - drag.lastY;
-    const velocity = distance / Math.max(1, performance.now() - drag.startedAt);
-    const open = cancelled ? drag.wasExpanded : Math.abs(velocity) > 0.35 && Math.abs(distance) > 22
-      ? velocity > 0 : currentHeight > (collapsed + drag.expandedHeight) / 2;
-    const target = open ? drag.expandedHeight : collapsed;
-    setInvoiceExpanded(open);
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    card.style.transition = reduced ? "none" : "height 180ms ease-out";
-    card.style.height = `${target}px`;
-    invoiceSnapTimer.current = window.setTimeout(() => {
-      card.style.height = "";
-      card.style.overflow = "";
-      card.style.transition = "";
-      setInvoiceDragActive(false);
-      invoiceSnapTimer.current = null;
-    }, reduced ? 0 : 190);
+    snapInvoiceCard(card, drag.expandedHeight, drag.wasExpanded, drag.velocity,
+      Math.abs(drag.startY - drag.lastY) > 20, cancelled);
   }
 
   useEffect(() => {
@@ -2854,7 +2923,7 @@ function CartView({
   }) ?? [];
 
   return (
-    <main className={`cart-page ${showPrices ? "" : "prices-hidden"}`}>
+    <main className={`cart-page ${showPrices ? "" : "prices-hidden"} ${invoiceExpanded ? "invoice-expanded-page" : ""}`}>
       <CheckoutSteps active={cartStep} />
 
       {cartStep === "review" ? (
@@ -3018,7 +3087,7 @@ function CartView({
         <button type="button" className="cart-invoice-handle" aria-label={language === "ar" ? invoiceExpanded ? "تصغير ملخص الفاتورة" : "توسيع ملخص الفاتورة" : invoiceExpanded ? "Collapse invoice" : "Expand invoice"}
           aria-expanded={invoiceExpanded}
           onClick={(event) => { if (event.detail === 0) setInvoiceExpanded((current) => !current); }}>
-          <span />
+          <span /><ChevronDown size={13} aria-hidden="true" />
         </button>
         {invoiceExpanded && !hasNetwork ? <div className="cart-checkout-meta"><span>{t.orderNumber}: {orderNumber}</span></div> : null}
         <div className="cart-invoice-scroll" aria-label={language === "ar" ? "تفاصيل الفاتورة" : "Invoice details"}>
