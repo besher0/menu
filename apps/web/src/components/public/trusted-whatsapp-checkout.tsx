@@ -47,11 +47,17 @@ export function trustedCheckoutErrorMessage(error: unknown, locale: Locale, deta
   if (["WHATSAPP_PHONE_UNAVAILABLE", "WHATSAPP_PHONE_INVALID"].includes(error.code)) {
     return ar ? "رقم WhatsApp الخاص بالمطعم غير متاح حاليًا. حاول لاحقًا." : "The restaurant's WhatsApp number is unavailable. Try later.";
   }
+  if (error.lineErrors.length) {
+    return ar ? "بعض الأصناف تحتاج مراجعة قبل المتابعة." : "Some items need review before continuing.";
+  }
+  if (error.code === "WHATSAPP_CHECKOUT_CONCURRENT_UPDATE") {
+    return ar ? "تحدّثت القائمة أثناء التحقق. حاول مجددًا." : "The menu changed during verification. Try again.";
+  }
   if (error.status >= 500 || error.status === 429) {
     return ar ? "خدمة التحقق غير متاحة مؤقتًا. بقيت بيانات طلبك محفوظة؛ حاول مجددًا." : "Checkout verification is temporarily unavailable. Your order details are saved; retry.";
   }
-  return ar ? "تعذر إتمام التحقق من الطلب. راجع السلة وحاول مجددًا."
-    : "Could not verify the order. Review the cart and try again.";
+  return ar ? "تعذر التحقق من الطلب. بقيت بياناتك محفوظة؛ حاول مجددًا."
+    : "Could not verify the order. Your details are saved; try again.";
 }
 
 export function buildTrustedCheckoutRequest(cart: readonly CartItem[], locale: Locale, details: Details): PublicWhatsappCheckoutRequest {

@@ -3278,7 +3278,7 @@ function CartView({
         </div>
         {checkoutError ? <p className="cart-message">{checkoutError}</p> : null}
         {useTrustedNetworkCheckout && trustedDisabledReason && !networkItems.some((item) => item.status !== "CURRENT") ? <p className="cart-message">{trustedDisabledReason}</p> : null}
-        {useTrustedNetworkCheckout && trusted.error && cartStep === "confirm" ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
+        {useTrustedNetworkCheckout && trusted.error && !trusted.reviewIssue ? <p className="cart-message" role="alert">{trusted.error}</p> : null}
         {orderMessage ? <p className="cart-message">{orderMessage}</p> : null}
         <button
           type="button"
