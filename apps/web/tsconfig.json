@@ -7,12 +7,28 @@
     "module": "ESNext",
     "incremental": true,
     "isolatedModules": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", ".next-preview-demo/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    ".next-final-checkout-dev/types/**/*.ts",
+    ".next-preview-demo/types/**/*.ts",
+    ".next/types/**/*.ts",
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    ".next-external-dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

@@ -353,7 +353,12 @@ export function isPublicMenuNotFoundError(error: unknown) {
 
 async function apiGet<T>(path: string): Promise<T> {
   try {
-    const response = await fetch(`${API_URL}${path}`, {
+    // Preview-only server rendering can use the loopback API while browsers use
+    // the same-origin /api proxy behind an authenticated external preview.
+    const apiUrl = typeof window === "undefined" && process.env.ORDERSAWA_PREVIEW_INTERNAL_API_URL
+      ? process.env.ORDERSAWA_PREVIEW_INTERNAL_API_URL
+      : API_URL;
+    const response = await fetch(`${apiUrl}${path}`, {
       cache: "no-store"
     });
 

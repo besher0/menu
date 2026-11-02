@@ -7,7 +7,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     try {
       await this.$connect();
     } catch (error) {
-      console.warn("Prisma could not connect during boot. The API will start and retry on requests.", error);
+      // Do not write connection details (which may contain Demo credentials) to service logs.
+      console.warn("Prisma could not connect during boot. The API will start and retry on requests.");
     }
   }
 

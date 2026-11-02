@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   ...(process.env.ORDERSAWA_PREVIEW_DIST_DIR ? { distDir: process.env.ORDERSAWA_PREVIEW_DIST_DIR } : {}),
+  ...(process.env.ORDERSAWA_RELEASE_ID ? {
+    async headers() {
+      return [{ source: "/:path*", headers: [{ key: "X-OrderSawa-Release", value: process.env.ORDERSAWA_RELEASE_ID }] }];
+    }
+  } : {}),
   reactStrictMode: true,
   transpilePackages: ["@menu/shared"],
   allowedDevOrigins: [

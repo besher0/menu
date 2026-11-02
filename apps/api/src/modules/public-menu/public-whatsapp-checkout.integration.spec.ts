@@ -16,7 +16,8 @@ const url = process.env.WHATSAPP_CHECKOUT_TEST_DATABASE_URL;
 const disposableDatabase = url ? new URL(url) : undefined;
 if (url) {
   const allowed = (disposableDatabase?.port === "55440" && disposableDatabase?.pathname === "/ordersawa_stage3_stage6e2_checkout")
-    || (disposableDatabase?.port === "55447" && disposableDatabase?.pathname === "/ordersawa_stage3_showprices_guard");
+    || (disposableDatabase?.port === "55447" && disposableDatabase?.pathname === "/ordersawa_stage3_showprices_guard")
+    || (disposableDatabase?.port === "55448" && /^\/ordersawa_demo_release_checkout_[0-9]{14}_[0-9a-f]{6}$/.test(disposableDatabase?.pathname ?? ""));
   if (disposableDatabase?.hostname !== "127.0.0.1" || !allowed) throw new Error("Disposable checkout test database required");
 }
 const integration = url ? describe : describe.skip;

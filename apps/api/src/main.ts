@@ -5,6 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import express from "express";
+import type { NextFunction, Request, Response } from "express";
 import { AppModule } from "./app.module";
 import { ApiResponseInterceptor } from "./common/api-response.interceptor";
 import { readPositiveInt, readStringList } from "./common/security/env";
@@ -109,6 +110,12 @@ async function bootstrap() {
     allowedHeaders: ["Content-Type", "Authorization", "X-Restaurant-Id", "x-restaurant-id"]
   });
   app.use(securityHeadersMiddleware);
+  if (process.env.ORDERSAWA_RELEASE_ID) {
+    app.use((_request: Request, response: Response, next: NextFunction) => {
+      response.setHeader("X-OrderSawa-Release", process.env.ORDERSAWA_RELEASE_ID!);
+      next();
+    });
+  }
   app.use(rateLimitMiddleware);
   app.use(express.json({ limit: bodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
@@ -120,7 +127,7 @@ async function bootstrap() {
     })
   );
   app.useGlobalInterceptors(new ApiResponseInterceptor());
-  const uploadsDir = join(process.cwd(), "uploads");
+  const uploadsDir = process.env.ORDERSAWA_DEMO_UPLOADS_DIR || join(process.cwd(), "uploads");
   if (!existsSync(uploadsDir)) {
     mkdirSync(uploadsDir, { recursive: true });
   }
