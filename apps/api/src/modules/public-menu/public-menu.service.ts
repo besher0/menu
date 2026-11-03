@@ -500,17 +500,6 @@ export class PublicMenuService {
   }
 
   private async findPublicRestaurant(restaurantSlug: string) {
-    const existing = await this.prisma.restaurant.findFirst({
-      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
-      select: { id: true }
-    });
-
-    if (!existing) {
-      throw new NotFoundException("Restaurant not found");
-    }
-
-    await this.ensureAllCategory(existing.id);
-
     const restaurant = await this.prisma.restaurant.findFirst({
       where: { slug: restaurantSlug, isActive: true, deletedAt: null },
       include: {
