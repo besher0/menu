@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { currencyDisplayReconciliation, currencyDisplayScale, formatCurrencyAmount, formatDecimalForDisplay, multiplyMoney, sumMoney, validateCurrencyAmount } from "@menu/shared";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -64,16 +65,9 @@ export class PublicMenuService {
   async menu(restaurantSlug: string, userAgent?: string | string[], trackView = true) {
     const restaurant = await this.findPublicRestaurant(restaurantSlug);
 
-    if (trackView) {
-      await this.prisma.analyticsEvent.create({
-        data: {
-          restaurantId: restaurant.id,
-          type: "MENU_VIEWED",
-          path: `/m/${restaurant.slug}`,
-          userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
-        }
-      });
-    }
+    // Menu GET is read-only; client-side tracking is deduplicated by the database.
+    void userAgent;
+    void trackView;
 
     const [features, configurationCapabilityEnabled, menus] = await Promise.all([
       this.featureFlags.listFeatures(restaurant.id),
@@ -259,27 +253,43 @@ export class PublicMenuService {
   async track(
     restaurantSlug: string,
     body: { type?: string; path?: string; metadata?: Record<string, unknown> },
-    userAgent?: string | string[]
+    userAgent?: string | string[],
+    requestIp?: string
   ) {
     const restaurant = await this.prisma.restaurant.findFirst({
-      where: { slug: restaurantSlug, isActive: true, deletedAt: null }
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
+      select: { id: true }
     });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
 
-    if (!restaurant) {
-      throw new NotFoundException("Restaurant not found");
+    const type = body.type ?? "PAGE_VIEWED";
+    const clientId = typeof body.metadata?.clientId === "string" ? body.metadata.clientId.trim() : "";
+    if (type === "MENU_VIEWED" && !/^[a-f0-9-]{16,100}$/i.test(clientId)) {
+      throw new BadRequestException("A valid analytics client id is required");
     }
-
-    const event = await this.prisma.analyticsEvent.create({
-      data: {
-        restaurantId: restaurant.id,
-        type: body.type ?? "PAGE_VIEWED",
-        path: body.path,
-        metadata: body.metadata as Prisma.InputJsonValue | undefined,
-        userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
+    const agent = Array.isArray(userAgent) ? userAgent[0] : userAgent;
+    const bucketMs = 30 * 60_000;
+    const dedupeBucket = type === "MENU_VIEWED"
+      ? new Date(Math.floor(Date.now() / bucketMs) * bucketMs)
+      : undefined;
+    const dedupeKey = type === "MENU_VIEWED"
+      ? createHash("sha256").update(`${restaurant.id}:${clientId}:${requestIp ?? "unknown"}:${agent ?? "unknown"}`).digest("hex")
+      : undefined;
+    try {
+      const event = await this.prisma.analyticsEvent.create({
+        data: {
+          restaurantId: restaurant.id, type, path: body.path,
+          metadata: body.metadata as Prisma.InputJsonValue | undefined,
+          userAgent: agent, dedupeKey, dedupeBucket
+        }
+      });
+      return { id: event.id, deduplicated: false };
+    } catch (error) {
+      if (dedupeKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return { id: null, deduplicated: true };
       }
-    });
-
-    return { id: event.id };
+      throw error;
+    }
   }
 
   async createWhatsappOrder(restaurantSlug: string, dto: CreateWhatsappOrderDto) {

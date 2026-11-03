@@ -588,6 +588,32 @@ function SocialIcon({ type, size = 20 }: { type: string; size?: number }) {
   return <MessageCircle size={size} />;
 }
 
+function analyticsClientId() {
+  const key = "public-menu-analytics-client-id";
+  try {
+    const existing = window.localStorage.getItem(key);
+    if (existing && /^[a-f0-9-]{16,100}$/i.test(existing)) return existing;
+    const value = crypto.randomUUID();
+    window.localStorage.setItem(key, value);
+    return value;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+function shouldTrackMenuView(slug: string) {
+  const key = `menu-view:${slug}`;
+  const now = Date.now();
+  try {
+    const previous = Number(window.localStorage.getItem(key) ?? 0);
+    if (now - previous < 30 * 60_000) return false;
+    window.localStorage.setItem(key, String(now));
+  } catch {
+    // Database uniqueness remains authoritative when browser storage is unavailable.
+  }
+  return true;
+}
+
 function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
   if (typeof window === "undefined") return true;
 
@@ -718,6 +744,19 @@ export function PublicMenuClient({
   useEffect(() => {
     setUseSubdomainRoutes(isRestaurantSubdomainHost(window.location.host, data.restaurant.slug));
   }, [data.restaurant.slug]);
+
+  useEffect(() => {
+    if (!shouldTrackMenuView(data.restaurant.slug)) return;
+    void fetch(`${PUBLIC_API_BASE_URL}/public/menus/${encodeURIComponent(data.restaurant.slug)}/track`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "MENU_VIEWED",
+        path: window.location.pathname,
+        metadata: { clientId: analyticsClientId(), view }
+      })
+    }).catch(() => undefined);
+  }, [data.restaurant.slug, view]);
 
   useEffect(() => {
     setCartLoaded(false);

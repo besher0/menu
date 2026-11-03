@@ -39,6 +39,12 @@ const uploadPolicy: RateLimitPolicy = {
   max: readPositiveInt("RATE_LIMIT_UPLOAD_MAX", 20)
 };
 
+const analyticsPolicy: RateLimitPolicy = {
+  name: "analytics",
+  windowMs: readPositiveInt("RATE_LIMIT_ANALYTICS_WINDOW_MS", 60_000),
+  max: readPositiveInt("RATE_LIMIT_ANALYTICS_MAX", 60)
+};
+
 function requestIp(request: Request) {
   return request.ip || request.socket.remoteAddress || "unknown";
 }
@@ -61,6 +67,8 @@ function policyFor(request: Request): RateLimitPolicy {
   if (path === "/dashboard/media/upload") {
     return uploadPolicy;
   }
+
+  if (request.method === "POST" && /^\/public\/menus\/[^/]+\/track$/.test(path)) return analyticsPolicy;
 
   if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
     return writePolicy;

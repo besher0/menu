@@ -382,8 +382,8 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function getPublicMenu(slug: string, options: { track?: boolean } = {}): Promise<PublicMenuData> {
-  const track = options.track === false ? "?track=0" : "";
-  return apiGet<PublicMenuData>(`/public/menus/${slug}${track}`);
+  void options;
+  return apiGet<PublicMenuData>(`/public/menus/${encodeURIComponent(slug)}?track=0`);
 }
 
 export async function getPublicProductConfiguration(
