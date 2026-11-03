@@ -45,6 +45,12 @@ const checkoutPolicy: RateLimitPolicy = {
   max: readPositiveInt("RATE_LIMIT_PUBLIC_CHECKOUT_MAX", 20)
 };
 
+const quotePolicy: RateLimitPolicy = {
+  name: "public-product-quote",
+  windowMs: readPositiveInt("RATE_LIMIT_PUBLIC_QUOTE_WINDOW_MS", 60_000),
+  max: readPositiveInt("RATE_LIMIT_PUBLIC_QUOTE_MAX", 30)
+};
+
 const analyticsPolicy: RateLimitPolicy = {
   name: "analytics",
   windowMs: readPositiveInt("RATE_LIMIT_ANALYTICS_WINDOW_MS", 60_000),
@@ -74,6 +80,7 @@ function policyFor(request: Request): RateLimitPolicy {
     return uploadPolicy;
   }
 
+  if (request.method === "POST" && /^\/public\/menus\/[^/]+\/products\/[^/]+\/quote$/.test(path)) return quotePolicy;
   if (request.method === "POST" && /^\/public\/menus\/[^/]+\/track$/.test(path)) return analyticsPolicy;
   if (request.method === "POST" && /^\/public\/menus\/[^/]+\/(?:orders\/whatsapp|checkout\/whatsapp\/(?:prepare|confirm))$/.test(path)) {
     return checkoutPolicy;
