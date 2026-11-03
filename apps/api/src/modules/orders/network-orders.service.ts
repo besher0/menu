@@ -185,8 +185,9 @@ export class NetworkOrdersService {
     products: PublicConfigurationProductRecord[],
     request: NetworkOrderDraftRequest
   ): Draft {
+    const productsById = new Map(products.map((product) => [product.id, product]));
     const items: DraftLine[] = request.items.map((line, index) => {
-      const owner = products.find((product) => product.id === line.productId);
+      const owner = productsById.get(line.productId);
       if (!owner) throw new NotFoundException("Product is not available in this restaurant");
       const result = quotePublicProductConfiguration({
         restaurantId: restaurant.id, owner, catalogProducts: products,
