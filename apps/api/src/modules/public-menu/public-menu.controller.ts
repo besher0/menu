@@ -12,7 +12,7 @@ export class PublicMenuController {
   ) {}
 
   @Get("by-host/current")
-  @Header("Cache-Control", "public, max-age=0, s-maxage=60, stale-while-revalidate=300")
+  @Header("Cache-Control", "private, no-store, no-cache, must-revalidate")
   menuByHost(@Req() request: Request, @Query("track") track?: string) {
     return this.publicMenuService.menuByHost(request.headers.host, request.headers["user-agent"], track === "1");
   }
@@ -62,6 +62,7 @@ export class PublicMenuController {
   }
 
   @Post(":restaurantSlug/track")
+  @Header("Cache-Control", "no-store")
   track(
     @Param("restaurantSlug") restaurantSlug: string,
     @Body() body: { type?: string; path?: string; metadata?: Record<string, unknown> },
@@ -71,6 +72,7 @@ export class PublicMenuController {
   }
 
   @Post(":restaurantSlug/orders/whatsapp")
+  @Header("Cache-Control", "no-store")
   createWhatsappOrder(
     @Param("restaurantSlug") restaurantSlug: string,
     @Body() dto: CreateWhatsappOrderDto
