@@ -878,57 +878,6 @@ export class PublicMenuService {
     return Math.min(100, Math.max(0, parsed));
   }
 
-  private async ensureAllCategory(restaurantId: string) {
-    const where = { restaurantId_slug: { restaurantId, slug: "all" } } as const;
-    const select = { id: true, isActive: true, sortOrder: true, name: true, deletedAt: true } as const;
-    const restoreIfNeeded = async (category: { isActive: boolean; sortOrder: number; name: string; deletedAt: Date | null }) => {
-      if (!category.isActive || category.sortOrder !== 0 || category.name !== "الكل" || category.deletedAt !== null) {
-        // "all" is a protected system category; retain its ID, products, and presentation fields.
-        await this.prisma.category.update({
-          where,
-          data: { name: "الكل", isActive: true, sortOrder: 0, deletedAt: null }
-        });
-      }
-    };
-    const existing = await this.prisma.category.findUnique({ where, select });
-
-    if (existing) {
-      await restoreIfNeeded(existing);
-      return;
-    }
-
-    try {
-      await this.prisma.category.create({
-        data: {
-          restaurantId,
-          name: "الكل",
-          slug: "all",
-          description: "كل الأصناف",
-          imagePosition: "78,50",
-          imageWidth: 34,
-          imageHeight: 34,
-          color: "#ed1f2b",
-          backgroundType: "GRADIENT",
-          backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
-          sortOrder: 0,
-          isActive: true
-        }
-      });
-    } catch (error) {
-      const target = error instanceof Prisma.PrismaClientKnownRequestError ? error.meta?.target : undefined;
-      const isAllUniqueConflict = error instanceof Prisma.PrismaClientKnownRequestError
-        && error.code === "P2002"
-        && (Array.isArray(target)
-          ? target.length === 2 && target.includes("restaurantId") && target.includes("slug")
-          : target === "Category_restaurantId_slug_key");
-      if (!isAllUniqueConflict) throw error;
-      // A concurrent first request inserted the exact same tenant-scoped system category.
-      const concurrent = await this.prisma.category.findUnique({ where, select });
-      if (!concurrent) throw error;
-      await restoreIfNeeded(concurrent);
-    }
-  }
-
   private publicAssetUrl(url?: string | null) {
     if (!url) {
       return null;
