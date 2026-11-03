@@ -108,5 +108,7 @@ jobs:
         run: npm run prisma:generate
       - name: Create disposable integration schema
         run: npx prisma db push --schema apps/api/prisma/schema.prisma --accept-data-loss
+      - name: Build shared package for integration imports
+        run: npm run build -w @menu/shared
       - name: Stage 6C real PostgreSQL integration tests
         run: npm exec --workspace @menu/api -- vitest run src/modules/orders/network-orders.integration.spec.ts
