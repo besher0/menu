@@ -9,14 +9,17 @@ Status: **NOT APPROVED FOR PRODUCTION**. This document describes evidence requir
 - Added independent analytics and public WhatsApp checkout rate-limit policies (in-memory, per process).
 - Reduced repeated per-line product lookup in disposable Network order draft.
 - Added analytics regression tests.
-- Added GitHub Actions for schema validation, disposable PostgreSQL 16 migration deployment/status, typechecking, tests, and builds.
+- Added GitHub Actions for schema validation, disposable PostgreSQL 16 schema push validation, typechecking, tests, and builds.
 
 ## Must pass automatically on GitHub
 1. Prisma validate and generate with both DATABASE_URL and DIRECT_URL configured.
-2. Every migration applies cleanly to a disposable PostgreSQL 16 instance and `prisma migrate status` reports no pending migrations.
+2. Current Prisma schema pushes successfully to disposable PostgreSQL 16. **Migration replay is NOT verified**: the first checked-in migration references an existing `Category` table, so a pristine database lacks the required historical baseline. Rehearse migrations against a restored baseline before release.
 3. Shared, API and Web tests pass; API and Web TypeScript typechecks pass.
 4. Production build succeeds. Inspect the full workflow logs; a committed workflow alone is not proof.
 5. Review any test that skips because it requires a dedicated Stage 6C database; do not interpret skipped tests as passes.
+
+## Confirmed CI finding (2026-11-03)
+- GitHub Actions run 41691934030: Prisma validation and client generation passed; `prisma migrate deploy` on an empty PostgreSQL 16 database failed with P3018 / SQLSTATE 42P01 (`Category` does not exist). This is a **real incomplete migration baseline**, not a missing CI environment variable. The CI now checks `prisma db push` against a disposable DB instead. Do not interpret this as migration-deploy approval.
 
 ## Laptop / staging checklist (do not run against production first)
 1. Create a fresh, **isolated** Neon/PostgreSQL staging branch or restore a sanitized backup to a disposable DB. Confirm the connection points to staging, not production.
