@@ -1,10 +1,10 @@
 import "reflect-metadata";
-import { HEADER_METADATA } from "@nestjs/common/constants";
+import { HEADERS_METADATA } from "@nestjs/common/constants";
 import { describe, expect, it } from "vitest";
 import { PublicMenuController } from "./public-menu.controller";
 
 function cacheControl(method: keyof PublicMenuController) {
-  const headers = Reflect.getMetadata(HEADER_METADATA, PublicMenuController.prototype[method]) as
+  const headers = Reflect.getMetadata(HEADERS_METADATA, PublicMenuController.prototype[method]) as
     Array<{ name: string; value: string }> | undefined;
   return headers?.find((header) => header.name.toLowerCase() === "cache-control")?.value;
 }
