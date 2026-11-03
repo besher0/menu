@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: product-network-hardening-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
