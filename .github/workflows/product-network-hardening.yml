@@ -15,6 +15,10 @@ concurrency:
   group: product-network-hardening-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
+  DIRECT_URL: postgresql://test:test@localhost:5432/test?schema=public
+
 jobs:
   validate:
     runs-on: ubuntu-latest
