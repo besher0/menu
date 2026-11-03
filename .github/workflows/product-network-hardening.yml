@@ -1,0 +1,50 @@
+name: Product Network Hardening
+
+on:
+  push:
+    branches:
+      - refactor/product-network-production-hardening
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-network-hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate Prisma schema
+        run: npx prisma validate --schema apps/api/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Shared tests
+        run: npm run test:shared
+      - name: API unit tests
+        run: npm run test:api
+      - name: Web component tests
+        run: npm run test -w @menu/web
+      - name: Production builds
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_API_URL: http://localhost:5000
