@@ -133,7 +133,12 @@ export class NetworkOrdersService {
           timeout: 20_000
         });
       } catch (error) {
-        if (isSerializationConflict(error) && attempt < 2) continue;
+        if (isSerializationConflict(error) && attempt < 2) {
+          // A short bounded delay avoids an immediate collision with the same
+          // concurrent catalog writer on every Serializable retry.
+          await new Promise<void>((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+          continue;
+        }
         throw error;
       }
     }
