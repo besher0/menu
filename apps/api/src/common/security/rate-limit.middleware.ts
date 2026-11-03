@@ -39,6 +39,12 @@ const uploadPolicy: RateLimitPolicy = {
   max: readPositiveInt("RATE_LIMIT_UPLOAD_MAX", 20)
 };
 
+const checkoutPolicy: RateLimitPolicy = {
+  name: "public-checkout",
+  windowMs: readPositiveInt("RATE_LIMIT_PUBLIC_CHECKOUT_WINDOW_MS", 60_000),
+  max: readPositiveInt("RATE_LIMIT_PUBLIC_CHECKOUT_MAX", 20)
+};
+
 const analyticsPolicy: RateLimitPolicy = {
   name: "analytics",
   windowMs: readPositiveInt("RATE_LIMIT_ANALYTICS_WINDOW_MS", 60_000),
@@ -69,6 +75,9 @@ function policyFor(request: Request): RateLimitPolicy {
   }
 
   if (request.method === "POST" && /^\/public\/menus\/[^/]+\/track$/.test(path)) return analyticsPolicy;
+  if (request.method === "POST" && /^\/public\/menus\/[^/]+\/(?:orders\/whatsapp|checkout\/whatsapp\/(?:prepare|confirm))$/.test(path)) {
+    return checkoutPolicy;
+  }
 
   if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
     return writePolicy;
