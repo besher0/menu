@@ -22,7 +22,21 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +53,10 @@ jobs:
         run: npm run prisma:generate
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
+      - name: Apply migrations on disposable PostgreSQL
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - name: Verify migration status
+        run: npx prisma migrate status --schema apps/api/prisma/schema.prisma
       - name: Typecheck
         run: npm run typecheck
       - name: Shared tests
