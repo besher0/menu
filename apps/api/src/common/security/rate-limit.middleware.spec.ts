@@ -44,6 +44,16 @@ describe("public request rate limiting", () => {
     expect(invoke("/public/menus/pizza-lab/track", ip).next).toHaveBeenCalledOnce();
   });
 
+  it("limits computationally expensive public product quotes separately", () => {
+    const ip = "test-quote-198.51.100.15";
+    for (let i = 0; i < 30; i += 1) {
+      expect(invoke("/public/menus/pizza-lab/products/pizza-1/quote", ip).next).toHaveBeenCalledOnce();
+    }
+    expect(invoke("/public/menus/pizza-lab/products/pizza-1/quote", ip).status)
+      .toHaveBeenCalledWith(429);
+    expect(invoke("/public/menus/pizza-lab/track", ip).next).toHaveBeenCalledOnce();
+  });
+
   it("does not mix rate limit buckets between client IPs", () => {
     const first = invoke("/public/menus/pizza-lab/checkout/whatsapp/prepare", "test-isolation-198.51.100.13");
     const second = invoke("/public/menus/pizza-lab/checkout/whatsapp/prepare", "test-isolation-198.51.100.14");
