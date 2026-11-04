@@ -118,8 +118,22 @@ export class NetworkOrdersService {
       SELECT current_database() AS name, host(inet_server_addr()) AS address, inet_server_port() AS port
     `;
     const target = rows[0];
-    if (!target || !target.name.startsWith("ordersawa_stage3_stage6c_")
-      || target.address !== "127.0.0.1" || target.port !== 55440) {
+    // GitHub Actions maps host port 55440 to PostgreSQL's container port 5432.
+    // Keep the strict local guard; only accept the known disposable CI database
+    // when both the runner and the configured datasource match the CI fixture.
+    const ciUrl = process.env.NETWORK_ORDER_TEST_DATABASE_URL;
+    const ciTarget = ciUrl ? new URL(ciUrl) : null;
+    const disposableCi = process.env.GITHUB_ACTIONS === "true"
+      && process.env.CI === "true"
+      && process.env.NODE_ENV === "test"
+      && target?.name === "ordersawa_stage3_stage6c_ci"
+      && target.port === 5432
+      && ciTarget?.hostname === "127.0.0.1"
+      && ciTarget.port === "55440"
+      && ciTarget.pathname === "/ordersawa_stage3_stage6c_ci";
+    const disposableLocal = target?.name.startsWith("ordersawa_stage3_stage6c_")
+      && target.address === "127.0.0.1" && target.port === 55440;
+    if (!disposableLocal && !disposableCi) {
       throw new ForbiddenException({ error: "NETWORK_ORDER_TEST_DATABASE_REQUIRED", message: "An isolated Stage 6C PostgreSQL database is required." });
     }
   }
