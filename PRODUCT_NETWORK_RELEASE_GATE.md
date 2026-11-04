@@ -42,3 +42,36 @@ Status: **NOT APPROVED FOR PRODUCTION**. This document describes evidence requir
 
 ## Release decision
 **NO-GO** until CI is green, staging migration + restore rehearsal succeeds, and the security/performance/UX acceptance matrix is signed off.
+
+
+## 2026-11-04 — Disposable PostgreSQL integration blocker
+
+The new CI PostgreSQL 16 job now connects to its disposable database, and the
+standard validation/build job passes. The real Stage 6C HTTP suite still fails
+(17 failures / 3 passes) with HTTP 503 `NETWORK_ORDER_DB_GUARD_UNAVAILABLE`.
+This is a **fail-closed safety guard**, not evidence that concurrency is correct.
+
+Root cause: `prisma db push` creates the current Prisma schema but does **not**
+install the database-side Stage 6C immutable snapshot triggers or the separately
+reviewed Stage 6D.3C3E deferred completeness trigger/function candidate.
+`assertNetworkOrderCompletenessGuard` checks PostgreSQL 16, the exact
+trigger/function fingerprints, six older snapshot triggers, and the isolated
+database identity. Merely changing the expected HTTP status, bypassing the
+guard, or pretending that `db push` installs SQL triggers would invalidate the
+integration test.
+
+**Required before enabling this suite as a passing release gate:**
+1. Build a *fresh, disposable* PostgreSQL 16 fixture with the original baseline,
+   the Stage 6C trigger definitions, and the exact reviewed Stage 6D.3C3E
+   candidate SQL; never run candidate SQL against Neon/production.
+2. Preserve the script's database-name, loopback-address, port, empty-order,
+   and fingerprint checks. CI container port mapping must be reconciled
+   without broadening the production allowance.
+3. Run the full HTTP suite, including concurrent updates and duplicate
+   submissions, and capture the outcome; only then consider reducing
+   `lockCatalog` locks.
+4. Keep the migration-replay check on a restored staging baseline as a separate
+   release gate. A clean `db push` is not migration validation.
+
+Current CI failure is intentional evidence that a required database guard is
+missing; production ordering remains disabled.
