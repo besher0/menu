@@ -36,9 +36,11 @@ function Verify-TestUrl([string]$raw, [string]$name) {
     throw "$name is NOT the exact reviewed disposable Neon test compute"
   }
   $queryKeys = @(([Uri]$raw).Query.TrimStart('?').Split('&') | ForEach-Object { ($_ -split '=', 2)[0].ToLowerInvariant() })
-  if (($queryKeys | Where-Object { $_ -eq "schema" }).Count -gt 1 -or
-      ($queryKeys | Where-Object { $_ -eq "channel_binding" }).Count -gt 1 -or
-      ($queryKeys | Where-Object { $_ -eq "sslmode" }).Count -gt 1) {
+  # Under Windows PowerShell 5.1 + StrictMode, an empty pipeline has no
+  # .Count property. Materialize each result as an array before counting.
+  if ((@($queryKeys | Where-Object { $_ -eq "schema" })).Count -gt 1 -or
+      (@($queryKeys | Where-Object { $_ -eq "channel_binding" })).Count -gt 1 -or
+      (@($queryKeys | Where-Object { $_ -eq "sslmode" })).Count -gt 1) {
     throw "$name contains duplicate connection parameters"
   }
   if ($raw -match '(?:\?|&)options=' -or
