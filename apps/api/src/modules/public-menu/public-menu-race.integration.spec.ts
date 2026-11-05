@@ -240,36 +240,46 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     await prisma.$disconnect();
   });
 
-  it("creates all on the first HTTP menu request and keeps the legacy menu usable", async () => {
-    const response = await menu();
-    expect(response.status).toBe(200);
-    expect(response.body.categories.map((entry: { slug: string }) => entry.slug)).toContain("all");
-    expect(response.body.products.some((entry: { id: string }) => entry.id === productId)).toBe(true);
-    expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
+  it("keeps public menu GET read-only and creates all via dashboard categories HTTP", async () => {
+    const publicBefore = await menu();
+    expect(publicBefore.status).toBe(200);
+    expect(publicBefore.body.categories.map((entry: { slug: string }) => entry.slug)).toEqual(["pizza"]);
+    expect(publicBefore.body.products.some((entry: { id: string }) => entry.id === productId)).toBe(true);
+    expect(await all()).toBeNull();
+
+    const dashboard = await dashboardCategories();
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body.data.map((entry: { slug: string }) => entry.slug)).toContain("all");
     expect(await all()).toMatchObject({ name: "الكل", sortOrder: 0, isActive: true, deletedAt: null });
+    expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
+
+    const publicAfter = await menu();
+    expect(publicAfter.status).toBe(200);
+    expect(publicAfter.body.categories.map((entry: { slug: string }) => entry.slug)).toContain("all");
   });
 
-  it("serves both simultaneous first HTTP requests after both observe no all row", async () => {
+  it("serves two concurrent first dashboard GETs after both see no all category", async () => {
     armRace(2);
-    const responses = await Promise.all([menu(), menu()]);
+    const responses = await Promise.all([dashboardCategories(), dashboardCategories()]);
     expect(race?.reads).toBe(2);
     expect(responses.map((response) => response.status)).toEqual([200, 200]);
     expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
   });
 
-  it("serves eight simultaneous first HTTP requests with one category row", async () => {
+  it("serves eight concurrent first dashboard GETs with only one all category", async () => {
     armRace(8);
-    const responses = await Promise.all(Array.from({ length: 8 }, () => menu()));
+    const responses = await Promise.all(Array.from({ length: 8 }, () => dashboardCategories()));
     expect(race?.reads).toBe(8);
     expect(responses.every((response) => response.status === 200)).toBe(true);
     expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
   });
 
-  it("leaves an existing healthy all row and its presentation fields intact", async () => {
+  it("preserves an existing healthy all category and its presentation fields", async () => {
     const existing = await prisma.category.create({ data: { restaurantId: firstRestaurant,
       slug: "all", name: "الكل", sortOrder: 0, isActive: true, color: "#112233", description: "Saved style" } });
-    expect((await menu()).status).toBe(200);
+    expect((await dashboardCategories()).status).toBe(200);
     expect(await all()).toMatchObject({ id: existing.id, color: "#112233", description: "Saved style" });
+    expect((await menu()).body.categories.some((entry: { id: string }) => entry.id === existing.id)).toBe(true);
     expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
   });
 
