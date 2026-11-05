@@ -53,6 +53,16 @@ $originalDbUrl = Read-DotEnv "DATABASE_URL"
 $originalDirectUrl = Read-DotEnv "DIRECT_URL"
 $baseDbUrl = Verify-And-ScopeUrl $originalDbUrl "DATABASE_URL"
 $baseDirectUrl = Verify-And-ScopeUrl $originalDirectUrl "DIRECT_URL"
+# Runtime Prisma tests use a direct session rather than PgBouncer transaction
+# pooling, which can reset session search_path to public between statements.
+$directTestHost = "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech"
+if (([Uri]$baseDirectUrl).Host -cne $directTestHost) {
+  throw "DIRECT_URL must use the exact unpooled disposable Neon endpoint for schema-isolated runtime tests"
+}
+if ($baseDirectUrl -match '(?:\?|&)options=') {
+  throw "DIRECT_URL must not carry additional PostgreSQL connection options for these tests"
+}
+$isolatedTestUrl = "$baseDirectUrl&schema=$schema&options=-c%20search_path%3D$schema"
 $priorDbUrl = [Environment]::GetEnvironmentVariable("DATABASE_URL")
 $priorDirectUrl = [Environment]::GetEnvironmentVariable("DIRECT_URL")
 try {
@@ -81,8 +91,8 @@ try {
   else { $env:DIRECT_URL = $priorDirectUrl }
 }
 
-$env:PRODUCT_CONFIGURATION_TEST_DATABASE_URL = "$baseDbUrl&schema=$schema"
+$env:PRODUCT_CONFIGURATION_TEST_DATABASE_URL = $isolatedTestUrl
 $env:PRODUCT_CONFIGURATION_NEON_TESTS = "1"
 $env:NODE_ENV = "test"
-Write-Host "Isolated schema ready. Only PRODUCT_CONFIGURATION_TEST_DATABASE_URL points to $schema."
+Write-Host "Isolated schema ready; test Prisma will use the direct endpoint with an explicit $schema search_path."
 Write-Host "The original DATABASE_URL and DIRECT_URL were preserved."
