@@ -475,3 +475,42 @@ Neon diff check is **pending user verification**. No production data changed.
 The user confirmed that the patched `scripts/verify-migration-baseline-neon.ps1 -VerifyOnly` execution **worked** on the marked disposable Neon PostgreSQL 18.6 schema. Previously supplied output already confirmed all 9 migrations applied, a valid 34-table/15-enum/nine-row schema, and clean `migrate status`. The user's latest report indicates the last Windows-safe drift verification no longer fails; the complete Vitest/CLI footer was not pasted, so do not invent its verbatim output.
 
 **Neon disposable clean-bootstrap baseline: user-confirmed successful.** No changes to production or `main`. Remaining release blocker: the separate Stage 6C / Atomic Network Orders integration guard fixtures and full release acceptance. Any existing production database migration ledger still requires a separate audited adoption process.
+
+
+## 2026-11-06 — Atomic Orders real PostgreSQL 16 CI verified
+
+**Run 42129586089** on commit `f4dfb724e77e716534ad7a24c7396015e2443aa2`:
+- The dedicated `atomic-integration` GitHub Actions job finished **SUCCESS**;
+  `src/modules/orders/network-orders-atomic.integration.spec.ts`
+  reported **28 passed (28)** in approximately 3.24 seconds.
+- Three distinct databases were generated in an ephemeral PostgreSQL 16
+  Docker instance actually bound to host loopback `127.0.0.1:55440`.
+  Each received a clean `prisma migrate deploy` baseline; only the
+  guarded atomic DB got the exact stage 6D completeness guard. One
+  negative database was left without the guard and one received a
+  deliberately counterfeit same-name trigger/function.
+- Real HTTP tests covered rollback and failed writes, incomplete data,
+  missing/fake guards, commit-response uncertainty, SQL error mapping,
+  serializable retries, cross-restaurant isolation and idempotent replay.
+  All tested 25-way distinct-order and two-restaurant waves succeeded.
+  Same-key bursts returned replayable 201 responses for **one stored
+  order** (as asserted by the suite), not 25 distinct saved orders.
+- The separate `network-integration` job also finished **SUCCESS** on
+  this same run, after installing the correctly fingerprinted guard into
+  its dedicated PostgreSQL 16 disposable database.
+
+**No production database was touched**, `main` was not updated,
+and `ENABLE_DISPOSABLE_NETWORK_ORDERS` is still test-only.
+
+This is a PostgreSQL 16 **CI** result, not a Neon PostgreSQL 18.6
+Atomic Orders test. The existing SQL completeness guard and its
+fingerprints refer to the `public` schema; therefore simply pointing
+these destructive atomic tests at the existing isolated Neon schemas
+would be unsafe. A separate schema-aware Neon guard with an
+independently reviewed fingerprint and independent three-schema
+identity proofs is needed before testing Neon. Do not bypass those
+checks by changing search paths or disabling the guard.
+
+The full release gate still requires deployment/restore checks and
+production-specific review. Inspect each individual CI job result,
+rather than inferring release approval from only the atomic result.
