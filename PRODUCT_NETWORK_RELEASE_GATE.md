@@ -209,3 +209,49 @@ npm run test -w @menu/api -- src/modules/products/product-configuration.integrat
 ```
 
 Do not describe the full suite as green until its combined run completes.
+
+
+## 2026-11-05 — WhatsApp Checkout Stage 6E.2 isolated Neon fixture
+
+The user ran the complete **Product Configuration Stage 3** suite on the
+marked, direct-only disposable Neon schema: **24 passed / 0 failed** (24 total),
+Vitest duration **79.66 s**; the complete setup-to-publish scenario took
+**25.232 s**. This supersedes the earlier filtered run and 23/24 attempt.
+
+**WhatsApp Stage 6E.2 preparation is implemented but not yet executed.**
+The next test suite uses a different schema:
+`ordersawa_whatsapp_checkout_e2e`. Do not reuse the Product Configuration
+or Network Orders schema. Its new fixture scripts are:
+
+- `scripts/whatsapp-checkout-neon-e2e-schema.sql` — creates only the marked
+  checkout schema; checks disposable Neon PG18 DB/user identity.
+- `scripts/whatsapp-checkout-neon-e2e-constraints.sql` — installs the five
+  reviewed Product CHECK constraints from the historical migration into that
+  schema *only*, since `prisma db push` does not install them.
+- `scripts/prepare-whatsapp-checkout-neon-e2e.ps1` — checks the same two
+  pinned Neon hosts, restores `DATABASE_URL` and `DIRECT_URL` on exit,
+  scopes `prisma db push` and the CHECK setup to the dedicated test schema,
+  and exports a **direct-only** runtime URL with a pinned startup search_path
+  in the same PowerShell process.
+
+The WhatsApp HTTP integration preflight now requires the exact direct-host,
+opt-in flags, PG18.6/version, marker and 34 model tables, verifies generated
+Prisma model queries use the dedicated schema with an explicitly qualified
+temporary restaurant canary, and checks all five validated Product CHECK
+constraints **in that schema** before any broad test cleanup. Loopback-only
+PostgreSQL test URLs remain supported.
+
+**User commands, from the repository root and same PowerShell session, only
+if the current .env is the previously verified disposable Neon instance:**
+
+```powershell
+git -c http.version=HTTP/1.1 fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+.\scripts\prepare-whatsapp-checkout-neon-e2e.ps1
+npm run typecheck -w @menu/api
+npm run test -w @menu/api -- src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts
+```
+
+No WhatsApp integration result should be claimed until the user runs it.
+No merge to main, production deployment, or `prisma migrate deploy` approval
+is granted; the historical migration baseline remains a blocker.
