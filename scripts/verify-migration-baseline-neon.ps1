@@ -1,8 +1,12 @@
 # Replays all checked-in Prisma migrations into a NEW, one-use schema in the
 # already-reviewed disposable Neon PG18.6 database. Never operates on public
 # schema tables or the schemas used by other integration suites.
-# Run from the repo root: .\scripts\verify-migration-baseline-neon.ps1
+# Run from repo root:
+#   .\scripts\verify-migration-baseline-neon.ps1
+# After a successful migration replay, to check the existing schema ONLY:
+#   .\scripts\verify-migration-baseline-neon.ps1 -VerifyOnly
 # Does NOT modify .env or persist DB connection variables.
+param([switch]$VerifyOnly)
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -74,21 +78,28 @@ $priorDirectUrl = [Environment]::GetEnvironmentVariable("DIRECT_URL")
 try {
   Push-Location $apiRoot
   try {
-    $env:DATABASE_URL = $originalDirectUrl
-    $env:DIRECT_URL = $originalDirectUrl
-    Write-Host "1/5 Creating NEW isolated migration schema (will refuse reuse)..."
-    & npx prisma db execute --file ../../scripts/migration-replay-neon-bootstrap.sql --schema prisma/schema.prisma
-    if ($LASTEXITCODE -ne 0) { throw "Failed safe migration schema bootstrap" }
+    if (-not $VerifyOnly) {
+      $env:DATABASE_URL = $originalDirectUrl
+      $env:DIRECT_URL = $originalDirectUrl
+      Write-Host "1/5 Creating NEW isolated migration schema (will refuse reuse)..."
+      & npx prisma db execute --file ../../scripts/migration-replay-neon-bootstrap.sql --schema prisma/schema.prisma
+      if ($LASTEXITCODE -ne 0) { throw "Failed safe migration schema bootstrap" }
+    }
 
+    # Both URLs are scoped to the pinned direct-only isolated test schema.
     $env:DATABASE_URL = $testUrl
     $env:DIRECT_URL = $testUrl
-    Write-Host "2/5 Verifying marked schema, search_path and emptiness..."
-    & npx prisma db execute --file ../../scripts/migration-replay-neon-preflight.sql --schema prisma/schema.prisma
-    if ($LASTEXITCODE -ne 0) { throw "Refusing migrations: isolated schema preflight failed" }
+    if (-not $VerifyOnly) {
+      Write-Host "2/5 Verifying marked schema, search_path and emptiness..."
+      & npx prisma db execute --file ../../scripts/migration-replay-neon-preflight.sql --schema prisma/schema.prisma
+      if ($LASTEXITCODE -ne 0) { throw "Refusing migrations: isolated schema preflight failed" }
 
-    Write-Host "3/5 Replaying all nine historical Prisma migrations in test schema ONLY..."
-    & npx prisma migrate deploy --schema prisma/schema.prisma
-    if ($LASTEXITCODE -ne 0) { throw "Migration replay failed; inspect the disposable test schema, do not reset public" }
+      Write-Host "3/5 Replaying all nine historical Prisma migrations in test schema ONLY..."
+      & npx prisma migrate deploy --schema prisma/schema.prisma
+      if ($LASTEXITCODE -ne 0) { throw "Migration replay failed; inspect the disposable test schema, do not reset public" }
+    } else {
+      Write-Host "Verification-only mode: NO schema creation or migration replay."
+    }
 
     Write-Host "4/5 Checking 34 tables, 15 enums, nine complete migrations and status..."
     & npx prisma db execute --file ../../scripts/migration-replay-neon-verify.sql --schema prisma/schema.prisma
@@ -97,7 +108,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Prisma migration status is not clean" }
 
     Write-Host "5/5 Checking current Prisma model drift..."
-    & npx prisma migrate diff --from-url $testUrl --to-schema-datamodel prisma/schema.prisma --exit-code
+    # On Windows PowerShell 5.1, npx.cmd splits a raw PostgreSQL URL at '&'.
+    # Read the already-verified DATABASE_URL from the Prisma datasource
+    # instead; the CLI receives only file paths (no credentials in argv).
+    & npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
     if ($LASTEXITCODE -ne 0) { throw "Schema drift detected or drift command failed (code $LASTEXITCODE)" }
     Write-Host "PASS: nine migrations from empty Neon PG18.6 schema, status clear, no Prisma schema drift."
   } finally {
