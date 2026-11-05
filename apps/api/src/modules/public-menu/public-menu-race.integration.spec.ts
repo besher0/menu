@@ -1,9 +1,13 @@
-import { INestApplication, Module } from "@nestjs/common";
+import { ExecutionContext, INestApplication, Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { NestFactory } from "@nestjs/core";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
+import { DashboardController } from "../dashboard/dashboard.controller";
+import { DashboardService } from "../dashboard/dashboard.service";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicMenuController } from "./public-menu.controller";
@@ -73,6 +77,13 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
 
   async function menu(restaurant = "s6d3c1-a") {
     const response = await fetch(`${origin}/public/menus/${restaurant}?track=0`);
+    return { status: response.status, body: await response.json() as Record<string, any> };
+  }
+
+  async function dashboardCategories(restaurantId = firstRestaurant) {
+    const response = await fetch(`${origin}/dashboard/categories`, {
+      headers: { "x-test-restaurant-id": restaurantId }
+    });
     return { status: response.status, body: await response.json() as Record<string, any> };
   }
 
@@ -153,7 +164,9 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     const category = {
       findUnique: async (args: Parameters<typeof prisma.category.findUnique>[0]) => {
         const result = await prisma.category.findUnique(args);
-        if (race && race.reads < race.expected && args.where?.restaurantId_slug?.slug === "all") {
+        if (race && race.reads < race.expected
+          && args.where?.restaurantId_slug?.slug === "all"
+          && args.where.restaurantId_slug.restaurantId === firstRestaurant) {
           const gate = race;
           gate.reads += 1;
           if (gate.reads === gate.expected) gate.release();
@@ -184,8 +197,29 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     const db = new Proxy(prisma, {
       get(target, key) { return key === "category" ? category : Reflect.get(target, key, target); }
     });
-    @Module({ controllers: [PublicMenuController], providers: [PublicMenuService, PublicWhatsappCheckoutService, FeatureFlagsService,
-      { provide: PrismaService, useValue: db }, { provide: ConfigService, useValue: { get: () => undefined } }] })
+    @Module({
+      controllers: [PublicMenuController, DashboardController],
+      providers: [
+        PublicMenuService, PublicWhatsappCheckoutService, FeatureFlagsService, DashboardService,
+        { provide: PrismaService, useValue: db },
+        { provide: ConfigService, useValue: { get: () => undefined } },
+        // Exercise the real DashboardController and DashboardService via HTTP.
+        // Auth and restaurant context are mocked for this isolated race suite.
+        { provide: JwtAuthGuard, useValue: { canActivate: () => true } },
+        { provide: RestaurantContextGuard, useValue: {
+          canActivate: (context: ExecutionContext) => {
+            const request = context.switchToHttp().getRequest<{
+              headers: Record<string, string | string[] | undefined>;
+              restaurant?: { id: string };
+            }>();
+            const id = request.headers["x-test-restaurant-id"];
+            if (id !== firstRestaurant && id !== secondRestaurant) return false;
+            request.restaurant = { id };
+            return true;
+          }
+        } }
+      ]
+    })
     class TestModule {}
     app = await NestFactory.create(TestModule, { logger: false });
     await app.listen(0, "127.0.0.1");
