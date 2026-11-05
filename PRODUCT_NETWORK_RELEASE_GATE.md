@@ -252,6 +252,23 @@ npm run typecheck -w @menu/api
 npm run test -w @menu/api -- src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts
 ```
 
-No WhatsApp integration result should be claimed until the user runs it.
+WhatsApp integration result: **28/28 passed** on the isolated disposable Neon PostgreSQL 18.6 schema. Complete Vitest run duration **149.49 seconds** (tests 148.39 seconds), user-supplied log dated 2026-11-05. The WhatsApp-specific integration gate is now green.
 No merge to main, production deployment, or `prisma migrate deploy` approval
 is granted; the historical migration baseline remains a blocker.
+
+## 2026-11-05 — Next scoped gate: Public Menu concurrent all-category creation
+
+With 20 Network Orders + 24 Product Configuration + 28 WhatsApp Checkout
+integration tests and 7 DB guard unit tests, the confirmed subtotal is
+**79/79 passed** across these four separately executed suites. It does
+not imply the rest of API integration or historical migration replay passed.
+
+The next proposed test suite is `src/modules/public-menu/public-menu-race.integration.spec.ts`.
+It exercises concurrent first public menu requests, tenant isolation, soft
+restore, and unrelated database errors. The original suite requires its own
+loopback PostgreSQL database; do **not** pass the existing WhatsApp or Product
+Configuration Neon test URL to it. A new marked, exact-host, direct-only
+Neon test schema is required, with SQL identity and Prisma ORM routing
+checks before any fixture cleanup. Atomic Network Order tests remain
+separate and require multiple isolated databases and Stage 6C/6D guard
+fixtures.
