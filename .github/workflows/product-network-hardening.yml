@@ -120,3 +120,74 @@ jobs:
         run: npm run build -w @menu/shared
       - name: Stage 6C real PostgreSQL integration tests
         run: npm exec --workspace @menu/api -- vitest run src/modules/orders/network-orders.integration.spec.ts
+
+
+  atomic-integration:
+    # Independent runner: disposable PG16, server really bound to loopback :55440.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NODE_ENV: test
+      ENABLE_DISPOSABLE_NETWORK_ORDERS: '1'
+      DATABASE_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_atomic?schema=public
+      DIRECT_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_atomic?schema=public
+      NETWORK_ORDER_ATOMIC_TEST_DATABASE_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_atomic?schema=public
+      NETWORK_ORDER_NO_GUARD_TEST_DATABASE_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_no_guard?schema=public
+      NETWORK_ORDER_FAKE_GUARD_TEST_DATABASE_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_fake_guard?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Start loopback-only PostgreSQL 16 instance
+        run: |
+          docker run --rm -d --name ordersawa-atomic-ci-pg --network host \
+            -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+            -e POSTGRES_DB=ordersawa_stage3_stage6c_stage6d3c3f_atomic \
+            postgres:16 -c listen_addresses=127.0.0.1 -c port=55440
+          for i in $(seq 1 45); do
+            if docker exec ordersawa-atomic-ci-pg pg_isready -h 127.0.0.1 -p 55440 -U test \
+              -d ordersawa_stage3_stage6c_stage6d3c3f_atomic >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec ordersawa-atomic-ci-pg pg_isready -h 127.0.0.1 -p 55440 -U test \
+            -d ordersawa_stage3_stage6c_stage6d3c3f_atomic
+          actual=$(docker exec -e PGPASSWORD=test ordersawa-atomic-ci-pg \
+            psql -h 127.0.0.1 -p 55440 -U test -d ordersawa_stage3_stage6c_stage6d3c3f_atomic -tAX \
+              -c "SELECT current_database() || '|' || current_user || '|' || host(inet_server_addr()) || '|' || inet_server_port() || '|' || current_setting('server_version_num')")
+          case "$actual" in
+            'ordersawa_stage3_stage6c_stage6d3c3f_atomic|test|127.0.0.1|55440|16'*) ;;
+            *) echo "Unexpected disposable PostgreSQL identity" >&2; exit 1 ;;
+          esac
+          docker exec -e PGPASSWORD=test ordersawa-atomic-ci-pg psql -h 127.0.0.1 -p 55440 \
+            -U test -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE "ordersawa_stage3_stage6c_stage6d3c3f_no_guard"'
+          docker exec -e PGPASSWORD=test ordersawa-atomic-ci-pg psql -h 127.0.0.1 -p 55440 \
+            -U test -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE "ordersawa_stage3_stage6c_stage6d3c3f_fake_guard"'
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Replay migrations on three distinct empty databases
+        run: |
+          for name in ordersawa_stage3_stage6c_stage6d3c3f_atomic \
+            ordersawa_stage3_stage6c_stage6d3c3f_no_guard \
+            ordersawa_stage3_stage6c_stage6d3c3f_fake_guard; do
+            export DATABASE_URL="postgresql://test:test@127.0.0.1:55440/$name?schema=public"
+            export DIRECT_URL="$DATABASE_URL"
+            npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+          done
+      - name: Install correct guard on guarded atomic fixture ONLY
+        run: npx prisma db execute --file scripts/stage6d3c3e-network-order-completeness-candidate.sql --schema apps/api/prisma/schema.prisma
+      - name: Install counterfeit guard on fake fixture ONLY
+        env:
+          DATABASE_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_fake_guard?schema=public
+          DIRECT_URL: postgresql://test:test@127.0.0.1:55440/ordersawa_stage3_stage6c_stage6d3c3f_fake_guard?schema=public
+        run: npx prisma db execute --file scripts/stage6d3c3f-fake-guard-ci.sql --schema apps/api/prisma/schema.prisma
+      - name: Build shared package
+        run: npm run build -w @menu/shared
+      - name: Atomic HTTP concurrency and rollback integration
+        run: npm exec --workspace @menu/api -- vitest run src/modules/orders/network-orders-atomic.integration.spec.ts --testTimeout 120000 --hookTimeout 180000
+      - name: Stop disposable PostgreSQL
+        if: always()
+        run: docker stop ordersawa-atomic-ci-pg || true
