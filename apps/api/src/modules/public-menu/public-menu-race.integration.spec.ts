@@ -162,6 +162,8 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
       currency: "EGP", basePrice: "12" } });
 
     const category = {
+      count: (args: Parameters<typeof prisma.category.count>[0]) => prisma.category.count(args),
+      findMany: (args: Parameters<typeof prisma.category.findMany>[0]) => prisma.category.findMany(args),
       findUnique: async (args: Parameters<typeof prisma.category.findUnique>[0]) => {
         const result = await prisma.category.findUnique(args);
         if (race && race.reads < race.expected
