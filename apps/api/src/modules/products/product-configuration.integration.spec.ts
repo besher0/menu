@@ -12,7 +12,7 @@ import { PrismaClient } from "@prisma/client";
 import { JwtModule, JwtService } from "@nestjs/jwt";
 import { NestFactory } from "@nestjs/core";
 import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiResponseInterceptor } from "../../common/api-response.interceptor";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
@@ -29,12 +29,43 @@ import { ProductsImportService } from "./products-import.service";
 import { ProductsService } from "./products.service";
 
 const databaseUrl = process.env.PRODUCT_CONFIGURATION_TEST_DATABASE_URL;
+const NEON_SCHEMA = "ordersawa_product_config_e2e";
+const NEON_SCHEMA_MARKER = "ordersawa:product-configuration:e2e-disposable:2026-11-05";
+const NEON_HOSTS = new Set([
+  "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech",
+  "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech"
+]);
+
+function approvedNeonTestUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return process.env.NODE_ENV === "test"
+      && process.env.PRODUCT_CONFIGURATION_NEON_TESTS === "1"
+      && process.env.GITHUB_ACTIONS !== "true"
+      && ["postgresql:", "postgres:"].includes(url.protocol)
+      && NEON_HOSTS.has(url.hostname)
+      && (url.port === "" || url.port === "5432")
+      && url.pathname === "/neondb" && url.username === "neondb_owner"
+      && url.password.length > 0
+      && url.searchParams.get("schema") === NEON_SCHEMA
+      && url.searchParams.get("sslmode") === "require"
+      && url.searchParams.get("channel_binding") === "require";
+  } catch {
+    return false;
+  }
+}
 
 if (databaseUrl) {
   const parsed = new URL(databaseUrl);
-  const safeHost = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-  if (!safeHost || parsed.port !== "55440" || !parsed.pathname.startsWith("/ordersawa_stage3_")) {
-    throw new Error("Stage 3 integration tests refuse non-disposable database URLs");
+  const local = ["127.0.0.1", "localhost"].includes(parsed.hostname)
+    && parsed.port === "55440" && parsed.pathname.startsWith("/ordersawa_stage3_");
+  if (!local && !approvedNeonTestUrl(databaseUrl)) {
+    throw new Error("Stage 3 tests refuse a non-disposable or unmarked Neon schema");
+  }
+  if (approvedNeonTestUrl(databaseUrl)) {
+    // Remote Neon has many more round trips than the local PG16 fixture.
+    vi.setConfig({ testTimeout: 60_000, hookTimeout: 240_000 });
   }
 }
 
@@ -173,6 +204,29 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
 
   beforeAll(async () => {
     await prisma.$connect();
+    // Every fixture setup below deletes many tables. Prove the actual SQL search
+    // path selects ONLY the dedicated, marked, non-public test schema first.
+    const [identity] = await prisma.$queryRaw<{
+      databaseName: string; databaseUser: string; version: number;
+      schemaName: string; schemaMarker: string | null; tableCount: number;
+    }[]>`
+      SELECT current_database() AS "databaseName", current_user AS "databaseUser",
+        current_setting('server_version_num')::int AS version,
+        current_schema() AS "schemaName",
+        obj_description(current_schema()::regnamespace, 'pg_namespace') AS "schemaMarker",
+        (SELECT count(*)::int FROM pg_tables WHERE schemaname = current_schema()) AS "tableCount"
+    `;
+    if (approvedNeonTestUrl(databaseUrl)) {
+      if (!identity || identity.databaseName !== "neondb" || identity.databaseUser !== "neondb_owner"
+        || identity.version !== 180006 || identity.schemaName !== NEON_SCHEMA
+        || identity.schemaMarker !== NEON_SCHEMA_MARKER || identity.tableCount !== 34) {
+        throw new Error("Refusing destructive product tests: dedicated Neon schema identity is not verified");
+      }
+    } else if (!identity || !identity.databaseName.startsWith("ordersawa_stage3_")
+      || identity.schemaName !== "public" || identity.version < 160000
+      || identity.version >= 170000) {
+      throw new Error("Refusing destructive product tests: unexpected local PostgreSQL target");
+    }
     await prisma.orderItem.deleteMany();
     await prisma.order.deleteMany();
     await prisma.analyticsEvent.deleteMany();
