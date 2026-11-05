@@ -389,3 +389,26 @@ npm run test -w @menu/api -- src/modules/public-menu/public-menu-race.integratio
 ```
 
 **No 8/8 pass is claimed** until a new full result is reported.
+
+
+## 2026-11-05 — Public Menu Race rerun: user reports no errors
+
+After the test-module JWT/Nest startup corrections, the Windows user reported
+**no errors** on rerun, but did not paste the Vitest result footer. Treat this as
+a **reported successful rerun** rather than independently confirming the exact
+`8 passed (8)` result. No regression failure was supplied for the corrected
+suite. The verified database suite subtotal remains **79/79** from earlier
+pasted run summaries; add the eight Public Menu Race tests to that subtotal
+only after a matching Vitest footer is provided.
+
+The remaining atomic HTTP integration suite
+`src/modules/orders/network-orders-atomic.integration.spec.ts` is still
+loopback-PG16-only and **not executable** on the product-config, checkout or
+public-menu Neon schemas by simply changing an environment variable. It has
+three distinct DB roles: guarded atomic, no-guard, and fake-guard. It includes
+a `TRUNCATE "OrderItem", "Order" RESTART IDENTITY CASCADE` fixture and demands
+specific completeness/snapshot triggers. A future Neon harness must create
+separate marked schemas and separately verify each role and its expected
+missing/fake/real guard state before running destructive fixtures.
+
+The unresolved `prisma migrate deploy` baseline gate also remains NO-GO.
