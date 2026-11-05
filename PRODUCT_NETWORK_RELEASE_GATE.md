@@ -158,6 +158,15 @@ After pulling this change the PowerShell setup script **must be rerun in the
 same session** to set the corrected test environment variable. Actual 24-test
 results remain pending.
 
+**Follow-up on 2026-11-05:** The local `DIRECT_URL` was itself set to the
+pinned `-pooler` endpoint. The strict runtime setup rejected it before any
+destructive test. The script now safely rewrites only that one exact verified
+disposable test compute's `-pooler` hostname into its matching direct hostname
+**in memory**, leaves `.env` unchanged, and retains the strict direct-only
+test URL checks and marked-schema/Prisma canary verification. If the input
+host is anything else, setup still fails. Re-run the setup after pulling.
+No additional integration test passes are claimed yet.
+
 **Still no-go:** migration baseline / fresh `prisma migrate deploy` are not
 fixed by `db push` in a test schema; other isolated integration suites and
 production gates remain outstanding.
