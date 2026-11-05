@@ -12,7 +12,7 @@ import {
 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatNetworkOrderWhatsappMessage } from "./network-order-whatsapp-formatter";
-import { assertNetworkOrderCompletenessGuard, NETWORK_ORDER_COMPLETENESS_CONSTRAINT } from "./network-order-db-guard";
+import { assertNetworkOrderCompletenessGuard, isDisposableNeonNetworkTestOptedIn, NETWORK_ORDER_COMPLETENESS_CONSTRAINT } from "./network-order-db-guard";
 import { resolvePublicProductConfiguration, type PublicConfigurationProductRecord } from "../public-menu/public-product-configuration";
 import { quotePublicProductConfiguration } from "../public-menu/public-product-quote";
 import {
@@ -114,8 +114,10 @@ export class NetworkOrdersService {
     if (process.env.NODE_ENV === "production" || process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS !== "1") {
       throw new ForbiddenException({ error: "NETWORK_ORDERING_DISABLED", message: "Network order creation is disabled outside isolated tests." });
     }
-    const rows = await this.prisma.$queryRaw<{ name: string; address: string | null; port: number | null }[]>`
-      SELECT current_database() AS name, host(inet_server_addr()) AS address, inet_server_port() AS port
+    const rows = await this.prisma.$queryRaw<{ name: string; databaseUser: string; serverVersion: number; address: string | null; port: number | null }[]>`
+      SELECT current_database() AS name, current_user AS "databaseUser",
+        current_setting('server_version_num')::int AS "serverVersion",
+        host(inet_server_addr()) AS address, inet_server_port() AS port
     `;
     const target = rows[0];
     // GitHub Actions maps host port 55440 to PostgreSQL's container port 5432.
@@ -131,9 +133,15 @@ export class NetworkOrdersService {
       && ciTarget?.hostname === "127.0.0.1"
       && ciTarget.port === "55440"
       && ciTarget.pathname === "/ordersawa_stage3_stage6c_ci";
+    // Separate remote-only path: requires an explicit local Vitest opt-in,
+    // the exact disposable Neon endpoint and actual PostgreSQL 18.6 identity.
+    // The Stage 6D SQL fingerprints are also checked inside the write transaction.
+    const disposableNeon = isDisposableNeonNetworkTestOptedIn()
+      && target?.name === "neondb" && target.databaseUser === "neondb_owner"
+      && target.serverVersion === 180006;
     const disposableLocal = target?.name.startsWith("ordersawa_stage3_stage6c_")
       && target.address === "127.0.0.1" && target.port === 55440;
-    if (!disposableLocal && !disposableCi) {
+    if (!disposableLocal && !disposableCi && !disposableNeon) {
       throw new ForbiddenException({ error: "NETWORK_ORDER_TEST_DATABASE_REQUIRED", message: "An isolated Stage 6C PostgreSQL database is required." });
     }
   }
