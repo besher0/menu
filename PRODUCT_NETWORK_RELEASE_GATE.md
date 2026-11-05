@@ -306,3 +306,49 @@ npm run test -w @menu/api -- src/modules/public-menu/public-menu-race.integratio
 These are additional race tests; passing them does not satisfy the separate
 3-database guarded Network Orders atomic integration suite, restore-tested
 migration history baseline, or production rollout requirements.
+
+
+## 2026-11-05 — Public Menu all-category regression suite diagnosis
+
+User ran the 8-test disposable Neon schema suite:
+**1 passed, 7 failed**. The failure cluster was not a failed DB connection
+or schema isolation. `PublicMenuService.menu()` intentionally has a
+read-only public GET and therefore never calls the old "ensure all" category
+creation path: HTTP 200 returned normal menu content, but the seven historical
+assertions expected the public request to create or restore a database row.
+The concurrent-read and injected SQL-error hooks consequently were never hit.
+
+The active creation path is now `DashboardService.categories()`. Review
+also uncovered a real edge case there: `ensureAllCategory` read only
+nondeleted rows with `findFirst`, then attempted `create` even when a
+soft-deleted row already existed under the unique (restaurantId,slug) key.
+Two simultaneous dashboard initializations could also both observe absence
+and race on the same unique key.
+
+**Changes on this branch, not yet verified by user tests**:
+- `DashboardService.ensureAllCategory` reads the unique key including
+  soft-deleted records; restores the same ID and product links while
+  normalizing name, availability and sort order; and recovers only the
+  specific same-(restaurantId,slug) concurrent `P2002` race. Unrelated
+  FK and PK errors still propagate.
+- The 8 HTTP tests use the actual `DashboardController` category route
+  with test-only auth/context guards. Concurrent first reads are gated
+  at `category.findUnique`, instead of the obsolete public-menu pathway.
+  One regression checks that public-menu GET remains strictly read-only;
+  the others test dashboard initialization, concurrent two/eight requests,
+  soft-delete restoration, tenant isolation, and unrelated database errors.
+- The isolated direct-only Neon test schema, canary routing proof and
+  before-delete identity checks are unchanged.
+
+**Re-run in the same PowerShell process with the already initialized,
+separate marked test schema**:
+
+```powershell
+git -c http.version=HTTP/1.1 fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+npm run typecheck -w @menu/api
+npm run test -w @menu/api -- src/modules/public-menu/public-menu-race.integration.spec.ts
+```
+
+The expected 8/8 result is **not confirmed** until the user runs the
+updated suite. Production promotion and migration baseline still NO-GO.
