@@ -3,8 +3,8 @@ import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { PrismaClient } from "@prisma/client";
 import { ABO_MALEK_THEME } from "@menu/shared";
-import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { randomBytes, randomUUID } from "node:crypto";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -14,11 +14,52 @@ import { PublicWhatsappCheckoutService } from "./public-whatsapp-checkout.servic
 
 const url = process.env.WHATSAPP_CHECKOUT_TEST_DATABASE_URL;
 const disposableDatabase = url ? new URL(url) : undefined;
+const NEON_CHECKOUT_SCHEMA = "ordersawa_whatsapp_checkout_e2e";
+const NEON_CHECKOUT_MARKER = "ordersawa:whatsapp-checkout:e2e-disposable:2026-11-05";
+const NEON_DIRECT_HOST = "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech";
+const NEON_OPTIONS = `-c search_path=${NEON_CHECKOUT_SCHEMA}`;
+const PRODUCT_CHECK_NAMES = [
+  "Product_configurationVersion_nonnegative_check",
+  "Product_basePrice_nonnegative_check",
+  "Product_configuration_legacy_state_check",
+  "Product_configuration_shape_check",
+  "Product_configuration_basePrice_match_check"
+];
+
+function approvedNeonCheckoutUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return process.env.NODE_ENV === "test"
+      && process.env.WHATSAPP_CHECKOUT_NEON_TESTS === "1"
+      && process.env.GITHUB_ACTIONS !== "true"
+      && ["postgresql:", "postgres:"].includes(parsed.protocol)
+      && parsed.hostname === NEON_DIRECT_HOST
+      && (parsed.port === "" || parsed.port === "5432")
+      && parsed.pathname === "/neondb" && parsed.username === "neondb_owner"
+      && parsed.password.length > 0
+      && parsed.searchParams.getAll("schema").length === 1
+      && parsed.searchParams.get("schema") === NEON_CHECKOUT_SCHEMA
+      && parsed.searchParams.getAll("options").length === 1
+      && parsed.searchParams.get("options") === NEON_OPTIONS
+      && parsed.searchParams.get("sslmode") === "require"
+      && parsed.searchParams.get("channel_binding") === "require";
+  } catch {
+    return false;
+  }
+}
+
 if (url) {
-  const allowed = (disposableDatabase?.port === "55440" && disposableDatabase?.pathname === "/ordersawa_stage3_stage6e2_checkout")
-    || (disposableDatabase?.port === "55447" && disposableDatabase?.pathname === "/ordersawa_stage3_showprices_guard")
-    || (disposableDatabase?.port === "55448" && /^\/ordersawa_demo_release_checkout_[0-9]{14}_[0-9a-f]{6}$/.test(disposableDatabase?.pathname ?? ""));
-  if (disposableDatabase?.hostname !== "127.0.0.1" || !allowed) throw new Error("Disposable checkout test database required");
+  const local = disposableDatabase?.hostname === "127.0.0.1"
+    && ((disposableDatabase?.port === "55440" && disposableDatabase?.pathname === "/ordersawa_stage3_stage6e2_checkout")
+      || (disposableDatabase?.port === "55447" && disposableDatabase?.pathname === "/ordersawa_stage3_showprices_guard")
+      || (disposableDatabase?.port === "55448" && /^\/ordersawa_demo_release_checkout_[0-9]{14}_[0-9a-f]{6}$/.test(disposableDatabase?.pathname ?? "")));
+  if (!local && !approvedNeonCheckoutUrl(url)) {
+    throw new Error("Checkout tests require an exact isolated disposable PostgreSQL fixture");
+  }
+  if (approvedNeonCheckoutUrl(url)) {
+    vi.setConfig({ testTimeout: 90_000, hookTimeout: 240_000 });
+  }
 }
 const integration = url ? describe : describe.skip;
 
@@ -103,12 +144,72 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "1";
     process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY = randomBytes(32).toString("hex");
     await prisma.$connect();
-    const identity = await prisma.$queryRaw<{ name: string; address: string; port: number }[]>`
-      SELECT current_database() AS name, host(inet_server_addr()) AS address, inet_server_port() AS port`;
-    expect(identity[0]).toMatchObject({ name: disposableDatabase?.pathname.slice(1), address: "127.0.0.1", port: Number(disposableDatabase?.port) });
-    const checks = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT count(*) FROM pg_constraint WHERE conname LIKE 'Product_%check' AND convalidated`;
-    expect(Number(checks[0].count)).toBeGreaterThanOrEqual(5);
+    // This suite deletes data from many tables. Verify the real SQL target,
+    // the marked isolated schema, ORM routing and exact Product CHECKs first.
+    const [identity] = await prisma.$queryRaw<{
+      name: string; databaseUser: string; version: number; address: string | null;
+      port: number | null; schemaName: string; searchSchemas: string[];
+      schemaMarker: string | null; tableCount: number; resolvedTableCount: number;
+    }[]>`
+      SELECT current_database() AS name, current_user AS "databaseUser",
+        current_setting('server_version_num')::int AS version,
+        host(inet_server_addr()) AS address, inet_server_port() AS port,
+        current_schema() AS "schemaName", current_schemas(false)::text[] AS "searchSchemas",
+        obj_description(current_schema()::regnamespace, 'pg_namespace') AS "schemaMarker",
+        (SELECT count(*)::int FROM pg_tables WHERE schemaname = current_schema()) AS "tableCount",
+        (SELECT count(*)::int FROM pg_tables t WHERE t.schemaname = current_schema()
+          AND to_regclass(format('%I', t.tablename)) =
+              to_regclass(format('%I.%I', current_schema(), t.tablename))) AS "resolvedTableCount"
+    `;
+    if (approvedNeonCheckoutUrl(url)) {
+      if (!identity || identity.name !== "neondb" || identity.databaseUser !== "neondb_owner"
+        || identity.version !== 180006 || identity.schemaName !== NEON_CHECKOUT_SCHEMA
+        || !Array.isArray(identity.searchSchemas)
+        || identity.searchSchemas[0] !== NEON_CHECKOUT_SCHEMA
+        || identity.searchSchemas.some((item) => item !== NEON_CHECKOUT_SCHEMA && item !== "public")
+        || identity.schemaMarker !== NEON_CHECKOUT_MARKER
+        || identity.tableCount !== 34 || identity.resolvedTableCount !== 34) {
+        throw new Error("Refusing checkout fixture deletion: unexpected disposable Neon schema identity "
+          + JSON.stringify({
+            name: identity?.name, user: identity?.databaseUser, version: identity?.version,
+            schemaName: identity?.schemaName, searchSchemas: identity?.searchSchemas,
+            schemaMarker: identity?.schemaMarker, tableCount: identity?.tableCount,
+            resolvedTableCount: identity?.resolvedTableCount
+          }));
+      }
+
+      // Explicitly qualified insert is not enough: check Prisma's generated
+      // model query resolves to the same marked, isolated schema.
+      const canaryId = `s6e2-schema-canary-${randomUUID()}`;
+      await prisma.$executeRaw`
+        INSERT INTO "ordersawa_whatsapp_checkout_e2e"."Restaurant" ("id", "name", "slug", "updatedAt")
+        VALUES (${canaryId}, 'Stage 6E.2 routing canary', ${canaryId}, NOW())
+      `;
+      try {
+        const found = await prisma.restaurant.findUnique({ where: { id: canaryId }, select: { id: true } });
+        if (found?.id !== canaryId) {
+          throw new Error("Refusing checkout fixture deletion: Prisma models route outside the marked schema");
+        }
+      } finally {
+        await prisma.$executeRaw`
+          DELETE FROM "ordersawa_whatsapp_checkout_e2e"."Restaurant" WHERE "id" = ${canaryId}
+        `;
+      }
+    } else if (!identity || identity.name !== disposableDatabase?.pathname.slice(1)
+      || identity.address !== "127.0.0.1" || identity.port !== Number(disposableDatabase?.port)) {
+      throw new Error("Refusing checkout fixture deletion: unexpected loopback PostgreSQL target");
+    }
+
+    const checks = await prisma.$queryRaw<{ constraintName: string; validated: boolean }[]>`
+      SELECT conname AS "constraintName", convalidated AS validated
+      FROM pg_constraint
+      WHERE conrelid = to_regclass(format('%I.%I', current_schema(), 'Product'))
+        AND contype = 'c' AND conname LIKE 'Product_%check'
+    `;
+    if (checks.length !== PRODUCT_CHECK_NAMES.length
+      || PRODUCT_CHECK_NAMES.some((name) => !checks.some((check) => check.constraintName === name && check.validated))) {
+      throw new Error("Refusing checkout fixture deletion: five validated Product CHECK constraints are required in the current schema");
+    }
     await prisma.orderItem.deleteMany();
     await prisma.order.deleteMany();
     await prisma.analyticsEvent.deleteMany();
