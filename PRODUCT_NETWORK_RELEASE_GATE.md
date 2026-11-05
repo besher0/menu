@@ -447,3 +447,25 @@ Orders integration job still fails its missing disposable guard fixture
 and is independent of the baseline history. Production release remains
 **NO-GO** until existing-DB migration adoption, restore rehearsal,
 remaining CI gates and production rollout safeguards are verified.
+
+
+## 2026-11-05 — Neon PostgreSQL 18.6 initial migration replay
+
+The user ran `scripts/verify-migration-baseline-neon.ps1` against the
+exact pinned disposable Neon direct endpoint with dedicated schema
+`ordersawa_migration_replay_e2e`. Phases 1–4 **succeeded**:
+
+- Nine migrations applied in order, beginning with initial legacy baseline.
+- Test-only readback confirmed 34 tables, 15 enum types, and all nine
+  migration ledger rows completed.
+- `prisma migrate status` reported `Database schema is up to date!`.
+
+The last schema drift CLI call **did not run correctly** on Windows PowerShell
+5.1: `npx.cmd` split the raw PostgreSQL URL at ampersands, causing
+`0 --to-... parameters provided`. Not a Prisma migration failure and not
+evidence of drift.
+
+Fixed the script to use a Prisma schema datasource path (no URL in command
+line), and added `-VerifyOnly` to recheck the **already populated test
+schema** without creating another one or reapplying migrations. This final
+Neon diff check is **pending user verification**. No production data changed.
