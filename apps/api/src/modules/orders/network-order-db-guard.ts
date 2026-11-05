@@ -118,10 +118,30 @@ export async function assertNetworkOrderCompletenessGuard(transaction: Prisma.Tr
   const expectedLocal = state && state.databaseName.startsWith("ordersawa_stage3_stage6c_")
     && state.address === "127.0.0.1" && state.port === 55440
     && state.serverVersion >= 160000 && state.serverVersion < 170000;
+  // The GitHub Actions PostgreSQL service exposes host port 55440, but
+  // Postgres sees its actual container listener on port 5432. Require all
+  // CI signals, its exact disposable DB name/user, PG16 and loopback URL.
+  const ciUrlRaw = process.env.NETWORK_ORDER_TEST_DATABASE_URL;
+  let trustedCiUrl = false;
+  if (ciUrlRaw) {
+    try {
+      const ciUrl = new URL(ciUrlRaw);
+      trustedCiUrl = ciUrl.protocol === "postgresql:"
+        && ciUrl.hostname === "127.0.0.1" && ciUrl.port === "55440"
+        && ciUrl.pathname === "/ordersawa_stage3_stage6c_ci"
+        && ciUrl.username === "test";
+    } catch { /* Fail closed on malformed URLs. */ }
+  }
+  const expectedCi = state
+    && process.env.GITHUB_ACTIONS === "true" && process.env.CI === "true"
+    && process.env.NODE_ENV === "test" && process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS === "1"
+    && trustedCiUrl && state.databaseName === "ordersawa_stage3_stage6c_ci"
+    && state.databaseUser === "test" && state.port === 5432
+    && state.serverVersion >= 160000 && state.serverVersion < 170000;
   const expectedNeon = state && isDisposableNeonNetworkTestOptedIn()
     && state.databaseName === "neondb" && state.databaseUser === "neondb_owner"
     && state.serverVersion === 180006;
-  const expected = expectedLocal ? EXPECTED_PG16 : expectedNeon ? EXPECTED_NEON_PG18 : null;
+  const expected = expectedLocal || expectedCi ? EXPECTED_PG16 : expectedNeon ? EXPECTED_NEON_PG18 : null;
   if (!state || !expected || state.triggerCount !== 1 || state.triggerHash !== expected.trigger
     || state.triggerType !== 21 || state.deferrable !== true || state.initiallyDeferred !== true
     || state.triggerEnabled !== "O" || state.sourceColumnMatches !== true
