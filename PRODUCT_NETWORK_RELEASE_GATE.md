@@ -75,3 +75,28 @@ integration test.
 
 Current CI failure is intentional evidence that a required database guard is
 missing; production ordering remains disabled.
+
+## 2026-11-05 — Disposable Neon PostgreSQL 18.6 verification
+
+The isolated Neon test database was explicitly provisioned via Prisma schema push and
+test-only SQL fixtures (Stage 6C six snapshot triggers plus Stage 6D completeness
+trigger). The verified SQL trigger/function SHA-256 fingerprints were pinned in the
+test-only guard with distinct PostgreSQL 16 and Neon 18.6 paths. Production test
+ordering remains disabled; no migration was applied to the live database.
+
+**User-run Windows/Neon evidence:**
+- `src/modules/orders/network-orders.integration.spec.ts`: **20 passed / 0 failed**.
+  Includes persistence, immutable snapshots, pricing precision, concurrent
+  catalog changes, failed insert rollback and legacy WhatsApp compatibility.
+- `src/modules/orders/network-order-db-guard.spec.ts`: **7 passed / 0 failed**.
+- `npm run build`: shared, API and Next.js Web builds passed, including
+  27 generated static pages. Next.js emitted a non-blocking workspace-root warning.
+
+**Remaining release blockers:** Migration history is still incomplete on pristine
+databases; a `prisma db push` plus test-only fixture is NOT a successful
+`prisma migrate deploy`. Other integration suites use dedicated loopback-only
+database URLs and cannot be counted as passing on Neon. In particular, the
+Product Configuration suite performs broad `deleteMany` cleanup at setup and
+must never be pointed at a populated/live database. Create separate, explicitly
+verified disposable branches/fixtures for additional suites. Do not remove
+identity checks, merge this feature branch or deploy it based on the 20+7 result.
