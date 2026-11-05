@@ -208,17 +208,19 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     // path selects ONLY the dedicated, marked, non-public test schema first.
     const [identity] = await prisma.$queryRaw<{
       databaseName: string; databaseUser: string; version: number;
-      schemaName: string; schemaMarker: string | null; tableCount: number;
+      schemaName: string; searchSchemas: string[]; schemaMarker: string | null; tableCount: number;
     }[]>`
       SELECT current_database() AS "databaseName", current_user AS "databaseUser",
         current_setting('server_version_num')::int AS version,
         current_schema() AS "schemaName",
+        current_schemas(false)::text[] AS "searchSchemas",
         obj_description(current_schema()::regnamespace, 'pg_namespace') AS "schemaMarker",
         (SELECT count(*)::int FROM pg_tables WHERE schemaname = current_schema()) AS "tableCount"
     `;
     if (approvedNeonTestUrl(databaseUrl)) {
       if (!identity || identity.databaseName !== "neondb" || identity.databaseUser !== "neondb_owner"
         || identity.version !== 180006 || identity.schemaName !== NEON_SCHEMA
+        || identity.searchSchemas.length !== 1 || identity.searchSchemas[0] !== NEON_SCHEMA
         || identity.schemaMarker !== NEON_SCHEMA_MARKER || identity.tableCount !== 34) {
         throw new Error("Refusing destructive product tests: dedicated Neon schema identity is not verified");
       }
