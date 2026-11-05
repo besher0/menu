@@ -31,10 +31,10 @@ import { ProductsService } from "./products.service";
 const databaseUrl = process.env.PRODUCT_CONFIGURATION_TEST_DATABASE_URL;
 const NEON_SCHEMA = "ordersawa_product_config_e2e";
 const NEON_SCHEMA_MARKER = "ordersawa:product-configuration:e2e-disposable:2026-11-05";
-const NEON_HOSTS = new Set([
-  "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech",
-  "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech"
-]);
+// Runtime schema-isolated E2E must not use transaction-pooled Neon connections:
+// PgBouncer can lose session search_path and silently resolve raw SQL in public.
+const NEON_DIRECT_HOST = "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech";
+const NEON_SEARCH_PATH_OPTION = `-c search_path=${NEON_SCHEMA}`;
 
 function approvedNeonTestUrl(value: string | undefined): boolean {
   if (!value) return false;
@@ -44,11 +44,14 @@ function approvedNeonTestUrl(value: string | undefined): boolean {
       && process.env.PRODUCT_CONFIGURATION_NEON_TESTS === "1"
       && process.env.GITHUB_ACTIONS !== "true"
       && ["postgresql:", "postgres:"].includes(url.protocol)
-      && NEON_HOSTS.has(url.hostname)
+      && url.hostname === NEON_DIRECT_HOST
       && (url.port === "" || url.port === "5432")
       && url.pathname === "/neondb" && url.username === "neondb_owner"
       && url.password.length > 0
+      && url.searchParams.getAll("schema").length === 1
       && url.searchParams.get("schema") === NEON_SCHEMA
+      && url.searchParams.getAll("options").length === 1
+      && url.searchParams.get("options") === NEON_SEARCH_PATH_OPTION
       && url.searchParams.get("sslmode") === "require"
       && url.searchParams.get("channel_binding") === "require";
   } catch {
