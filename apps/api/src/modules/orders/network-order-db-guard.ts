@@ -20,10 +20,8 @@ const EXPECTED_NEON_PG18 = {
 // Pin the one disposable test endpoint, never accept arbitrary *.neon.tech.
 const DISPOSABLE_NEON_POOLER_HOST = "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech";
 
-function neonTestOptedIn(): boolean {
-  if (process.env.NODE_ENV !== "test" || process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS !== "1"
-    || process.env.NEON_DISPOSABLE_NETWORK_TESTS !== "1" || process.env.GITHUB_ACTIONS === "true") return false;
-  const value = process.env.NETWORK_ORDER_TEST_DATABASE_URL;
+/** Match only the reviewed disposable Neon connection; never wildcard all Neon endpoints. */
+export function isDisposableNeonNetworkTestUrl(value: string | undefined): boolean {
   if (!value) return false;
   try {
     const url = new URL(value);
@@ -36,6 +34,13 @@ function neonTestOptedIn(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Explicitly opt in only for a local Vitest run against the pinned disposable Neon DB. */
+export function isDisposableNeonNetworkTestOptedIn(): boolean {
+  if (process.env.NODE_ENV !== "test" || process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS !== "1"
+    || process.env.NEON_DISPOSABLE_NETWORK_TESTS !== "1" || process.env.GITHUB_ACTIONS === "true") return false;
+  return isDisposableNeonNetworkTestUrl(process.env.NETWORK_ORDER_TEST_DATABASE_URL);
 }
 
 export const NETWORK_ORDER_COMPLETENESS_CONSTRAINT = '"Order_network_test_completeness_guard"';
@@ -109,7 +114,7 @@ export async function assertNetworkOrderCompletenessGuard(transaction: Prisma.Tr
   const expectedLocal = state && state.databaseName.startsWith("ordersawa_stage3_stage6c_")
     && state.address === "127.0.0.1" && state.port === 55440
     && state.serverVersion >= 160000 && state.serverVersion < 170000;
-  const expectedNeon = state && neonTestOptedIn()
+  const expectedNeon = state && isDisposableNeonNetworkTestOptedIn()
     && state.databaseName === "neondb" && state.databaseUser === "neondb_owner"
     && state.serverVersion === 180006;
   const expected = expectedLocal ? EXPECTED_PG16 : expectedNeon ? EXPECTED_NEON_PG18 : null;
