@@ -73,6 +73,10 @@ if (databaseUrl) {
 }
 
 const integration = databaseUrl ? describe : describe.skip;
+// This single scenario performs ~20 sequential HTTP calls and additional writes.
+// Neon RTTs can take it past the default 60s without a business logic failure.
+// Keep the other 23 tests at 60s; preserve the 5s local-PG16 default.
+const longScenarioOnNeon = approvedNeonTestUrl(databaseUrl);
 
 function baseConfiguration(productId: string, revision = 1, basePrice: string | null = null): ProductConfigurationV1 {
   return {
@@ -461,6 +465,10 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
   });
 
   it("creates a hidden Network setup through the real Dashboard API, then saves and reloads its tree", async () => {
+    const startMs = Date.now();
+    const milestone = (phase: string) => {
+      if (longScenarioOnNeon) console.info(`[Stage3 Network setup E2E] ${phase}: ${Date.now() - startMs}ms`);
+    };
     const headers = {
       authorization: `Bearer ${ownerToken}`,
       "x-restaurant-id": "stage3-r1",
@@ -488,6 +496,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     });
     expect(noCapability.status).toBe(403);
     await prisma.subscriptionFeature.update({ where: { id: "stage3-feature" }, data: { enabled: true } });
+    milestone("preflight permissions and capability checks");
 
     const createdResponse = await fetch(`${httpOrigin}/dashboard/products`, {
       method: "POST", headers, body: JSON.stringify(createBody)
@@ -496,6 +505,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     const created = (await createdResponse.json()).data;
     expect(created).toMatchObject({ configurationMode: "NETWORK", configurationVersion: 1, basePrice: null, isAvailable: false });
     const id = created.id as string;
+    milestone("hidden Network setup created");
     expect((await prisma.product.findUniqueOrThrow({ where: { id } })).configurationTree).toEqual({
       schemaVersion: 1, productId: id, revision: 1, basePrice: null, groups: []
     });
@@ -546,6 +556,7 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       items: [{ productSlug: created.slug, quantity: 1 }]
     })).rejects.toBeInstanceOf(BadRequestException);
     await prisma.product.update({ where: { id }, data: { isAvailable: false } });
+    milestone("legacy and public isolation checks");
 
     const tree = baseConfiguration(id, 2);
     const save = await fetch(`${httpOrigin}/dashboard/products/${id}/configuration`, {
@@ -578,7 +589,8 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     });
     expect(zeroSave.status).toBe(200);
     expect((await prisma.product.findUniqueOrThrow({ where: { id } })).basePrice?.toString()).toBe("0");
-  });
+    milestone("configuration lifecycle completed");
+  }, longScenarioOnNeon ? 180_000 : undefined);
 
   it("keeps Network identity during a configuration-save/availability race", async () => {
     const headers = {
