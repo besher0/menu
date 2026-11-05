@@ -100,3 +100,47 @@ Product Configuration suite performs broad `deleteMany` cleanup at setup and
 must never be pointed at a populated/live database. Create separate, explicitly
 verified disposable branches/fixtures for additional suites. Do not remove
 identity checks, merge this feature branch or deploy it based on the 20+7 result.
+
+## 2026-11-05 — Product Configuration Stage 3: isolated Neon-schema test harness
+
+**Implementation complete; actual Neon Stage 3 tests NOT YET RUN.** To keep the
+already-tested Network Orders `public` schema separate, the Product Configuration
+suite now accepts an exact second schema `ordersawa_product_config_e2e` on the
+previously verified disposable Neon PG18.6 endpoint. This is schema-level
+isolation inside a *disposable* Neon database, **not** a second Neon branch or
+a production deployment.
+
+The fixture `scripts/product-configuration-neon-e2e-schema.sql` creates a
+dedicated schema with a fixed marker comment and does not alter `public`
+tables. The PowerShell script
+`scripts/prepare-product-configuration-neon-e2e.ps1` checks the two exact
+approved Neon hostnames, database, role, SSL parameters, and scopes Prisma
+`db push` to the new schema. It preserves the original process
+`DATABASE_URL` and `DIRECT_URL`, and sets only the dedicated Stage 3 test
+URL for the next invocation in the **same** PowerShell session.
+
+The Stage 3 integration suite independently verifies the live database/user,
+PG version, exact schema marker, table count and a search path without public
+fallback **before** broad `deleteMany` test setup. Old disposable PG16
+loopback test support remains. Remote tests have larger Vitest timeouts.
+
+### Local verification steps (on the disposable Neon branch only)
+
+From repository root in the **same** PowerShell window:
+
+```powershell
+git fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+.\scripts\prepare-product-configuration-neon-e2e.ps1
+npm run typecheck -w @menu/api
+npm run test -w @menu/api -- src/modules/products/product-configuration.integration.spec.ts
+```
+
+If script execution is blocked by policy, first allow local script execution
+for the current PowerShell process only. The DB tests remain unverified until
+the operator runs them and records outcomes. Do not run them with a production
+connection or against the `public` schema.
+
+**Still no-go:** migration baseline / fresh `prisma migrate deploy` are not
+fixed by `db push` in a test schema; other isolated integration suites and
+production gates remain outstanding.
