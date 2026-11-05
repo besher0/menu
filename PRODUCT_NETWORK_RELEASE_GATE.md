@@ -170,3 +170,22 @@ No additional integration test passes are claimed yet.
 **Still no-go:** migration baseline / fresh `prisma migrate deploy` are not
 fixed by `db push` in a test schema; other isolated integration suites and
 production gates remain outstanding.
+
+## 2026-11-05 — Product Configuration first live Neon run
+
+The direct Neon connection and explicitly marked isolated schema passed
+SQL identity checks and the Prisma ORM routing canary. All setup proceeded
+against the dedicated disposable `ordersawa_product_config_e2e` schema.
+
+Windows Vitest outcome: **23 passed / 1 timed out (24 total)**.
+The failing scenario is the comprehensive setup-to-publish network lifecycle,
+which issues many sequential real HTTP requests plus database writes. The
+only failure reported was the exact **60,000 ms Vitest timeout**, without an
+assertion mismatch. This is NOT yet evidence that all its steps are correct.
+
+The next candidate test change gives only this one Neon scenario a
+180,000 ms test budget and emits elapsed-time checkpoints for preflight,
+creation, isolation, and completed lifecycle. The other tests retain their
+existing timeouts. The scope is restricted to the existing disposable
+Neon test URL. Re-run the filtered first test to confirm actual result
+before claiming 24/24; no production activation or merge is authorized.
