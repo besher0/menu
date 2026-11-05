@@ -2,7 +2,7 @@ import { INestApplication, Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NetworkOrderLoopbackGuard, NetworkOrdersController } from "./network-orders.controller";
 import { NetworkOrdersService } from "./network-orders.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -23,6 +23,10 @@ if (databaseUrl) {
   if (!disposableLocal && !disposableNeon) {
     throw new Error("Stage 6C tests refuse non-disposable database URLs");
   }
+}
+// Neon adds network round trips to each SQL assertion; retain the 5s local budget.
+if (isDisposableNeonNetworkTestUrl(databaseUrl)) {
+  vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 }
 const integration = databaseUrl ? describe : describe.skip;
 
@@ -212,10 +216,13 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     expect(result.status).toBe(201);
     const savedOrder = await prisma.order.findUniqueOrThrow({ where: { id: result.body.orderId } });
     const comboMessage = formatNetworkOrderWhatsappMessage(savedOrder.cartSnapshot);
-    expect(comboMessage).toContain("اختيارات المكوّن 1");
-    expect(comboMessage).toContain("اختيارات المكوّن 2");
-    expect(comboMessage).toContain("اختيارات المكوّن 3");
-    expect(comboMessage).toContain("Source Pizza");
+    // The formatter renders each original/custom instance on its own line, not an old "component N" heading.
+    expect(comboMessage.match(/First pizza/g)).toHaveLength(2);
+    expect(comboMessage.match(/Extra pizza/g)).toHaveLength(1);
+    expect(comboMessage.match(/Source Pizza/g)).toHaveLength(3);
+    expect(comboMessage).toContain("Small");
+    expect(comboMessage).toContain("Large");
+    expect(comboMessage).toContain("Medium");
     const item = await prisma.orderItem.findFirstOrThrow({ where: { orderId: result.body.orderId } });
     expect((item.options as any).canonicalSelection.groups[0].instances.map((instance: any) => instance.instanceId)).toEqual(["custom-1", "original-1", "original-2"]);
     expect((item.options as any).configurationTree.groups[0].options).toEqual(expect.arrayContaining([expect.objectContaining({ linkedProduct: expect.objectContaining({ mode: "CUSTOM" }) })]));
@@ -301,7 +308,9 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     const message = formatNetworkOrderWhatsappMessage(saved.cartSnapshot);
     expect(message).toContain("Demo Guest");
     expect(message).toContain("6 PM");
-    expect(message).toContain("اختيارات المكوّن 3");
+    expect(message.match(/First pizza/g)).toHaveLength(2);
+    expect(message.match(/Extra pizza/g)).toHaveLength(1);
+    expect(message).toContain("Source Pizza");
     expect(message).not.toContain("CUSTOM");
     if (process.env.PRINT_NETWORK_ORDER_PREVIEW === "1") process.stdout.write(`\n--- STORED COMBO ---\n${message}\n`);
   });
@@ -482,7 +491,7 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
     await prisma.$executeRawUnsafe(`CREATE TRIGGER stage6c_reject_item_trigger BEFORE INSERT ON "OrderItem" FOR EACH ROW EXECUTE FUNCTION stage6c_reject_item()`);
     try {
       const result = await create({ ...pizzaDraft(), idempotencyKey: randomUUID(), acceptanceToken: prepared.body.acceptanceToken });
-      expect(result.status).toBe(503);
+      expect(result.status, `Unexpected error body: ${JSON.stringify(result.body)}`).toBe(503);
       expect(result.body.error).toBe("NETWORK_ORDER_PERSISTENCE_FAILED");
       expect(await prisma.order.count()).toBe(0);
     } finally {
