@@ -141,6 +141,23 @@ for the current PowerShell process only. The DB tests remain unverified until
 the operator runs them and records outcomes. Do not run them with a production
 connection or against the `public` schema.
 
+**Read-only preflight failure observed 2026-11-05:** Schema creation and
+`prisma db push` completed in the isolated test schema, but the integration
+suite's runtime SQL reported `current_schema() = public` on a pooled Neon
+connection. All 24 tests were skipped by the fail-closed guard; no test data
+was deleted. The suite therefore requires the **exact direct (unpooled) Neon
+endpoint** and explicit PostgreSQL connection startup
+`options=-c%20search_path%3Dordersawa_product_config_e2e`, in addition to
+`schema=ordersawa_product_config_e2e`. Setup now selects the verified
+`DIRECT_URL` instead of the pooled `DATABASE_URL` for the test runtime.
+The guard also proves the actual Prisma model query routes to the isolated
+schema using a temporary, explicitly schema-qualified canary *after* SQL
+identity checks and *before* broad fixture deletion. Even a raw SQL
+`current_schema()` result alone is insufficient to establish ORM routing.
+After pulling this change the PowerShell setup script **must be rerun in the
+same session** to set the corrected test environment variable. Actual 24-test
+results remain pending.
+
 **Still no-go:** migration baseline / fresh `prisma migrate deploy` are not
 fixed by `db push` in a test schema; other isolated integration suites and
 production gates remain outstanding.
