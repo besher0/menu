@@ -9,12 +9,18 @@ import { PrismaService } from "../prisma/prisma.service";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PublicMenuService } from "../public-menu/public-menu.service";
 import { formatNetworkOrderWhatsappMessage } from "./network-order-whatsapp-formatter";
+import { assertNetworkOrderCompletenessGuard, isDisposableNeonNetworkTestUrl, isDisposableNeonNetworkTestOptedIn } from "./network-order-db-guard";
 
 const databaseUrl = process.env.NETWORK_ORDER_TEST_DATABASE_URL;
 if (databaseUrl) {
   const parsed = new URL(databaseUrl);
-  if (!(["127.0.0.1", "localhost"].includes(parsed.hostname) && parsed.port === "55440"
-    && parsed.pathname.startsWith("/ordersawa_stage3_stage6c_"))) {
+  const disposableLocal = ["127.0.0.1", "localhost"].includes(parsed.hostname)
+    && parsed.port === "55440" && parsed.pathname.startsWith("/ordersawa_stage3_stage6c_");
+  const disposableNeon = isDisposableNeonNetworkTestUrl(databaseUrl)
+    && process.env.NEON_DISPOSABLE_NETWORK_TESTS === "1"
+    && process.env.NODE_ENV === "test"
+    && process.env.GITHUB_ACTIONS !== "true";
+  if (!disposableLocal && !disposableNeon) {
     throw new Error("Stage 6C tests refuse non-disposable database URLs");
   }
 }
@@ -95,6 +101,14 @@ integration("Stage 6C disposable PostgreSQL HTTP and transaction integration", (
   beforeAll(async () => {
     process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS = "1";
     await prisma.$connect();
+
+    // This suite performs TRUNCATE and broad fixture deletion. Never clean up a
+    // database before verifying its real SQL guard and explicitly opted-in identity.
+    if (isDisposableNeonNetworkTestUrl(databaseUrl) && !isDisposableNeonNetworkTestOptedIn()) {
+      throw new Error("Neon test database is not explicitly authorized");
+    }
+    await assertNetworkOrderCompletenessGuard(prisma);
+
     await prisma.$executeRawUnsafe('TRUNCATE "OrderItem", "Order" RESTART IDENTITY CASCADE');
     await prisma.analyticsEvent.deleteMany();
     await prisma.productConfigurationDependency.deleteMany();
