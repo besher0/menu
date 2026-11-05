@@ -151,3 +151,31 @@ Important: the test schema is an isolated namespace *inside* the disposable
 Neon database, not a separate database or a Neon branch. This validates
 clean bootstrap on PG18.6; it does **not** validate an in-place production
 migration or repair production's existing `_prisma_migrations` ledger.
+
+
+## Windows PowerShell drift-check follow-up (2026-11-05)
+
+The user ran the one-use Neon script. **Phases 1–4 passed** on the
+`ordersawa_migration_replay_e2e` schema: all nine migrations applied, the
+34-table / 15-enum / nine-ledger-row validation succeeded, and Prisma
+reported `Database schema is up to date!`. The final diff failed because
+Windows PowerShell 5.1 passed the raw PostgreSQL URL through `npx.cmd`
+and its `&` query separators were interpreted as shell operators. This
+is a CLI argument parsing error, **not** a confirmed schema drift.
+
+The patched script uses `--from-schema-datasource prisma/schema.prisma`
+with the previously verified isolated datasource in process environment
+variables instead of `--from-url`. Since the one-use schema already exists,
+do **not** rerun normal bootstrap. Run this **read-only verification**:
+
+```powershell
+git -c http.version=HTTP/1.1 fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+.\scripts\verify-migration-baseline-neon.ps1 -VerifyOnly
+```
+
+`-VerifyOnly` skips bootstrap, empty-schema preflight, and migration
+deployment; it rechecks the exact pinned disposable Neon target, marker,
+34 tables, 15 enums, nine completed migration ledger entries, Prisma
+migration status, and current model drift. The SQL verification is read-only.
+If any check fails, do not reset or delete the schema.
