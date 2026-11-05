@@ -1170,38 +1170,64 @@ export class DashboardService {
   }
 
   private async ensureAllCategory(restaurantId: string) {
-    const existing = await this.prisma.category.findFirst({
-      where: { restaurantId, slug: "all", deletedAt: null },
-      select: { id: true, isActive: true, sortOrder: true, name: true }
-    });
-
-    if (existing) {
-      if (!existing.isActive || existing.sortOrder !== 0 || existing.name !== "الكل") {
-        await this.prisma.category.update({
-          where: { id: existing.id },
-          data: { name: "الكل", isActive: true, sortOrder: 0 }
+    const where = { restaurantId_slug: { restaurantId, slug: "all" } };
+    // The unique key also covers soft-deleted rows. Reuse the existing row
+    // rather than inserting a conflicting second "all" category.
+    const normalize = async (category: {
+      id: string; name: string; sortOrder: number; isActive: boolean; deletedAt: Date | null;
+    }) => {
+      if (category.deletedAt !== null || !category.isActive
+        || category.sortOrder !== 0 || category.name !== "الكل") {
+        return this.prisma.category.update({
+          where: { id: category.id },
+          data: { deletedAt: null, name: "الكل", isActive: true, sortOrder: 0 }
         });
       }
-      return existing;
-    }
+      return category;
+    };
 
-    return this.prisma.category.create({
-      data: {
-        restaurantId,
-        name: "الكل",
-        slug: "all",
-        description: "كل الأصناف",
-        imagePosition: "78,50",
-        imageWidth: 34,
-        imageHeight: 34,
-        color: "#ed1f2b",
-        backgroundType: "GRADIENT",
-        backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
-        visualScrollEnabled: false,
-        sortOrder: 0,
-        isActive: true
-      }
+    const existing = await this.prisma.category.findUnique({
+      where,
+      select: { id: true, name: true, sortOrder: true, isActive: true, deletedAt: true }
     });
+    if (existing) return normalize(existing);
+
+    try {
+      return await this.prisma.category.create({
+        data: {
+          restaurantId,
+          name: "الكل",
+          slug: "all",
+          description: "كل الأصناف",
+          imagePosition: "78,50",
+          imageWidth: 34,
+          imageHeight: 34,
+          color: "#ed1f2b",
+          backgroundType: "GRADIENT",
+          backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
+          visualScrollEnabled: false,
+          sortOrder: 0,
+          isActive: true
+        }
+      });
+    } catch (error) {
+      // Concurrent dashboard requests may both observe a missing row. Only
+      // recover the exact (restaurantId, slug) unique race, not unrelated
+      // SQL errors such as another primary-key conflict.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError)
+        || error.code !== "P2002") throw error;
+      const target = error.meta?.target;
+      const slugRace = Array.isArray(target)
+        ? target.length === 2 && target.includes("restaurantId") && target.includes("slug")
+        : target === "Category_restaurantId_slug_key";
+      if (!slugRace) throw error;
+      const created = await this.prisma.category.findUnique({
+        where,
+        select: { id: true, name: true, sortOrder: true, isActive: true, deletedAt: true }
+      });
+      if (!created) throw error;
+      return normalize(created);
+    }
   }
 
   private async nextCategorySortOrder(restaurantId: string) {
