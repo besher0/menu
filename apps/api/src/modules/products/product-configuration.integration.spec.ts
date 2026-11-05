@@ -11,7 +11,7 @@ import { ProductConfigurationV1 } from "@menu/shared";
 import { PrismaClient } from "@prisma/client";
 import { JwtModule, JwtService } from "@nestjs/jwt";
 import { NestFactory } from "@nestjs/core";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiResponseInterceptor } from "../../common/api-response.interceptor";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -243,6 +243,28 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
             searchSchemas: identity?.searchSchemas, schemaMarker: identity?.schemaMarker,
             tableCount: identity?.tableCount, resolvedTableCount: identity?.resolvedTableCount
           }));
+      }
+
+      // A schema-specific raw query is insufficient evidence that Prisma's
+      // generated model queries use the same schema. Insert a unique canary ONLY
+      // into an explicitly qualified test table, then verify Prisma reads it.
+      // This prevents a misrouted ORM from deleting public data.
+      const canaryId = `stage3-schema-routing-${randomUUID()}`;
+      await prisma.$executeRaw`
+        INSERT INTO "ordersawa_product_config_e2e"."Restaurant" ("id", "name", "slug")
+        VALUES (${canaryId}, 'Stage 3 schema routing canary', ${canaryId})
+      `;
+      try {
+        const canary = await prisma.restaurant.findUnique({
+          where: { id: canaryId }, select: { id: true }
+        });
+        if (canary?.id !== canaryId) {
+          throw new Error("Refusing destructive product tests: Prisma model queries are not isolated to the marked schema");
+        }
+      } finally {
+        await prisma.$executeRaw`
+          DELETE FROM "ordersawa_product_config_e2e"."Restaurant" WHERE "id" = ${canaryId}
+        `;
       }
     } else if (!identity || !identity.databaseName.startsWith("ordersawa_stage3_")
       || identity.schemaName !== "public" || identity.version < 160000
