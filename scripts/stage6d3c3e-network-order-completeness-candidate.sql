@@ -9,8 +9,19 @@ DO $$ BEGIN
     'ordersawa_stage3_stage6c_stage6d3c3f_fake_guard',
     'ordersawa_stage3_stage6c_stage6d3c3f_bench',
     'ordersawa_stage3_stage6c_stage6d3c3f_bench2',
-    'ordersawa_stage3_stage6c_stage6d3a_demo')
-    OR host(inet_server_addr()) <> '127.0.0.1' OR inet_server_port() <> 55440
+    'ordersawa_stage3_stage6c_stage6d3a_demo',
+    'ordersawa_stage3_stage6c_ci')
+    OR NOT (
+      -- Existing PG16 local disposable DBs on a dedicated loopback port.
+      (host(inet_server_addr()) = '127.0.0.1' AND inet_server_port() = 55440)
+      -- GitHub Actions' explicitly named PostgreSQL 16 service DB. The
+      -- runner reaches it on host :55440 but server sees listener :5432.
+      OR (current_database() = 'ordersawa_stage3_stage6c_ci'
+        AND current_user = 'test'
+        AND current_setting('server_version_num')::int >= 160000
+        AND current_setting('server_version_num')::int < 170000
+        AND inet_server_port() = 5432)
+    )
     OR EXISTS (SELECT 1 FROM public."Order") THEN
     RAISE EXCEPTION 'Refusing non-empty or non-disposable Stage 6D.3C3E database';
   END IF;
