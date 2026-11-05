@@ -189,3 +189,23 @@ creation, isolation, and completed lifecycle. The other tests retain their
 existing timeouts. The scope is restricted to the existing disposable
 Neon test URL. Re-run the filtered first test to confirm actual result
 before claiming 24/24; no production activation or merge is authorized.
+
+## 2026-11-05 — Product Configuration remaining E2E verified in isolation
+
+The first and longest Product Configuration Stage 3 end-to-end scenario now
+**passes when filtered** against the explicitly marked Neon PostgreSQL 18.6
+test schema. It completed in **53,968 ms**. The four elapsed-time checkpoints
+were approximately 3.4 s (permissions/capability), 9.9 s (hidden setup
+created), 34.1 s (legacy/public isolation), and 54.0 s (configuration
+lifecycle complete). Vitest reported **1 passed / 23 skipped**, by design
+when run with the `-t` filter. The prior unfiltered attempt produced
+**23 passed / 1 timed out** at the former 60-second budget.
+
+Together these results confirm each of the 24 scenarios has passed in at least
+one run, but **a complete unfiltered 24/24 run remains to be verified**. Next:
+
+```powershell
+npm run test -w @menu/api -- src/modules/products/product-configuration.integration.spec.ts
+```
+
+Do not describe the full suite as green until its combined run completes.
