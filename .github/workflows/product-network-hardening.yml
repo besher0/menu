@@ -45,18 +45,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      # Temporary, review-only generation. Prisma v5 produces the SQL from
-      # the historical pre-20260719 datamodel; do NOT apply it to any database.
-      - name: Generate historical initial migration SQL for review
-        run: |
-          npx prisma validate --schema apps/api/prisma/schema.legacy-baseline.prisma
-          npx prisma migrate diff --from-empty --to-schema-datamodel apps/api/prisma/schema.legacy-baseline.prisma --script > /tmp/ordersawa_initial_baseline.sql
-          grep -Fq 'CREATE TABLE "Category"' /tmp/ordersawa_initial_baseline.sql
-          if grep -Fq 'CategoryBackgroundType' /tmp/ordersawa_initial_baseline.sql; then exit 1; fi
-          echo "ORDER_SAWA_BASELINE_SQL_BASE64_START"
-          base64 -w0 /tmp/ordersawa_initial_baseline.sql
-          echo
-          echo "ORDER_SAWA_BASELINE_SQL_BASE64_END"
       - name: Validate Prisma schema
         run: npx prisma validate --schema apps/api/prisma/schema.prisma
         env:
@@ -65,12 +53,16 @@ jobs:
         run: npm run prisma:generate
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
-      # This repository's migration history starts after the original baseline.
-      # migrate deploy on a blank DB fails with 42P01 (Category missing).
-      # Validate the complete current schema against a disposable DB instead;
-      # migration replay on a restored baseline remains a separate release gate.
-      - name: Validate current schema on disposable PostgreSQL
-        run: npx prisma db push --schema apps/api/prisma/schema.prisma --accept-data-loss
+      # Always replay the full committed migration history from an EMPTY
+      # PostgreSQL 16 fixture. db push is not a substitute for migrate deploy.
+      - name: Replay migrations from zero on disposable PostgreSQL
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - name: Check migration status on disposable PostgreSQL
+        run: npx prisma migrate status --schema apps/api/prisma/schema.prisma
+      # Prisma v5 diff exit code: 0 = same schema, 2 = drift.
+      # A nonzero result blocks release; never auto-apply db push.
+      - name: Ensure migrated database matches current Prisma schema
+        run: npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel apps/api/prisma/schema.prisma --exit-code
       - name: Typecheck
         run: npm run typecheck
       - name: Shared tests
