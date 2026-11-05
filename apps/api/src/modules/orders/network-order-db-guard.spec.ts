@@ -69,6 +69,12 @@ describe("Network Order DB guard environment isolation", () => {
     optIn();
     await expect(assertNetworkOrderCompletenessGuard(transaction(state("neon")))).resolves.toBeUndefined();
   });
+  it("accepts the exact non-pooler direct Neon endpoint", async () => {
+    optIn();
+    process.env.NETWORK_ORDER_TEST_DATABASE_URL =
+      process.env.NETWORK_ORDER_TEST_DATABASE_URL!.replace("-pooler.c-7.", ".c-7.");
+    await expect(assertNetworkOrderCompletenessGuard(transaction(state("neon")))).resolves.toBeUndefined();
+  });
   it("rejects a different Neon host even with valid function fingerprints", async () => {
     optIn();
     process.env.NETWORK_ORDER_TEST_DATABASE_URL =
