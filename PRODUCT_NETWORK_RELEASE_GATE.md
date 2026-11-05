@@ -412,3 +412,38 @@ separate marked schemas and separately verify each role and its expected
 missing/fake/real guard state before running destructive fixtures.
 
 The unresolved `prisma migrate deploy` baseline gate also remains NO-GO.
+
+## 2026-11-05 — Missing initial Prisma migration baseline repaired
+
+**Clean-database migration replay is VERIFIED on the disposable PostgreSQL 16
+GitHub Actions validate job** (run 41953578388, ref ca2776335e; full validate
+job succeeded, including migrations, schema-drift check, typecheck and builds).
+The original failure was P3018 / 42P01 because
+`20260719000000_add_category_visual_settings` altered a `Category` table
+missing from the versioned history.
+
+The new `20260718000000_initial_legacy_baseline/migration.sql` was
+generated using Prisma 5.22 from
+`apps/api/prisma/schema.legacy-baseline.prisma`, which was reconstructed
+from the first repository commit 3bd4532207ea by reverting only the five
+Category fields and enum introduced by the first historical migration.
+The generated DDL has **31 tables and 13 enums**; all eight existing migration
+files are left unmodified. A transaction and preflight nonempty-schema guard
+were added to the initial DDL, and the subsequent test-only validate run
+41953945346 again passed full `prisma migrate deploy`,
+`prisma migrate status` and schema diff (no drift).
+
+The CI `validate` job now uses **migrate deploy on an empty PG16 DB**
+instead of `db push --accept-data-loss`. This closes the historical
+**fresh database bootstrap** blocker, but it is not production approval.
+Read `PRISMA_MIGRATION_BASELINE.md` for the distinct, backup- and
+schema-audited **existing database** adoption process. Never run the new
+CREATE TABLE migration on an already populated Neon database; after
+verification it must be recorded as already applied with Prisma's
+`migrate resolve` mechanism before continuing.
+
+**Overall CI remains not fully green**: the separate Stage 6C Network
+Orders integration job still fails its missing disposable guard fixture
+and is independent of the baseline history. Production release remains
+**NO-GO** until existing-DB migration adoption, restore rehearsal,
+remaining CI gates and production rollout safeguards are verified.
