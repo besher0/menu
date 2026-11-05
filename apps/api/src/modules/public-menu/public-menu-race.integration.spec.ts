@@ -283,40 +283,48 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
   });
 
-  it("restores a soft-deleted all row, preserving ID, product relation, and style", async () => {
+  it("restores a soft-deleted all category through dashboard without changing ID, relation or style", async () => {
     const existing = await prisma.category.create({ data: { restaurantId: firstRestaurant,
       slug: "all", name: "Old", sortOrder: 7, isActive: false, deletedAt: new Date(),
       color: "#123456", description: "Historic presentation" } });
     await prisma.product.update({ where: { id: productId }, data: { categoryId: existing.id } });
-    const response = await menu();
+    const publicBefore = await menu();
+    expect(publicBefore.status).toBe(200);
+    expect(publicBefore.body.categories.some((entry: { slug: string }) => entry.slug === "all")).toBe(false);
+
+    const response = await dashboardCategories();
     expect(response.status).toBe(200);
     expect(await all()).toMatchObject({ id: existing.id, name: "الكل", sortOrder: 0,
       isActive: true, deletedAt: null, color: "#123456", description: "Historic presentation" });
     expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).categoryId).toBe(existing.id);
-    expect(response.body.categories.some((entry: { id: string }) => entry.id === existing.id)).toBe(true);
+    expect((await menu()).body.categories.some((entry: { id: string }) => entry.id === existing.id)).toBe(true);
     expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
   });
 
-  it("does not create an all row for another restaurant while serving the first", async () => {
+  it("isolates dashboard all categories by restaurant; public GET never initializes them", async () => {
     expect((await menu()).status).toBe(200);
+    expect(await all(firstRestaurant)).toBeNull();
+    expect((await dashboardCategories(firstRestaurant)).status).toBe(200);
     expect(await all(firstRestaurant)).not.toBeNull();
     expect(await all(secondRestaurant)).toBeNull();
     expect((await menu("s6d3c1-b")).status).toBe(200);
+    expect(await all(secondRestaurant)).toBeNull();
+    expect((await dashboardCategories(secondRestaurant)).status).toBe(200);
     expect((await all(secondRestaurant))?.id).not.toBe((await all(firstRestaurant))?.id);
     expect(await prisma.category.count({ where: { slug: "all" } })).toBe(2);
   });
 
-  it("does not swallow an unrelated PostgreSQL foreign-key error", async () => {
+  it("does not swallow an unrelated PostgreSQL foreign-key error on dashboard creation", async () => {
     injectForeignKeyFailure = true;
-    const response = await menu();
+    const response = await dashboardCategories();
     expect(actualCreateFailureCode).toBe("P2003");
     expect(response.status).toBe(500);
     expect(await all()).toBeNull();
   });
 
-  it("does not swallow an unrelated PostgreSQL primary-key uniqueness error", async () => {
+  it("does not swallow an unrelated PostgreSQL primary-key error on dashboard creation", async () => {
     injectUnrelatedUniqueFailure = true;
-    const response = await menu();
+    const response = await dashboardCategories();
     expect(actualCreateFailureCode).toBe("P2002");
     expect(response.status).toBe(500);
     expect(await all()).toBeNull();
