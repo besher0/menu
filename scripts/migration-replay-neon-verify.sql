@@ -12,6 +12,8 @@ BEGIN
      OR current_user <> 'neondb_owner'
      OR current_setting('server_version_num')::int <> 180006
      OR current_schema() <> 'ordersawa_migration_replay_e2e'
+     OR search_schemas IS NULL
+     OR array_length(search_schemas, 1) <> 1
      OR search_schemas[1] <> 'ordersawa_migration_replay_e2e'
      OR obj_description('ordersawa_migration_replay_e2e'::regnamespace, 'pg_namespace')
        IS DISTINCT FROM 'ordersawa:migration-replay:e2e-disposable:2026-11-05'
