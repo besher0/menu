@@ -112,3 +112,42 @@ registered as applied if its schema is already present.
   Public Menu Race E2E schemas as a production rollback or baseline target.
 - The historical snapshot is a migration-generation reference, **not** the
   active runtime Prisma schema.
+
+
+## Path C — Safe Neon PG18.6 migration replay in a dedicated empty schema
+
+The disposable Neon test compute used earlier has a **pinned, exact endpoint**
+and database identity. To test migration replay there without changing
+`public` or previously created test schemas, use:
+
+```powershell
+git -c http.version=HTTP/1.1 fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+.\scripts\verify-migration-baseline-neon.ps1
+```
+
+The script reads the *reviewed disposable Neon* `DATABASE_URL` and `DIRECT_URL`
+from `apps/api/.env`, validates the exact host, role, database, SSL and
+PostgreSQL version, and uses the direct endpoint. It creates a **new, one-use**
+schema `ordersawa_migration_replay_e2e` marked
+`ordersawa:migration-replay:e2e-disposable:2026-11-05`. If the schema already
+exists it refuses reuse; it will not truncate, delete, reset or drop anything.
+It checks the schema is empty, runs `prisma migrate deploy` scoped exclusively
+to that schema, verifies **34 application tables, 15 enums and nine completed
+migrations**, then checks `migrate status` and Prisma schema drift.
+
+Both process `DATABASE_URL` and `DIRECT_URL` are restored after the script,
+and `.env` is unchanged. This is an actual schema-migration test: it does
+**not** run `prisma db push`, and it does not alter `main`.
+
+A successful run should end with
+`PASS: nine migrations from empty Neon PG18.6 schema, status clear, no Prisma schema drift.`
+If the script stops at any step, **do not** run migrate commands manually or
+switch it to `public` to bypass the guard; send the error output for review.
+If the same schema already exists from a prior attempt, do not drop it
+automatically: choose and review a fresh schema name first.
+
+Important: the test schema is an isolated namespace *inside* the disposable
+Neon database, not a separate database or a Neon branch. This validates
+clean bootstrap on PG18.6; it does **not** validate an in-place production
+migration or repair production's existing `_prisma_migrations` ledger.
