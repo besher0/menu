@@ -208,21 +208,38 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
     // path selects ONLY the dedicated, marked, non-public test schema first.
     const [identity] = await prisma.$queryRaw<{
       databaseName: string; databaseUser: string; version: number;
-      schemaName: string; searchSchemas: string[]; schemaMarker: string | null; tableCount: number;
+      schemaName: string; searchSchemas: string[]; schemaMarker: string | null;
+      tableCount: number; resolvedTableCount: number;
     }[]>`
       SELECT current_database() AS "databaseName", current_user AS "databaseUser",
         current_setting('server_version_num')::int AS version,
         current_schema() AS "schemaName",
         current_schemas(false)::text[] AS "searchSchemas",
         obj_description(current_schema()::regnamespace, 'pg_namespace') AS "schemaMarker",
-        (SELECT count(*)::int FROM pg_tables WHERE schemaname = current_schema()) AS "tableCount"
+        (SELECT count(*)::int FROM pg_tables WHERE schemaname = current_schema()) AS "tableCount",
+        -- Verify every Prisma model table actually resolves to the marked schema,
+        -- even if Prisma/PostgreSQL appends 'public' as an unused search-path fallback.
+        (SELECT count(*)::int FROM pg_tables t
+          WHERE t.schemaname = current_schema()
+            AND to_regclass(format('%I', t.tablename)) =
+                to_regclass(format('%I.%I', current_schema(), t.tablename))) AS "resolvedTableCount"
     `;
     if (approvedNeonTestUrl(databaseUrl)) {
       if (!identity || identity.databaseName !== "neondb" || identity.databaseUser !== "neondb_owner"
         || identity.version !== 180006 || identity.schemaName !== NEON_SCHEMA
-        || identity.searchSchemas.length !== 1 || identity.searchSchemas[0] !== NEON_SCHEMA
-        || identity.schemaMarker !== NEON_SCHEMA_MARKER || identity.tableCount !== 34) {
-        throw new Error("Refusing destructive product tests: dedicated Neon schema identity is not verified");
+        || !Array.isArray(identity.searchSchemas)
+        || identity.searchSchemas[0] !== NEON_SCHEMA
+        || identity.searchSchemas.some((name) => name !== NEON_SCHEMA && name !== "public")
+        || identity.schemaMarker !== NEON_SCHEMA_MARKER
+        || identity.tableCount !== 34 || identity.resolvedTableCount !== identity.tableCount) {
+        // Safe metadata only: never reveal DB credentials or the connection URL.
+        throw new Error("Refusing destructive product tests: dedicated Neon schema identity is not verified: "
+          + JSON.stringify({
+            databaseName: identity?.databaseName, databaseUser: identity?.databaseUser,
+            version: identity?.version, schemaName: identity?.schemaName,
+            searchSchemas: identity?.searchSchemas, schemaMarker: identity?.schemaMarker,
+            tableCount: identity?.tableCount, resolvedTableCount: identity?.resolvedTableCount
+          }));
       }
     } else if (!identity || !identity.databaseName.startsWith("ordersawa_stage3_")
       || identity.schemaName !== "public" || identity.version < 160000
