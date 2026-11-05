@@ -251,8 +251,8 @@ integration("Product Configuration Stage 3 disposable PostgreSQL integration", (
       // This prevents a misrouted ORM from deleting public data.
       const canaryId = `stage3-schema-routing-${randomUUID()}`;
       await prisma.$executeRaw`
-        INSERT INTO "ordersawa_product_config_e2e"."Restaurant" ("id", "name", "slug")
-        VALUES (${canaryId}, 'Stage 3 schema routing canary', ${canaryId})
+        INSERT INTO "ordersawa_product_config_e2e"."Restaurant" ("id", "name", "slug", "updatedAt")
+        VALUES (${canaryId}, 'Stage 3 schema routing canary', ${canaryId}, NOW())
       `;
       try {
         const canary = await prisma.restaurant.findUnique({
