@@ -352,3 +352,40 @@ npm run test -w @menu/api -- src/modules/public-menu/public-menu-race.integratio
 
 The expected 8/8 result is **not confirmed** until the user runs the
 updated suite. Production promotion and migration baseline still NO-GO.
+
+
+## 2026-11-05 — Public Menu Race worker initialization failure
+
+On the first attempt with the migrated 8-test dashboard-category HTTP suite,
+Vitest reported **0 tests run** with a Node native stack ending in
+`NestFactory.handleInitializationError`, then a worker unexpected exit. This
+is a Nest test-module initialization failure, **not** a database race
+assertion; the previous 1/8 result pertains to stale public GET tests.
+
+The test module had attached `DashboardController`, which is guarded by
+`JwtAuthGuard` and `RestaurantContextGuard`, but provided lightweight
+guard stubs without registering its actual `JwtModule`. Nest's default
+`abortOnError: true` caused a native abort instead of returning the
+underlying DI error.
+
+**Candidate correction**: match the previously successful Product Configuration
+test infrastructure: import `JwtModule.register()`, register the real JWT
+and restaurant-context guards, seed one test-only user with membership in
+both disposable restaurants after verifying the marked Neon schema, and sign
+an ephemeral JWT for dashboard HTTP requests. Use
+`NestFactory.create(..., {logger: false, abortOnError: false})` to surface
+future DI errors as ordinary Vitest failures instead of killing the worker.
+No production auth implementation changed.
+
+Rerun the API typecheck and 8-test suite **without** re-running the schema
+preparation, provided the same PowerShell session still has the previously
+verified direct-only `PUBLIC_MENU_RACE_TEST_DATABASE_URL`:
+
+```powershell
+git -c http.version=HTTP/1.1 fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+npm run typecheck -w @menu/api
+npm run test -w @menu/api -- src/modules/public-menu/public-menu-race.integration.spec.ts
+```
+
+**No 8/8 pass is claimed** until a new full result is reported.
