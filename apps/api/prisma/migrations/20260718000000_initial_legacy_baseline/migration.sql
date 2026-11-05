@@ -1,3 +1,21 @@
+-- Initial historical baseline (31 legacy models, 13 enums), generated from
+-- schema.legacy-baseline.prisma with Prisma 5.22 migrate diff --from-empty.
+-- IMPORTANT: this is ONLY for pristine databases. Existing databases
+-- must verify their migration history and mark this baseline as applied
+-- after a tested backup/restore; DO NOT run the DDL on existing tables.
+BEGIN;
+DO $ordersawa_initial_baseline_guard$
+BEGIN
+  IF current_schema() IS NULL OR EXISTS (
+    SELECT 1 FROM pg_catalog.pg_tables
+    WHERE schemaname = current_schema()
+      AND tablename <> '_prisma_migrations'
+  ) THEN
+    RAISE EXCEPTION 'Refusing to replay OrderSawa initial baseline on a nonempty schema. Audit existing migrations and resolve the baseline instead.';
+  END IF;
+END;
+$ordersawa_initial_baseline_guard$;
+
 -- CreateEnum
 CREATE TYPE "GlobalRole" AS ENUM ('SUPER_ADMIN', 'USER');
 
@@ -787,3 +805,4 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_restaurantId_fkey" FOREIGN KEY (
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+COMMIT;
