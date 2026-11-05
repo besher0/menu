@@ -56,8 +56,16 @@ $baseDirectUrl = Verify-And-ScopeUrl $originalDirectUrl "DIRECT_URL"
 # Runtime Prisma tests use a direct session rather than PgBouncer transaction
 # pooling, which can reset session search_path to public between statements.
 $directTestHost = "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech"
+$pooledTestHost = "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech"
+# Neon direct and pooler URLs for this exact test compute share credentials.
+# If DIRECT_URL was incorrectly copied as the pooled value, switch ONLY the
+# already-verified test host in memory; never broaden the allowlist or edit .env.
+if (([Uri]$baseDirectUrl).Host -ceq $pooledTestHost) {
+  $fromHost = '(?<=@)' + [regex]::Escape($pooledTestHost) + '(?=[:/])'
+  $baseDirectUrl = [regex]::Replace($baseDirectUrl, $fromHost, $directTestHost)
+}
 if (([Uri]$baseDirectUrl).Host -cne $directTestHost) {
-  throw "DIRECT_URL must use the exact unpooled disposable Neon endpoint for schema-isolated runtime tests"
+  throw "DIRECT_URL must point to the reviewed disposable Neon direct endpoint"
 }
 if ($baseDirectUrl -match '(?:\?|&)options=') {
   throw "DIRECT_URL must not carry additional PostgreSQL connection options for these tests"
