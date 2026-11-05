@@ -469,3 +469,9 @@ Fixed the script to use a Prisma schema datasource path (no URL in command
 line), and added `-VerifyOnly` to recheck the **already populated test
 schema** without creating another one or reapplying migrations. This final
 Neon diff check is **pending user verification**. No production data changed.
+
+## 2026-11-05 — Neon migration replay verify-only follow-up
+
+The user confirmed that the patched `scripts/verify-migration-baseline-neon.ps1 -VerifyOnly` execution **worked** on the marked disposable Neon PostgreSQL 18.6 schema. Previously supplied output already confirmed all 9 migrations applied, a valid 34-table/15-enum/nine-row schema, and clean `migrate status`. The user's latest report indicates the last Windows-safe drift verification no longer fails; the complete Vitest/CLI footer was not pasted, so do not invent its verbatim output.
+
+**Neon disposable clean-bootstrap baseline: user-confirmed successful.** No changes to production or `main`. Remaining release blocker: the separate Stage 6C / Atomic Network Orders integration guard fixtures and full release acceptance. Any existing production database migration ledger still requires a separate audited adoption process.
