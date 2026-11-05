@@ -1,5 +1,7 @@
 # Sets up a schema isolated from public tables on the already-disposable Neon test branch.
-# Run from repository root: powershell -ExecutionPolicy Bypass -File scripts/prepare-product-configuration-neon-e2e.ps1
+# Run in the SAME existing PowerShell session from repository root:
+#   .\scripts\prepare-product-configuration-neon-e2e.ps1
+# Do not start a child powershell.exe -File; that would lose the test environment variables.
 # No passwords are written to disk or printed, no production DB migrations are run.
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
