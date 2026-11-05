@@ -14,9 +14,8 @@ BEGIN
   END IF;
 
   IF to_regnamespace('ordersawa_whatsapp_checkout_e2e') IS NULL THEN
-    CREATE SCHEMA ordersawa_whatsapp_checkout_e2e AUTHORIZATION neondb_owner;
-    COMMENT ON SCHEMA ordersawa_whatsapp_checkout_e2e IS
-      'ordersawa:whatsapp-checkout:e2e-disposable:2026-11-05';
+    EXECUTE 'CREATE SCHEMA ordersawa_whatsapp_checkout_e2e AUTHORIZATION neondb_owner';
+    EXECUTE format('COMMENT ON SCHEMA ordersawa_whatsapp_checkout_e2e IS %L', expected_marker);
   ELSE
     SELECT obj_description('ordersawa_whatsapp_checkout_e2e'::regnamespace, 'pg_namespace')
       INTO existing_marker;
