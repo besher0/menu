@@ -110,8 +110,12 @@ jobs:
         run: npm ci
       - name: Generate Prisma client
         run: npm run prisma:generate
-      - name: Create disposable integration schema
-        run: npx prisma db push --schema apps/api/prisma/schema.prisma --accept-data-loss
+      - name: Replay actual migrations on disposable network integration database
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - name: Install exact disposable Stage 6D completeness guard
+        run: npx prisma db execute --file scripts/stage6d3c3e-network-order-completeness-candidate.sql --schema apps/api/prisma/schema.prisma
+      - name: Verify expected disposable DB guard via unit assertions
+        run: npm run test -w @menu/api -- src/modules/orders/network-order-db-guard.spec.ts
       - name: Build shared package for integration imports
         run: npm run build -w @menu/shared
       - name: Stage 6C real PostgreSQL integration tests
