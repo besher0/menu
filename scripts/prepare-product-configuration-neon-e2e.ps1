@@ -29,7 +29,7 @@ function Verify-And-ScopeUrl([string]$raw, [string]$key) {
       $uri.AbsolutePath -ne "/neondb" -or
       $uri.UserInfo.Split(":")[0] -ne "neondb_owner" -or
       -not $uri.UserInfo.Contains(":") -or
-      $uri.Port -ne 5432 -or
+      $uri.Port -notin @(-1, 5432) -or
       $raw -notmatch '(?:\?|&)sslmode=require(?:&|$)') {
     throw "$key does not point to the pinned disposable Neon database"
   }
