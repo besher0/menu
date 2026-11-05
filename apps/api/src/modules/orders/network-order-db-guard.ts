@@ -17,8 +17,12 @@ const EXPECTED_NEON_PG18 = {
   money: "d371ec173eac71f9b792c9b21b55f91a1970111af940f32b36e26d3b03108d6e"
 } as const;
 
-// Pin the one disposable test endpoint, never accept arbitrary *.neon.tech.
-const DISPOSABLE_NEON_POOLER_HOST = "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech";
+// Pin both exact endpoints for the same disposable Neon test instance.
+// The direct endpoint has no "-pooler" component; never accept a hostname wildcard.
+const DISPOSABLE_NEON_TEST_HOSTS = new Set([
+  "ep-tiny-frost-b90v7e8c.c-7.eu-central-1.aws.neon.tech",
+  "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech"
+]);
 
 /** Match only the reviewed disposable Neon connection; never wildcard all Neon endpoints. */
 export function isDisposableNeonNetworkTestUrl(value: string | undefined): boolean {
@@ -26,7 +30,7 @@ export function isDisposableNeonNetworkTestUrl(value: string | undefined): boole
   try {
     const url = new URL(value);
     return (url.protocol === "postgresql:" || url.protocol === "postgres:")
-      && url.hostname === DISPOSABLE_NEON_POOLER_HOST
+      && DISPOSABLE_NEON_TEST_HOSTS.has(url.hostname)
       && url.pathname === "/neondb" && url.username === "neondb_owner"
       && url.password.length > 0 && (url.port === "" || url.port === "5432")
       && url.searchParams.get("sslmode") === "require"
