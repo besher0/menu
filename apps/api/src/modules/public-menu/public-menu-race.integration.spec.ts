@@ -1,8 +1,9 @@
-import { ExecutionContext, INestApplication, Module } from "@nestjs/common";
+import { INestApplication, Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { JwtModule, JwtService } from "@nestjs/jwt";
 import { NestFactory } from "@nestjs/core";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
@@ -62,6 +63,8 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
   const firstRestaurant = "s6d3c1-first";
   const secondRestaurant = "s6d3c1-second";
   const productId = "s6d3c1-legacy-product";
+  const ownerUserId = "s6d3c1-owner-user";
+  let ownerToken: string;
   let app: INestApplication;
   let origin: string;
   let race: { expected: number; reads: number; wait: Promise<void>; release: () => void } | null = null;
@@ -82,7 +85,7 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
 
   async function dashboardCategories(restaurantId = firstRestaurant) {
     const response = await fetch(`${origin}/dashboard/categories`, {
-      headers: { "x-test-restaurant-id": restaurantId }
+      headers: { authorization: `Bearer ${ownerToken}`, "x-restaurant-id": restaurantId }
     });
     return { status: response.status, body: await response.json() as Record<string, any> };
   }
@@ -150,10 +153,19 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     // Only the dedicated disposable database is touched after both checks.
     await prisma.product.deleteMany({ where: { restaurantId: { in: [firstRestaurant, secondRestaurant] } } });
     await prisma.category.deleteMany({ where: { restaurantId: { in: [firstRestaurant, secondRestaurant] } } });
+    await prisma.restaurantMember.deleteMany({ where: { restaurantId: { in: [firstRestaurant, secondRestaurant] } } });
     await prisma.restaurant.deleteMany({ where: { id: { in: [firstRestaurant, secondRestaurant] } } });
+    await prisma.user.deleteMany({ where: { id: ownerUserId } });
     await prisma.restaurant.createMany({ data: [
       { id: firstRestaurant, slug: "s6d3c1-a", name: "First disposable restaurant", currency: "EGP" },
       { id: secondRestaurant, slug: "s6d3c1-b", name: "Second disposable restaurant", currency: "EGP" }
+    ] });
+    await prisma.user.create({ data: {
+      id: ownerUserId, email: "s6d3c1-owner@example.test", passwordHash: "test-only", role: "USER"
+    } });
+    await prisma.restaurantMember.createMany({ data: [
+      { id: "s6d3c1-member-a", restaurantId: firstRestaurant, userId: ownerUserId, role: "OWNER" },
+      { id: "s6d3c1-member-b", restaurantId: secondRestaurant, userId: ownerUserId, role: "OWNER" }
     ] });
     await prisma.category.create({ data: { id: "s6d3c1-regular", restaurantId: firstRestaurant,
       slug: "pizza", name: "Pizza", sortOrder: 1 } });
@@ -200,32 +212,25 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
       get(target, key) { return key === "category" ? category : Reflect.get(target, key, target); }
     });
     @Module({
+      imports: [JwtModule.register({ secret: randomBytes(32).toString("hex") })],
       controllers: [PublicMenuController, DashboardController],
       providers: [
         PublicMenuService, PublicWhatsappCheckoutService, FeatureFlagsService, DashboardService,
+        JwtAuthGuard, RestaurantContextGuard,
         { provide: PrismaService, useValue: db },
-        { provide: ConfigService, useValue: { get: () => undefined } },
-        // Exercise the real DashboardController and DashboardService via HTTP.
-        // Auth and restaurant context are mocked for this isolated race suite.
-        { provide: JwtAuthGuard, useValue: { canActivate: () => true } },
-        { provide: RestaurantContextGuard, useValue: {
-          canActivate: (context: ExecutionContext) => {
-            const request = context.switchToHttp().getRequest<{
-              headers: Record<string, string | string[] | undefined>;
-              restaurant?: { id: string };
-            }>();
-            const id = request.headers["x-test-restaurant-id"];
-            if (id !== firstRestaurant && id !== secondRestaurant) return false;
-            request.restaurant = { id };
-            return true;
-          }
-        } }
+        { provide: ConfigService, useValue: { get: () => undefined } }
       ]
     })
     class TestModule {}
-    app = await NestFactory.create(TestModule, { logger: false });
+    // Never abort the Node/Vitest worker on a Nest DI failure. Propagate
+    // initialization exceptions so the real cause is visible to the test.
+    app = await NestFactory.create(TestModule, { logger: false, abortOnError: false });
     await app.listen(0, "127.0.0.1");
     origin = await app.getUrl();
+    const jwt = app.get(JwtService);
+    ownerToken = await jwt.signAsync({
+      sub: ownerUserId, email: "s6d3c1-owner@example.test", role: "USER"
+    });
   });
 
   beforeEach(async () => {
