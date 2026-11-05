@@ -32,17 +32,26 @@ function Verify-TestUrl([string]$raw, [string]$name) {
       $u.UserInfo.Split(":")[0] -cne "neondb_owner" -or
       -not $u.UserInfo.Contains(":") -or
       $u.Port -notin @(-1, 5432) -or
-      $raw -notmatch '(?:\?|&)sslmode=require(?:&|$)' -or
-      $raw -notmatch '(?:\?|&)channel_binding=require(?:&|$)') {
+      $raw -notmatch '(?:\?|&)sslmode=require(?:&|$)') {
     throw "$name is NOT the exact reviewed disposable Neon test compute"
   }
-  if ($raw -match '(?:\?|&)options=') {
-    throw "$name already contains unexpected PostgreSQL startup options"
+  $queryKeys = @(([Uri]$raw).Query.TrimStart('?').Split('&') | ForEach-Object { ($_ -split '=', 2)[0].ToLowerInvariant() })
+  if (($queryKeys | Where-Object { $_ -eq "schema" }).Count -gt 1 -or
+      ($queryKeys | Where-Object { $_ -eq "channel_binding" }).Count -gt 1 -or
+      ($queryKeys | Where-Object { $_ -eq "sslmode" }).Count -gt 1) {
+    throw "$name contains duplicate connection parameters"
+  }
+  if ($raw -match '(?:\?|&)options=' -or
+      ($raw -match '(?:\?|&)channel_binding=([^&]*)' -and $Matches[1] -cne "require")) {
+    throw "$name contains unexpected PostgreSQL connection options"
   }
   if ($raw -match '(?:\?|&)schema=([^&]*)') {
     if ($Matches[1] -cne "public") { throw "$name selects an unexpected schema" }
     $raw = $raw -replace '([?&])schema=public(&?)', '$1'
     $raw = $raw.TrimEnd('?', '&')
+  }
+  if ($raw -notmatch '(?:\?|&)channel_binding=require(?:&|$)') {
+    $raw += "&channel_binding=require"
   }
   return $raw
 }
