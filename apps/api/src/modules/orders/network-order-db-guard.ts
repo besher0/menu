@@ -3,16 +3,46 @@ import type { Prisma } from "@prisma/client";
 
 // Fingerprints of the PostgreSQL 16 definitions in the disposable-only Stage 6D.3C3E candidate.
 // A trigger name alone is not evidence that the required commit guard is installed.
-const EXPECTED = {
+const EXPECTED_PG16 = {
   trigger: "45aee35f2ba9ffa3dad765de5bb22edabd4d334559483726a9ec3fac72ef5a45",
   guard: "7a3e6ffd54bfd096a64e5b3c530facdd366d649354d4296d7c1b03df170e8936",
   money: "0a84da4aa22b4e0c6079d4bcb2fd5a7c907295a30fa3efe1128b95dc0a2780bf"
 } as const;
 
+// Independently observed on the isolated Neon PostgreSQL 18.6 Stage 6D fixture.
+// These fingerprints are NOT interchangeable with the PostgreSQL 16 baseline.
+const EXPECTED_NEON_PG18 = {
+  trigger: "45aee35f2ba9ffa3dad765de5bb22edabd4d334559483726a9ec3fac72ef5a45",
+  guard: "75cbdd5a312e7c78e36a0e6bc6c43d4562ee9eaf4a2e3473f69691912395eef0",
+  money: "d371ec173eac71f9b792c9b21b55f91a1970111af940f32b36e26d3b03108d6e"
+} as const;
+
+// Pin the one disposable test endpoint, never accept arbitrary *.neon.tech.
+const DISPOSABLE_NEON_POOLER_HOST = "ep-tiny-frost-b90v7e8c-pooler.c-7.eu-central-1.aws.neon.tech";
+
+function neonTestOptedIn(): boolean {
+  if (process.env.NODE_ENV !== "test" || process.env.ENABLE_DISPOSABLE_NETWORK_ORDERS !== "1"
+    || process.env.NEON_DISPOSABLE_NETWORK_TESTS !== "1" || process.env.GITHUB_ACTIONS === "true") return false;
+  const value = process.env.NETWORK_ORDER_TEST_DATABASE_URL;
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "postgresql:" || url.protocol === "postgres:")
+      && url.hostname === DISPOSABLE_NEON_POOLER_HOST
+      && url.pathname === "/neondb" && url.username === "neondb_owner"
+      && url.password.length > 0 && (url.port === "" || url.port === "5432")
+      && url.searchParams.get("sslmode") === "require"
+      && url.searchParams.get("channel_binding") === "require";
+  } catch {
+    return false;
+  }
+}
+
 export const NETWORK_ORDER_COMPLETENESS_CONSTRAINT = '"Order_network_test_completeness_guard"';
 
 type GuardState = {
   databaseName: string;
+  databaseUser: string;
   address: string | null;
   port: number | null;
   serverVersion: number;
@@ -38,7 +68,7 @@ export async function assertNetworkOrderCompletenessGuard(transaction: Prisma.Tr
   let state: GuardState;
   try {
     const rows = await transaction.$queryRaw<GuardState[]>`
-      SELECT current_database() AS "databaseName", host(inet_server_addr()) AS address,
+      SELECT current_database() AS "databaseName", current_user AS "databaseUser", host(inet_server_addr()) AS address,
         inet_server_port() AS port, current_setting('server_version_num')::int AS "serverVersion",
         count(t.oid)::int AS "triggerCount",
         max(encode(sha256(convert_to(pg_get_triggerdef(t.oid), 'UTF8')), 'hex')) AS "triggerHash",
@@ -76,15 +106,19 @@ export async function assertNetworkOrderCompletenessGuard(transaction: Prisma.Tr
   } catch {
     throw new ServiceUnavailableException({ error: "NETWORK_ORDER_DB_GUARD_UNAVAILABLE", message: "Test order storage guard could not be verified." });
   }
-  if (!state || !state.databaseName.startsWith("ordersawa_stage3_stage6c_")
-    || state.address !== "127.0.0.1" || state.port !== 55440
-    || state.serverVersion < 160000 || state.serverVersion >= 170000
-    || state.triggerCount !== 1 || state.triggerHash !== EXPECTED.trigger
+  const expectedLocal = state && state.databaseName.startsWith("ordersawa_stage3_stage6c_")
+    && state.address === "127.0.0.1" && state.port === 55440
+    && state.serverVersion >= 160000 && state.serverVersion < 170000;
+  const expectedNeon = state && neonTestOptedIn()
+    && state.databaseName === "neondb" && state.databaseUser === "neondb_owner"
+    && state.serverVersion === 180006;
+  const expected = expectedLocal ? EXPECTED_PG16 : expectedNeon ? EXPECTED_NEON_PG18 : null;
+  if (!state || !expected || state.triggerCount !== 1 || state.triggerHash !== expected.trigger
     || state.triggerType !== 21 || state.deferrable !== true || state.initiallyDeferred !== true
     || state.triggerEnabled !== "O" || state.sourceColumnMatches !== true
-    || state.guardFunctionHash !== EXPECTED.guard || state.guardFunctionArgs !== 0
+    || state.guardFunctionHash !== expected.guard || state.guardFunctionArgs !== 0
     || state.guardFunctionConfig?.join("|") !== "search_path=pg_catalog, public"
-    || state.moneyFunctionHash !== EXPECTED.money
+    || state.moneyFunctionHash !== expected.money
     || state.moneyFunctionConfig?.join("|") !== "search_path=pg_catalog"
     || state.moneyFunctionImmutable !== true || state.moneyFunctionSignature !== "value jsonb"
     || state.stage6cTriggerCount !== 6) {
