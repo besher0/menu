@@ -272,3 +272,37 @@ Neon test schema is required, with SQL identity and Prisma ORM routing
 checks before any fixture cleanup. Atomic Network Order tests remain
 separate and require multiple isolated databases and Stage 6C/6D guard
 fixtures.
+
+
+## 2026-11-05 — Public Menu Race isolated Neon fixture ready
+
+New test-only files on `refactor/product-network-production-hardening`:
+- `scripts/public-menu-race-neon-e2e-schema.sql`: creates only the
+  `ordersawa_public_menu_race_e2e` schema marked
+  `ordersawa:public-menu-race:e2e-disposable:2026-11-05`.
+- `scripts/prepare-public-menu-race-neon-e2e.ps1`: reuses the exact,
+  reviewed disposable Neon host allowlist; runs only Prisma db push against
+  the new schema, restores the original runtime DATABASE_URL and DIRECT_URL
+  and prepares `PUBLIC_MENU_RACE_TEST_DATABASE_URL` for the same PowerShell
+  session with the direct endpoint and pinned search_path.
+- `apps/api/src/modules/public-menu/public-menu-race.integration.spec.ts`:
+  permits the marked Neon schema with an explicit opt-in, verifies actual
+  PostgreSQL 18.6 DB identity, search-path, schema comment, all 34 tables,
+  and a real Prisma restaurant model read of a qualified temporary canary
+  **before** destructive test fixtures. Preserves the existing local PG16
+  allowlist. Remote timeout is increased without modifying business logic.
+
+**Execution still pending.** Run from the root of the known disposable
+Neon repository session, not production:
+
+```powershell
+git -c http.version=HTTP/1.1 fetch origin refactor/product-network-production-hardening
+git merge --ff-only FETCH_HEAD
+.\scripts\prepare-public-menu-race-neon-e2e.ps1
+npm run typecheck -w @menu/api
+npm run test -w @menu/api -- src/modules/public-menu/public-menu-race.integration.spec.ts
+```
+
+These are additional race tests; passing them does not satisfy the separate
+3-database guarded Network Orders atomic integration suite, restore-tested
+migration history baseline, or production rollout requirements.
