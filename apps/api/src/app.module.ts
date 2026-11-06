@@ -11,6 +11,7 @@ import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module
 import { MediaModule } from "./modules/media/media.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { PrismaModule } from "./modules/prisma/prisma.module";
+import { resolveJwtSecret } from "./common/security/jwt-secret";
 import { ProductsModule } from "./modules/products/products.module";
 import { PublicMenuModule } from "./modules/public-menu/public-menu.module";
 import { QrModule } from "./modules/qr/qr.module";
@@ -21,7 +22,7 @@ import { SyncModule } from "./modules/sync/sync.module";
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({
       global: true,
-      secret: process.env.JWT_SECRET ?? "dev-secret",
+      secret: resolveJwtSecret(),
       signOptions: { expiresIn: "7d" }
     }),
     PrismaModule,
