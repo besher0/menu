@@ -96,8 +96,8 @@ function policyFor(request: Request): RateLimitPolicy {
   return globalPolicy;
 }
 
-function cleanupExpiredBuckets(now: number, force = false) {
-  if (!force && now - lastCleanupAt < 60_000) {
+function cleanupExpiredBuckets(now: number) {
+  if (now - lastCleanupAt < 60_000) {
     return;
   }
 
@@ -118,9 +118,6 @@ export function rateLimitMiddleware(request: Request, response: Response, next: 
 
   const policy = policyFor(request);
   const key = `${policy.name}:${requestIp(request)}`;
-  if (!buckets.has(key) && buckets.size >= maxIpBuckets) {
-    cleanupExpiredBuckets(now, true);
-  }
   // Under an IP-rotation flood, refuse unbounded allocations. All new IPs
   // within a policy share the overflow budget until active buckets expire.
   const store = buckets.has(key) || buckets.size < maxIpBuckets ? buckets : overflowBuckets;
