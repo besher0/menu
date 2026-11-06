@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: menu_password
       POSTGRES_DB: menu
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - menu_postgres_data:/var/lib/postgresql/data
     healthcheck:
