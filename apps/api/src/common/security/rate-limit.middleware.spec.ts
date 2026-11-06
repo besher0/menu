@@ -54,6 +54,38 @@ describe("public request rate limiting", () => {
     expect(invoke("/public/menus/pizza-lab/track", ip).next).toHaveBeenCalledOnce();
   });
 
+  it("bounds rotating-IP state and fails closed using policy-specific overflow buckets", async () => {
+    vi.stubEnv("RATE_LIMIT_MAX_IP_BUCKETS", "2");
+    vi.resetModules();
+    try {
+      const { rateLimitMiddleware: limited } = await import("./rate-limit.middleware");
+      const hit = (path: string, ip: string) => {
+        const headers: Record<string, string> = {};
+        const json = vi.fn();
+        const status = vi.fn().mockReturnValue({ json });
+        const next = vi.fn();
+        limited({ path, method: "POST", ip } as Request,
+          { setHeader: (name: string, value: string) => { headers[name] = value; }, status } as unknown as Response,
+          next as NextFunction);
+        return { headers, status, next };
+      };
+      expect(hit("/public/menus/pizza-lab/checkout/whatsapp/prepare", "flood-ip-1").next).toHaveBeenCalledOnce();
+      expect(hit("/public/menus/pizza-lab/checkout/whatsapp/prepare", "flood-ip-2").next).toHaveBeenCalledOnce();
+      for (let i = 0; i < 20; i += 1) {
+        expect(hit("/public/menus/pizza-lab/checkout/whatsapp/prepare", `rotating-ip-${i}`).next).toHaveBeenCalledOnce();
+      }
+      expect(hit("/public/menus/pizza-lab/checkout/whatsapp/prepare", "rotating-ip-21").status)
+        .toHaveBeenCalledWith(429);
+      // Existing clients keep their own buckets even when overflow is exhausted.
+      expect(hit("/public/menus/pizza-lab/checkout/whatsapp/confirm", "flood-ip-1").next).toHaveBeenCalledOnce();
+      // Overflow is per policy: analytics remains independent of checkout.
+      expect(hit("/public/menus/pizza-lab/track", "rotating-analytics").next).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
   it("does not mix rate limit buckets between client IPs", () => {
     const first = invoke("/public/menus/pizza-lab/checkout/whatsapp/prepare", "test-isolation-198.51.100.13");
     const second = invoke("/public/menus/pizza-lab/checkout/whatsapp/prepare", "test-isolation-198.51.100.14");
