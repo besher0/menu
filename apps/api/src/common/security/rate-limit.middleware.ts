@@ -13,6 +13,9 @@ type RateLimitBucket = {
 };
 
 const buckets = new Map<string, RateLimitBucket>();
+// Limit state from rotating client IPs. Overflow clients share a bounded, fail-closed bucket per policy.
+const maxIpBuckets = readPositiveInt("RATE_LIMIT_MAX_IP_BUCKETS", 50_000);
+const overflowBuckets = new Map<string, RateLimitBucket>();
 let lastCleanupAt = Date.now();
 
 const globalPolicy: RateLimitPolicy = {
@@ -93,16 +96,18 @@ function policyFor(request: Request): RateLimitPolicy {
   return globalPolicy;
 }
 
-function cleanupExpiredBuckets(now: number) {
-  if (now - lastCleanupAt < 60_000) {
+function cleanupExpiredBuckets(now: number, force = false) {
+  if (!force && now - lastCleanupAt < 60_000) {
     return;
   }
 
   lastCleanupAt = now;
 
-  for (const [key, bucket] of buckets.entries()) {
-    if (bucket.resetAt <= now) {
-      buckets.delete(key);
+  for (const store of [buckets, overflowBuckets]) {
+    for (const [key, bucket] of store.entries()) {
+      if (bucket.resetAt <= now) {
+        store.delete(key);
+      }
     }
   }
 }
@@ -113,13 +118,20 @@ export function rateLimitMiddleware(request: Request, response: Response, next: 
 
   const policy = policyFor(request);
   const key = `${policy.name}:${requestIp(request)}`;
-  const current = buckets.get(key);
+  if (!buckets.has(key) && buckets.size >= maxIpBuckets) {
+    cleanupExpiredBuckets(now, true);
+  }
+  // Under an IP-rotation flood, refuse unbounded allocations. All new IPs
+  // within a policy share the overflow budget until active buckets expire.
+  const store = buckets.has(key) || buckets.size < maxIpBuckets ? buckets : overflowBuckets;
+  const storeKey = store === buckets ? key : policy.name;
+  const current = store.get(storeKey);
   const bucket = current && current.resetAt > now
     ? current
     : { count: 0, resetAt: now + policy.windowMs };
 
   bucket.count += 1;
-  buckets.set(key, bucket);
+  store.set(storeKey, bucket);
 
   const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
   response.setHeader("X-RateLimit-Limit", String(policy.max));
