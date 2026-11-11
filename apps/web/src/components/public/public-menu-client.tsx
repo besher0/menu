@@ -656,7 +656,7 @@ export function PublicMenuClient({
   const router = useRouter();
   const selectedBranchId = useSearchParams().get("selectedBranch");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [cartLoaded, setCartLoaded] = useState(false);
+  const [loadedCartKey, setLoadedCartKey] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
@@ -743,12 +743,12 @@ export function PublicMenuClient({
   }, [data.restaurant.slug, view]);
 
   useEffect(() => {
-    setCartLoaded(false);
+    setLoadedCartKey(null);
 
     if (!whatsappOrderingEnabled) {
       setCart([]);
       window.localStorage.removeItem(storageKey);
-      setCartLoaded(true);
+      setLoadedCartKey(storageKey);
       return;
     }
 
@@ -771,7 +771,7 @@ export function PublicMenuClient({
     } else {
       setCart([]);
     }
-    setCartLoaded(true);
+    setLoadedCartKey(storageKey);
   }, [data.restaurant.currency, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
@@ -782,11 +782,11 @@ export function PublicMenuClient({
   }, [languageStorageKey]);
 
   useEffect(() => {
-    if (!cartLoaded || !whatsappOrderingEnabled) {
+    if (loadedCartKey !== storageKey || !whatsappOrderingEnabled) {
       return;
     }
     window.localStorage.setItem(storageKey, JSON.stringify(cart));
-  }, [cart, cartLoaded, storageKey, whatsappOrderingEnabled]);
+  }, [cart, loadedCartKey, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
     window.localStorage.setItem(languageStorageKey, language);
