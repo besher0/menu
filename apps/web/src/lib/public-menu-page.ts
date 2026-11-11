@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getPublicMenu, isPublicMenuNotFoundError, type PublicMenuData } from "@/lib/api";
+import { getPublicBranches, getPublicMenu, isPublicMenuNotFoundError, type PublicBranchesData, type PublicMenuData } from "@/lib/api";
 
 export async function getPublicMenuOrNotFound(
   slug: string,
@@ -12,6 +12,15 @@ export async function getPublicMenuOrNotFound(
       notFound();
     }
 
+    throw error;
+  }
+}
+
+export async function getPublicBranchesOrNotFound(slug: string): Promise<PublicBranchesData> {
+  try {
+    return await getPublicBranches(slug);
+  } catch (error) {
+    if (isPublicMenuNotFoundError(error)) notFound();
     throw error;
   }
 }
