@@ -13,6 +13,7 @@ type QrItem = {
   targetUrl: string;
   qrUrl: string;
   svg: string;
+  scanCount?: number;
   branch?: {
     id: string;
     slug: string;
@@ -21,12 +22,16 @@ type QrItem = {
   createdAt: string;
 };
 
+type BranchItem = { id: string; name: string; slug: string; isActive: boolean };
+
 type ApiPayload<T> = {
   data?: T;
 };
 
 export function QrDashboardClient() {
   const [items, setItems] = useState<QrItem[]>([]);
+  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [newBranchId, setNewBranchId] = useState("");
   const [label, setLabel] = useState("Special offer");
   const [targetUrl, setTargetUrl] = useState(preferredRestaurantUrl("your-restaurant"));
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -35,7 +40,7 @@ export function QrDashboardClient() {
   const [editSavingId, setEditSavingId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
-  const scansTotal = useMemo(() => items.length * 12, [items.length]);
+  const scansTotal = useMemo(() => items.reduce((sum, item) => sum + (item.scanCount ?? 0), 0), [items]);
 
   useEffect(() => {
     const restaurantSlug = resolveStoredRestaurant()?.slug;
@@ -51,9 +56,10 @@ export function QrDashboardClient() {
     setMessage("");
 
     try {
-      const response = await fetch(`${API_URL}/dashboard/qr`, {
-        headers: authHeaders()
-      });
+      const [response, branchResponse] = await Promise.all([
+        fetch(`${API_URL}/dashboard/qr`, { headers: authHeaders() }),
+        fetch(`${API_URL}/dashboard/branches`, { headers: authHeaders() })
+      ]);
 
       if (!response.ok) {
         throw new Error("تعذر تحميل رموز QR. تأكد من تشغيل API وأن الباقة تدعم QR_CODES.");
@@ -61,6 +67,13 @@ export function QrDashboardClient() {
 
       const payload = (await response.json()) as ApiPayload<QrItem[]> | QrItem[];
       setItems(Array.isArray(payload) ? payload : payload.data ?? []);
+      if (branchResponse.ok) {
+        const branchPayload = (await branchResponse.json()) as ApiPayload<BranchItem[]> | BranchItem[];
+        const active = (Array.isArray(branchPayload) ? branchPayload : branchPayload.data ?? [])
+          .filter((item) => item.isActive);
+        setBranches(active);
+        setNewBranchId((previous) => active.some((item) => item.id === previous) ? previous : active[0]?.id ?? "");
+      }
       setStatus("idle");
     } catch (error) {
       setStatus("error");
@@ -95,6 +108,38 @@ export function QrDashboardClient() {
       }
       setStatus("success");
       setMessage("تم إنشاء QR جديد.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر إنشاء QR.");
+    }
+  }
+
+  async function createNewSystemQr(kind: "selector" | "branch") {
+    if (status === "saving" || (kind === "branch" && !newBranchId)) return;
+    setStatus("saving");
+    setMessage("");
+    try {
+      const endpoint = kind === "selector"
+        ? "branch-selector"
+        : `branch-entry/${encodeURIComponent(newBranchId)}`;
+      const response = await fetch(`${API_URL}/dashboard/qr/${endpoint}`, {
+        method: "POST",
+        headers: authHeaders()
+      });
+      if (!response.ok) {
+        throw new Error("تعذر إنشاء QR الجديد. تأكد من تفعيل الميزة وصلاحياتك.");
+      }
+      const payload = (await response.json()) as ApiPayload<QrItem> | QrItem;
+      const item = unwrapPayload(payload);
+      if (item) {
+        setItems((current) => current.some((existing) => existing.id === item.id)
+          ? current.map((existing) => existing.id === item.id ? { ...item, scanCount: existing.scanCount } : existing)
+          : [item, ...current]);
+      }
+      setStatus("success");
+      setMessage(kind === "selector"
+        ? "QR اختيار الفروع جاهز، ويمكنك تنزيله بدون التأثير على الرموز القديمة."
+        : "QR الفرع الجديد جاهز، والرموز القديمة لم تتغيّر.");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء QR.");
@@ -138,7 +183,7 @@ export function QrDashboardClient() {
       const item = unwrapPayload(payload);
 
       if (item) {
-        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? item : currentItem)));
+        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? { ...item, scanCount: currentItem.scanCount } : currentItem)));
       }
 
       setStatus("success");
@@ -198,9 +243,34 @@ export function QrDashboardClient() {
         </article>
         <article>
           <Download size={28} />
-          <span>قراءات تجريبية</span>
+          <span>إجمالي المسحات الفعلية</span>
           <b>{scansTotal}</b>
         </article>
+      </section>
+
+      <section className="os-qr-new-tools" dir="rtl">
+        <div className="os-qr-new-tools-copy">
+          <h2>نظام QR الجديد للفروع</h2>
+          <p>إنشاء رموز جديدة فقط. جميع الرموز المطبوعة سابقاً وروابطها محفوظة بدون أي تغيير.</p>
+        </div>
+        <div className="os-qr-new-tools-actions">
+          <button type="button" className="primary-action" disabled={status === "saving"}
+            onClick={() => void createNewSystemQr("selector")}>
+            <QrCode size={18} /> QR رئيسي لاختيار الفروع
+          </button>
+          <div className="os-qr-new-branch">
+            <select aria-label="اختر الفرع لإنشاء QR جديد"
+              value={newBranchId} onChange={(event) => setNewBranchId(event.target.value)}>
+              {branches.length === 0 ? <option value="">لا توجد فروع متاحة</option> : null}
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+            <button type="button" className="secondary-action"
+              disabled={!newBranchId || status === "saving"}
+              onClick={() => void createNewSystemQr("branch")}>
+              <Plus size={18} /> QR للفرع
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="qr-layout">

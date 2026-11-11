@@ -14,6 +14,24 @@ export class PublicMenuService {
     @Inject(ConfigService) private readonly config: ConfigService
   ) {}
 
+  async branchOptions(restaurantSlug: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
+      select: {
+        slug: true,
+        name: true,
+        logoUrl: true,
+        branches: {
+          where: { isActive: true, deletedAt: null },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, slug: true, name: true, address: true, city: true }
+        }
+      }
+    });
+    if (!restaurant) throw new NotFoundException("Restaurant not found");
+    return { restaurant };
+  }
+
   async menu(restaurantSlug: string, userAgent?: string | string[], trackView = true) {
     const restaurant = await this.findPublicRestaurant(restaurantSlug);
     void userAgent;

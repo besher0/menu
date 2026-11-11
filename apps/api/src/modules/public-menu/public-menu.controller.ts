@@ -19,6 +19,12 @@ export class PublicMenuController {
     return this.publicMenuService.menu(restaurantSlug, request.headers["user-agent"], track === "1");
   }
 
+  @Get(":restaurantSlug/branches")
+  @Header("Cache-Control", "public, max-age=0, s-maxage=60, stale-while-revalidate=300")
+  branchOptions(@Param("restaurantSlug") restaurantSlug: string) {
+    return this.publicMenuService.branchOptions(restaurantSlug);
+  }
+
   @Get(":restaurantSlug/products")
   @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
   products(@Param("restaurantSlug") restaurantSlug: string) {

@@ -238,3 +238,115 @@ describe("QrService updates", () => {
     expect(prisma.qrCode.update).not.toHaveBeenCalled();
   });
 });
+
+
+describe("opt-in multi-branch QR compatibility", () => {
+  it("creates the new selector without updating any existing printed QR", async () => {
+    const old = qrCode();
+    const newCode = qrCode({
+      id: "qr-selector",
+      label: "اختيار الفرع",
+      targetUrl: "https://abo-malek.ordersawa.com/branches"
+    });
+    const prisma = {
+      qrCode: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue(newCode),
+        update: vi.fn()
+      }
+    };
+    const service = createService(prisma);
+    const result = await service.createBranchSelector("restaurant-1", "abo-malek");
+
+    expect(result.id).toBe("qr-selector");
+    expect(result.qrUrl).toBe("https://api.ordersawa.com/q/qr-selector");
+    expect(result.targetUrl).toBe("https://abo-malek.ordersawa.com/branches");
+    expect(prisma.qrCode.create).toHaveBeenCalledWith({
+      data: {
+        restaurantId: "restaurant-1",
+        branchId: null,
+        label: "اختيار الفرع",
+        targetUrl: "https://abo-malek.ordersawa.com/branches"
+      },
+      include: { branch: true }
+    });
+    expect(prisma.qrCode.update).not.toHaveBeenCalled();
+    expect(old.targetUrl).toBe("https://abo-malek.ordersawa.com");
+  });
+
+  it("reuses an existing new selector and never creates duplicates on repeated requests", async () => {
+    const prisma = {
+      qrCode: {
+        findFirst: vi.fn().mockResolvedValue(qrCode({
+          id: "selector-1",
+          targetUrl: "https://abo-malek.ordersawa.com/branches"
+        })),
+        create: vi.fn(),
+        update: vi.fn()
+      }
+    };
+    const service = createService(prisma);
+    const first = await service.createBranchSelector("restaurant-1", "abo-malek");
+    const second = await service.createBranchSelector("restaurant-1", "abo-malek");
+
+    expect(first.qrUrl).toBe(second.qrUrl);
+    expect(prisma.qrCode.create).not.toHaveBeenCalled();
+    expect(prisma.qrCode.update).not.toHaveBeenCalled();
+  });
+
+  it("creates a branch-specific QR using a stable ID, without modifying old branch QR links", async () => {
+    const prisma = {
+      branch: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "branch-1", slug: "first-branch", name: "فرع أول", isActive: true
+        })
+      },
+      qrCode: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockImplementation(async ({ data }: any) => qrCode({ ...data, id: "new-qr" })),
+        update: vi.fn()
+      }
+    };
+    const service = createService(prisma);
+    const entry = await service.createBranchEntry("restaurant-1", "abo-malek", "branch-1");
+
+    expect(prisma.branch.findFirst).toHaveBeenCalledWith({
+      where: { id: "branch-1", restaurantId: "restaurant-1", isActive: true, deletedAt: null }
+    });
+    expect(entry.targetUrl).toBe("https://abo-malek.ordersawa.com/?selectedBranch=branch-1");
+    expect(entry.qrUrl).toBe("https://api.ordersawa.com/q/new-qr");
+    expect(prisma.qrCode.update).not.toHaveBeenCalled();
+  });
+
+  it("does not create an entry code for a branch outside the restaurant or disabled", async () => {
+    const prisma = {
+      branch: { findFirst: vi.fn().mockResolvedValue(null) },
+      qrCode: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() }
+    };
+    const service = createService(prisma);
+
+    await expect(service.createBranchEntry("restaurant-1", "abo-malek", "other-branch"))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.qrCode.create).not.toHaveBeenCalled();
+  });
+
+  it("returns actual event counts for each QR instead of a synthetic estimate", async () => {
+    const prisma = {
+      qrCode: {
+        count: vi.fn().mockResolvedValue(2),
+        findMany: vi.fn().mockResolvedValue([
+          qrCode({ id: "old-qr" }),
+          qrCode({ id: "new-qr", targetUrl: "https://abo-malek.ordersawa.com/branches" })
+        ])
+      },
+      $queryRaw: vi.fn().mockResolvedValue([{ qrCodeId: "old-qr", scans: 7n }])
+    };
+    const service = createService(prisma);
+    const codes = await service.list("restaurant-1", "abo-malek");
+
+    expect(codes).toHaveLength(2);
+    expect(codes[0].scanCount).toBe(7);
+    expect(codes[1].scanCount).toBe(0);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+});
