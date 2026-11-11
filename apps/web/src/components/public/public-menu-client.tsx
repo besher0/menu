@@ -724,7 +724,7 @@ export function PublicMenuClient({
   useEffect(() => {
     // Never silently send a request to a different branch when a branch link is stale.
     if (selectedBranchId && !selectedBranch) {
-      router.replace(restaurantPath(data.restaurant.slug, "/branches", useSubdomainRoutes));
+      router.replace(restaurantPath(data.restaurant.slug, "/branches", isRestaurantSubdomainHost(window.location.host, data.restaurant.slug)));
     }
   }, [selectedBranchId, selectedBranch, data.restaurant.slug, useSubdomainRoutes, router]);
 
@@ -1030,7 +1030,7 @@ export function PublicMenuClient({
     { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com") },
     { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com") },
     { key: "tiktok", label: "TikTok", href: normalizeSocialUrl(data.restaurant.tiktokUrl, "tiktok.com") },
-    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone) } : null
+    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(selectedBranch?.whatsappPhone ?? data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone) } : null
   ].filter((item): item is { key: string; label: string; href: string | null } => Boolean(item)).filter((item): item is { key: string; label: string; href: string } => Boolean(item.href));
 
   function normalizeCheckoutDetails(details?: CheckoutDetails): CheckoutDetails | undefined {
