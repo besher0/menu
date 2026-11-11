@@ -102,6 +102,7 @@ export type PublicMenuData = {
     productOpenMode?: "MODAL" | "PAGE";
     branches?: Array<{
       id: string;
+      slug: string;
       name: string;
       address?: string | null;
       city?: string | null;
