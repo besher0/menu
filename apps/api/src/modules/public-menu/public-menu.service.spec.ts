@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import { PublicMenuService } from "./public-menu.service";
@@ -39,5 +39,41 @@ describe("PublicMenuService analytics", () => {
       "browser",
       "127.0.0.1"
     )).resolves.toEqual({ id: null, deduplicated: true });
+  });
+});
+
+describe("PublicMenuService branch discovery", () => {
+  it("loads only active branches and no products for the new QR selector", async () => {
+    const { service, prisma } = createService({ create: vi.fn() });
+    prisma.restaurant.findFirst.mockResolvedValue({
+      slug: "pizza-lab",
+      name: "Pizza Lab",
+      logoUrl: null,
+      branches: [{ id: "branch-1", slug: "hamdaniyeh", name: "الحمدانية" }]
+    });
+
+    const result = await service.branchOptions("pizza-lab");
+
+    expect(result.restaurant.branches).toHaveLength(1);
+    expect(prisma.restaurant.findFirst).toHaveBeenCalledWith({
+      where: { slug: "pizza-lab", isActive: true, deletedAt: null },
+      select: {
+        slug: true,
+        name: true,
+        logoUrl: true,
+        branches: {
+          where: { isActive: true, deletedAt: null },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, slug: true, name: true, address: true, city: true }
+        }
+      }
+    });
+  });
+
+  it("does not reveal branch names of inactive restaurants", async () => {
+    const { service, prisma } = createService({ create: vi.fn() });
+    prisma.restaurant.findFirst.mockResolvedValue(null);
+
+    await expect(service.branchOptions("disabled")).rejects.toBeInstanceOf(NotFoundException);
   });
 });
