@@ -215,6 +215,14 @@ export async function getPublicMenu(slug: string, options: { track?: boolean } =
   return apiGet<PublicMenuData>(`/public/menus/${encodeURIComponent(slug)}?track=0`);
 }
 
+export type PublicBranchesData = {
+  restaurant: Pick<PublicMenuData["restaurant"], "slug" | "name" | "logoUrl" | "branches">;
+};
+
+export async function getPublicBranches(slug: string): Promise<PublicBranchesData> {
+  return apiGet<PublicBranchesData>(`/public/menus/${encodeURIComponent(slug)}/branches`);
+}
+
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {
   return {
     restaurant: {
