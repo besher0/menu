@@ -24,7 +24,59 @@ export class QrService {
       orderBy: { createdAt: "asc" }
     });
 
-    return Promise.all(codes.map((code) => this.serialize(code)));
+    // One aggregate query gives real scan counts instead of a dashboard placeholder.
+    const counts = await this.prisma.$queryRaw<Array<{ qrCodeId: string | null; scans: bigint }>>`
+      SELECT "metadata"->>'qrCodeId' AS "qrCodeId", COUNT(*) AS "scans"
+      FROM "AnalyticsEvent"
+      WHERE "restaurantId" = ${restaurantId} AND "type" = 'QR_OPENED'
+      GROUP BY "metadata"->>'qrCodeId'
+    `;
+    const scansById = new Map(counts.map((row) => [row.qrCodeId, Number(row.scans)]));
+    return Promise.all(codes.map((code) => this.serialize(code, scansById.get(code.id) ?? 0)));
+  }
+
+  // Create-only operations: never rewrite targets or IDs of previously printed QR codes.
+  async createBranchSelector(restaurantId: string, restaurantSlug: string) {
+    await this.featureFlags.assertFeature(restaurantId, "QR_CODES");
+    const targetUrl = `${this.publicMenuUrl(restaurantSlug)}/branches`;
+    const existing = await this.prisma.qrCode.findFirst({
+      where: { restaurantId, branchId: null, targetUrl },
+      include: { branch: true }
+    });
+    if (existing) return this.serialize(existing);
+
+    const code = await this.prisma.qrCode.create({
+      data: { restaurantId, branchId: null, label: "اختيار الفرع", targetUrl },
+      include: { branch: true }
+    });
+    return this.serialize(code);
+  }
+
+  async createBranchEntry(restaurantId: string, restaurantSlug: string, branchId: string) {
+    await this.featureFlags.assertFeature(restaurantId, "QR_CODES");
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, restaurantId, isActive: true, deletedAt: null }
+    });
+    if (!branch) throw new BadRequestException("Active branch not found");
+
+    // Uses a new parameter, leaving legacy ?branch= QR destinations unchanged.
+    const targetUrl = `${this.publicMenuUrl(restaurantSlug)}/?selectedBranch=${encodeURIComponent(branch.slug)}`;
+    const existing = await this.prisma.qrCode.findFirst({
+      where: { restaurantId, branchId: branch.id, targetUrl },
+      include: { branch: true }
+    });
+    if (existing) return this.serialize(existing);
+
+    const code = await this.prisma.qrCode.create({
+      data: {
+        restaurantId,
+        branchId: branch.id,
+        label: `${branch.name} - QR جديد`,
+        targetUrl
+      },
+      include: { branch: true }
+    });
+    return this.serialize(code);
   }
 
   async create(restaurantId: string, restaurantSlug: string, dto: CreateQrCodeDto) {
@@ -207,7 +259,7 @@ export class QrService {
     branchId: string | null;
     createdAt: Date;
     branch?: { id: string; slug: string; name: string } | null;
-  }) {
+  }, scanCount = 0) {
     const qrUrl = this.publicQrUrl(code.id);
 
     return {
@@ -215,6 +267,7 @@ export class QrService {
       label: code.label,
       targetUrl: code.targetUrl,
       qrUrl,
+      scanCount,
       branch: code.branch
         ? {
             id: code.branch.id,
