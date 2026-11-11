@@ -133,7 +133,7 @@ export function QrDashboardClient() {
       const item = unwrapPayload(payload);
       if (item) {
         setItems((current) => current.some((existing) => existing.id === item.id)
-          ? current.map((existing) => existing.id === item.id ? item : existing)
+          ? current.map((existing) => existing.id === item.id ? { ...item, scanCount: existing.scanCount } : existing)
           : [item, ...current]);
       }
       setStatus("success");
@@ -183,7 +183,7 @@ export function QrDashboardClient() {
       const item = unwrapPayload(payload);
 
       if (item) {
-        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? item : currentItem)));
+        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? { ...item, scanCount: currentItem.scanCount } : currentItem)));
       }
 
       setStatus("success");
