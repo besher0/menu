@@ -60,7 +60,7 @@ export class QrService {
     if (!branch) throw new BadRequestException("Active branch not found");
 
     // Uses a new parameter, leaving legacy ?branch= QR destinations unchanged.
-    const targetUrl = `${this.publicMenuUrl(restaurantSlug)}/?selectedBranch=${encodeURIComponent(branch.slug)}`;
+    const targetUrl = `${this.publicMenuUrl(restaurantSlug)}/?selectedBranch=${encodeURIComponent(branch.id)}`;
     const existing = await this.prisma.qrCode.findFirst({
       where: { restaurantId, branchId: branch.id, targetUrl },
       include: { branch: true }
