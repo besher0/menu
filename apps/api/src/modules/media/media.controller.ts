@@ -18,8 +18,8 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { randomUUID } from "crypto";
 import { diskStorage } from "multer";
-import { extname } from "path";
 import { AppRequest } from "../../common/app-request";
+import { getUploadsDirectory } from "../../common/uploads-directory";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
 import {
@@ -29,6 +29,8 @@ import {
 } from "./dto/attach-product-media.dto";
 import { CreateMediaAssetDto } from "./dto/create-media-asset.dto";
 import { UpsertImageRuleDto } from "./dto/upsert-image-rule.dto";
+import { extname } from "node:path";
+import { MediaWriteGuard } from "./media-write.guard";
 import { MediaService } from "./media.service";
 import { ProductLibraryService } from "./product-library.service";
 import {
@@ -38,7 +40,7 @@ import {
 } from "./media-storage.service";
 
 @Controller("dashboard/media")
-@UseGuards(JwtAuthGuard, RestaurantContextGuard)
+@UseGuards(JwtAuthGuard, RestaurantContextGuard, MediaWriteGuard)
 export class MediaController {
   constructor(
     @Inject(MediaService) private readonly mediaService: MediaService,
@@ -103,22 +105,16 @@ export class MediaController {
 
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateMediaAssetDto) {
-    return this.mediaService.create(request.restaurant!.id, request.user?.sub, dto);
+    return this.mediaService.registerReference(request.restaurant!.id, request.user?.sub, dto);
   }
 
   @Post("upload")
   @UseInterceptors(
     FileInterceptor("file", {
       storage: diskStorage({
-        destination: "uploads",
+        destination: getUploadsDirectory(),
         filename: (_request, file, callback) => {
-          const safeBase = file.originalname
-            .replace(extname(file.originalname), "")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-            .slice(0, 48);
-          callback(null, `${Date.now()}-${randomUUID()}-${safeBase || "asset"}${extname(file.originalname).toLowerCase()}`);
+          callback(null, `.pending-${randomUUID()}`);
         }
       }),
       fileFilter: (_request, file, callback) => {
@@ -143,17 +139,25 @@ export class MediaController {
 
     const upload = await this.storage.storeUploadedFile(file, body.type);
 
-    return this.mediaService.create(request.restaurant!.id, request.user?.sub, {
-      url: upload.url,
-      type: body.type ?? this.mediaService.inferMediaType(file.originalname),
-      altText: body.altText ?? file.originalname,
-      size: upload.size,
-      filename: upload.filename,
-      originalFilename: upload.originalFilename,
-      mimeType: upload.mimeType,
-      provider: upload.provider,
-      metadata: upload.metadata
-    });
+    try {
+      const extension = extname(file.originalname).slice(1).toUpperCase();
+      const validatedFormat = ["GLB", "GLTF", "SVG"].includes(extension) ? extension : undefined;
+      const detectedType = validatedFormat === "SVG" ? "SVG_ICON" : validatedFormat ? "MODEL_3D" : this.mediaService.inferMediaType(file.originalname);
+      return await this.mediaService.create(request.restaurant!.id, request.user?.sub, {
+        url: upload.url,
+        type: validatedFormat ? detectedType : body.type ?? detectedType,
+        altText: body.altText ?? file.originalname,
+        size: upload.size,
+        filename: upload.filename,
+        originalFilename: upload.originalFilename,
+        mimeType: upload.mimeType,
+        provider: upload.provider,
+        metadata: upload.metadata
+      }, validatedFormat);
+    } catch (error) {
+      await this.storage.cleanupStoredUpload(upload);
+      throw error;
+    }
   }
 
   @Post("products/:productId/images")

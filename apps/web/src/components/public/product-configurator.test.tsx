@@ -34,9 +34,9 @@ describe("ProductConfigurator", () => {
     expect(css).toContain("var(--color-secondary)");
     expect(css).toContain(":focus-visible");
     expect(source).toContain('role="radiogroup"');
-    expect(source).toContain('role={radioMode ? "radiogroup"');
+    expect(source).toContain('role={radioMode && bounds.state === "MULTIPLE_VALID_SELECTIONS" ? "radiogroup"');
     expect(source).toContain("getPublicProductQuote");
-    expect(source).toContain("orderingEnabled && preview.valid");
+    expect(source).toContain("if (!preview?.valid || preview.total === null)");
     expect(source).toContain("product-bottom-cart-network");
     expect(css).toContain("var(--color-primary)");
   });
@@ -47,9 +47,9 @@ describe("ProductConfigurator", () => {
     expect(source).not.toContain("تم تجاهل السعر الأساسي");
     expect(source).not.toContain("معاينة فقط");
     expect(source).not.toContain("إعادة الضبط");
-    expect(source.indexOf("preview.lines.map")).toBeLessThan(source.indexOf("styles.total"));
+    expect(source.indexOf("<SummaryRows")).toBeLessThan(source.indexOf("styles.total"));
     expect(source).toContain("multiplyMoney(preview.total, draftQuantity)");
-    expect(source).toContain("displayCurrencyAmount(line.chargedAmount, currency)");
+    expect(source).toContain("<SummaryRows lines={preview.lines}");
     expect(source).not.toContain('line.included ? say(locale, "مشمول", "Included")');
   });
 
@@ -61,7 +61,7 @@ describe("ProductConfigurator", () => {
     expect(source).toContain("!checkoutEnabled || !orderingEnabled");
     expect(source).toContain("أسعار هذه القائمة مخفية؛ لا يمكن إضافة الصنف للسلة");
     expect(source).toContain("multiplyMoney(preview.total, draftQuantity)");
-    expect(source).toContain("preview.issues.slice(0, 8)");
+    expect(source).toContain("presentation.other.slice(0,8)");
     expect(source).toContain("option.label.includes(source.name)");
     expect(source).toContain("linked?.groups.length && instance.linkedSelection");
     expect(source).not.toContain("styles.linkedHeading");

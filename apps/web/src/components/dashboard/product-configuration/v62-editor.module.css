@@ -1,0 +1,167 @@
+.editor {
+  --os-brand-primary:#3d7a7c;--os-brand-primary-active:#2b5a5c;--os-bg-subtle:#f2f4f4;--os-bg-selected:#edf6f6;
+  --os-text-primary:#2e353a;--os-text-secondary:#6d7478;--os-text-muted:#8e9497;
+  --os-border-subtle:#e4e7e7;--os-border-default:#d6dbdb;--os-danger:#c94a4a;
+  color:var(--os-text-primary);font-size:15px;direction:rtl;min-width:0;
+  border:1px solid var(--os-border-subtle);border-radius:12px;padding:14px;background:var(--os-bg-subtle);margin-top:14px;
+}
+.editor *{box-sizing:border-box}
+.editor button,.editor input,.editor select{font-family:inherit}
+.editor button{cursor:pointer;color:inherit}
+.editor button:disabled{opacity:.45;cursor:not-allowed}
+.editor :focus-visible{outline:2px solid var(--os-brand-primary);outline-offset:2px}
+.editor h3,.editor h4,.editor p{margin:0;font-family:inherit}
+.editor :global(.config-section-head){display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.editor :global(.config-section-head h3){font-size:16px}
+.editor :global(.config-builder-shell){display:grid;grid-template-columns:minmax(0,1fr) 312px;gap:14px;align-items:start}
+.editor :global(.config-builder-shell > div:last-child){align-self:stretch;min-width:0}
+.editor :global(.config-tree-panel){min-width:0;border:1px solid var(--os-border-subtle);border-radius:12px;background:#f8fafa;padding:10px}
+.editor :global(.config-builder-toolbar),.editor :global(.config-builder-actions){display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.editor :global(.config-builder-toolbar){justify-content:space-between;margin-bottom:8px}
+.editor :global(.config-builder-hint){font-size:11.5px;color:var(--os-text-muted);line-height:1.6}
+.editor :global(.config-node-list){display:flex;flex-direction:column;position:relative;gap:0;min-width:0}
+.editor :global(.config-node-list.nested){margin-inline-start:21px;padding-inline-start:18px;margin-top:7px}
+.editor :global(.config-branch-item){position:relative;min-width:0}
+.editor :global(.nested > .config-branch-item)::before{content:"";position:absolute;inset-inline-start:-14px;top:0;width:14px;height:var(--node-anchor,23px);border-inline-start:1.5px solid #cfdcdc;border-bottom:1.5px solid #cfdcdc;border-end-start-radius:8px;pointer-events:none}
+.editor :global(.nested > .config-branch-item:not([data-last=true]))::after{content:"";position:absolute;inset-inline-start:-14px;top:var(--node-anchor,23px);bottom:0;border-inline-start:1.5px solid #cfdcdc;pointer-events:none}
+.editor :global(.config-node-card){border:1px solid var(--os-border-default);border-radius:10px;background:#fff;position:relative;min-width:0;box-shadow:0 1px 0 #2e353a05}
+.editor :global(.kind-group > .config-node-head){background:#eaf5f5}
+.editor :global(.kind-size > .config-node-head){background:#f0ebfa}
+.editor :global(.kind-group > .config-node-head:hover){background:#e2f0f0}
+.editor :global(.kind-size > .config-node-head:hover){background:#e9e1f7}
+.editor :global(.config-node-head){min-height:45px;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px}
+.editor :global(.config-collapse),.editor :global(.config-drag),.editor :global(.config-icon){width:28px;height:28px;min-width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--os-border-subtle);border-radius:7px;background:white;color:var(--os-text-secondary)}
+.editor :global(.config-drag){touch-action:none;cursor:grab}
+.editor :global(.config-kind){display:inline-flex;align-items:center;justify-content:center;min-width:48px;height:23px;padding:0 8px;border-radius:999px;font-size:10.5px;font-weight:900;white-space:nowrap}
+.editor :global(.config-kind.group){background:#d8ebeb;color:#2b5a5c}
+.editor :global(.config-kind.size){background:#dfd5f3;color:#6551a8}
+.editor :global(.config-node-title),.editor :global(.config-option-main){min-width:0;flex:1;cursor:pointer;text-align:start;background:none;border:0;padding:0}
+.editor :global(.config-node-title b){display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editor :global(.config-node-title small),.editor :global(.config-option-main small){display:block;margin-top:1px;color:var(--os-text-muted);font-size:10.6px}
+.editor :global(.config-node-tools){display:flex;align-items:center;gap:5px;flex:none;flex-wrap:wrap}
+.editor :global(.config-add-menu){position:relative}
+.editor :global(.config-add-menu summary){display:flex;align-items:center;list-style:none;cursor:pointer}
+.editor :global(.config-add-menu summary::-webkit-details-marker){display:none}
+.editor :global(.config-add-menu > div){position:absolute;inset-block-start:calc(100% + 4px);inset-inline-end:0;z-index:15;display:grid;gap:5px;padding:8px;border:1px solid var(--os-border-default);border-radius:9px;background:#fff;box-shadow:0 8px 20px #0002;min-width:150px}
+.editor :global(.config-mini-btn){min-height:28px;padding:0 8px;border:1px solid var(--os-border-default);border-radius:7px;background:#fff;font-size:10.5px;font-weight:850;white-space:nowrap}
+.editor :global(.config-mini-btn:hover),.editor :global(.config-icon:hover){border-color:var(--os-brand-primary);color:var(--os-brand-primary-active);background:var(--os-bg-selected)}
+.editor :global(.config-mini-btn.danger:hover){border-color:var(--os-danger);color:var(--os-danger);background:#fff4f4}
+.editor :global(.config-node-body){padding:5px 8px 8px;background:#fff;border-radius:0 0 10px 10px}
+.editor :global(.config-options-list){display:flex;flex-direction:column;position:relative;padding-inline-start:18px;min-width:0}
+.editor :global(.config-option-wrap){position:relative;min-width:0}
+.editor :global(.config-option-wrap)::before{content:"";position:absolute;inset-inline-start:-13px;top:0;width:13px;height:var(--node-anchor,21px);border-inline-start:1.5px solid #d6e0e0;border-bottom:1.5px solid #d6e0e0;border-end-start-radius:7px;pointer-events:none}
+.editor :global(.config-option-wrap:not([data-last=true]))::after{content:"";position:absolute;inset-inline-start:-13px;top:var(--node-anchor,21px);bottom:0;border-inline-start:1.5px solid #d6e0e0;pointer-events:none}
+.editor :global(.config-option-row){min-height:40px;display:flex;align-items:center;gap:7px;padding:4px 7px;border:1px solid var(--os-border-subtle);border-radius:9px;background:#fff;min-width:0}
+.editor :global(.config-option-row:hover){background:#f3f5f5}
+.editor :global(.config-option-main b){display:block;font-size:12.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editor :global(.config-selected){outline:2px solid #3d7a7c;outline-offset:1px}
+.editor :global(.config-option-children),.editor :global(.config-common-children){margin-top:6px}
+.editor :global(.config-empty){padding:16px;border:1px dashed var(--os-border-default);border-radius:11px;background:#fff;color:var(--os-text-secondary);text-align:center}
+.editor :global(.config-drawer){position:sticky;top:0;align-self:start;min-width:0;border:1px solid var(--os-border-default);border-radius:12px;background:#fff;max-height:none;overflow:visible}
+.editor :global(.config-drawer-head){display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 11px;border-bottom:1px solid var(--os-border-subtle);background:var(--os-bg-subtle);position:sticky;top:0;z-index:2}
+.editor :global(.config-drawer-head h4){font-size:14px}
+.editor :global(.config-drawer-body){padding:10px 11px;display:grid;gap:9px;min-width:0}
+.editor :global(.config-drawer-empty){padding:26px 14px;text-align:center;color:var(--os-text-muted);font-size:12px;line-height:1.7}
+.editor :global(.config-field-grid){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.editor :global(.config-field-grid .full){grid-column:1/-1}
+.editor :global(.config-drawer label){display:grid;gap:5px;font-size:11.5px;min-width:0}
+.editor :global(.config-drawer input),.editor :global(.config-drawer select){width:100%;max-width:100%;min-width:0;height:34px;padding:0 8px;border:1px solid var(--os-border-default);border-radius:8px;font-size:12px;background:#fff;color:var(--os-text-primary)}
+.editor :global(.config-drawer input[type=checkbox]){width:17px;height:17px}
+.editor :global(.config-toggle){display:flex!important;align-items:center;gap:7px}
+.editor :global(.config-help-box){padding:8px 9px;border-radius:9px;background:var(--os-bg-subtle);color:var(--os-text-secondary);font-size:10.8px;line-height:1.7}
+.editor :global(.os66-size-price-panel){border:1px solid #d2e3e3;border-radius:9px;padding:10px;background:#f7fbfb;display:grid;gap:10px}
+.editor :global(.os66-size-price-grid){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.editor :global(.config-source-reference){color:var(--os-text-muted);font-size:10.5px;line-height:1.7}
+.editor :global(.config-errors){background:#fff9ec;border:1px solid #eadbbd;border-radius:9px;padding:10px;margin-top:10px}
+.editor :global(.config-errors button){text-align:start;background:transparent;border:0;display:block;font-size:12px;line-height:1.8;color:#8a6417}
+.editor :global(.config-star.active){color:#b7791f}
+.editor :global(.config-highlight-frame){border:1px solid #d6b578;border-radius:10px;padding:6px}
+.editor :global(.config-modal){border:1px solid var(--os-border-default);border-radius:12px;padding:20px;max-width:min(420px,calc(100vw - 32px));color:var(--os-text-primary)}
+.editor :global(.config-modal::backdrop){background:#2e353a57}
+.editor :global(.config-modal p){margin:10px 0 18px;line-height:1.8}
+.editor :global(.config-mobile-backdrop){display:none}
+.editor :global(.config-live){min-height:18px;color:#8a6417;font-size:12px;margin-top:8px}
+.basePrice{position:relative}
+.basePrice input:disabled{background:#f2f4f4!important;color:#8e9497!important;cursor:not-allowed}
+.basePrice :global(.base-help){border:0;background:none;color:#3d7a7c;padding:4px;cursor:help}
+.basePrice :global(.base-tip){display:none;position:absolute;z-index:5;background:#fff;border:1px solid #d6dbdb;border-radius:9px;padding:10px;box-shadow:0 8px 24px #0002;font-size:12px;max-width:300px}
+.basePrice:hover :global(.base-tip),.basePrice:focus-within :global(.base-tip){display:block;animation:baseTip 1.5s steps(1,end)}
+@keyframes baseTip{from{visibility:hidden}to{visibility:visible}}
+@media(max-width:980px){
+ .editor :global(.config-builder-shell){grid-template-columns:1fr}
+ .editor :global(.config-drawer){display:block;position:static}
+
+
+}
+@media(max-width:620px){
+ .editor{padding:10px}
+ .editor :global(.config-node-head){flex-wrap:wrap;gap:5px}
+ .editor :global(.config-node-tools){width:100%;justify-content:flex-end}
+ .editor :global(.config-node-title){flex-basis:calc(100% - 150px)}
+ .editor :global(.config-node-list.nested){margin-inline-start:4px;padding-inline-start:14px}
+ .editor :global(.config-option-row){flex-wrap:wrap;gap:5px}
+ .editor :global(.config-option-main){min-width:90px}
+ .editor :global(.config-drag),.editor :global(.config-collapse),.editor :global(.config-icon){width:36px;height:36px;min-width:36px}
+ .editor :global(.config-mini-btn){min-height:36px}
+ .editor :global(.config-field-grid){grid-template-columns:1fr}
+}
+
+/* V62.66 sibling sorting: the actual item occupies its live slot; no ghost/drop zone. */
+.editor{--os-motion-standard:cubic-bezier(.2,0,0,1)}
+.editor :global(.config-node-list){display:grid;gap:6px}
+.editor :global(.config-options-list){display:grid;gap:5px}
+.editor :global(.config-kind){min-width:58px}
+.editor :global(.config-drag){width:28px;height:28px;min-width:28px;font-size:14px;flex:none}
+.editor :global(.config-collapse),.editor :global(.config-icon){width:28px;height:28px;min-width:28px}
+.editor :global(.config-collapse.placeholder){visibility:hidden;pointer-events:none}
+.editor :global(.config-collapse svg){transition:transform .14s var(--os-motion-standard)}
+.editor :global(.config-mini-btn){height:28px;min-height:28px;color:var(--os-text-secondary)}
+.editor :global(.config-option-main small){font-size:10.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.editor :global(.config-node-title small){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.editor :global(.config-option-children){margin:5px 0 0}
+.editor :global(.config-common-children){padding-top:4px}
+.editor :global(.config-drawer-head){position:static;align-items:flex-start}
+.editor :global(.config-sort-source){position:relative;z-index:36;transform:translateY(var(--config-sort-y,0px));transition:none!important;box-shadow:0 10px 20px #2e353a17}
+.editor :global(.config-sort-source .config-drag){border-color:var(--os-brand-primary);background:var(--os-bg-selected);color:var(--os-brand-primary-active);cursor:grabbing}
+.editor :global(.config-sort-source > div > .config-node-card){border-color:#3d7a7c85}
+.editor :global(.config-sort-source > div > .config-node-card > .config-node-head),.editor :global(.config-sort-source > div > .config-option-row){box-shadow:inset 0 0 0 1px #3d7a7c6b}
+.editor :global(.config-sort-active){cursor:grabbing!important;user-select:none!important}
+.editor :global(.config-modal){width:min(540px,95vw);max-width:95vw;max-height:92vh;padding:0;overflow:hidden;border-color:var(--os-border-subtle);border-radius:15px;box-shadow:0 18px 50px #2e353a2e}
+.editor :global(.config-modal-head){padding:13px 18px;min-height:60px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--os-border-subtle)}
+.editor :global(.config-modal-head h3){font-size:18px}
+.editor :global(.config-modal-body){padding:18px;overflow:auto}
+.editor :global(.config-branch-choices){display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.editor :global(.config-branch-choices button){min-height:54px;font-size:13px}
+@media(max-width:620px){
+ .editor{padding:14px}
+ .editor :global(.config-node-head){align-items:flex-start;gap:8px}
+ .editor :global(.config-node-title){flex-basis:0}
+ .editor :global(.config-node-list.nested){margin-inline-start:12px;padding-inline-start:15px}
+ .editor :global(.config-option-row){flex-wrap:nowrap;gap:7px}
+ .editor :global(.config-option-main){min-width:0}
+}
+
+.editor :global(.config-label-with-info){display:flex;align-items:center;gap:5px;width:max-content;max-width:100%}
+.editor :global(.config-info-tip){display:inline-grid;place-items:center;width:17px;height:17px;flex:none;border:1px solid #b9c3c3;border-radius:50%;background:#fff;color:var(--os-brand-primary-active);font-size:10px;font-weight:950;line-height:1;cursor:help}
+.editor :global(.config-tooltip-portal){position:fixed;z-index:10050;width:min(300px,calc(100vw - 24px));padding:9px 10px;border:1px solid var(--os-border-default);border-radius:9px;background:#fff;color:var(--os-text-primary);box-shadow:0 12px 28px #2e353a2e;font-size:10.8px;font-weight:600;line-height:1.65;pointer-events:none}
+.editor :global(.config-tooltip-portal b){display:block;margin-top:5px;font-size:10.8px}
+
+/* Owner-approved stars add a control absent from the prototype. Do not let that
+   control shrink an option's selectable name to zero on narrow nested rows. */
+@media(max-width:620px){
+ .editor :global(.config-option-row:has(> .config-star)){flex-wrap:wrap}
+ .editor :global(.config-option-row:has(> .config-star) > .config-option-main){min-width:70px}
+}
+
+.editor :global(.config-modal-subtle){font-size:12px;color:var(--os-text-muted)}
+.editor :global(.config-modal-foot){min-height:60px;padding:10px 18px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--os-border-subtle);background:#fff}
+.editor :global(.config-dialog-button){min-height:38px;padding:0 12px;border:1px solid var(--os-border-default);border-radius:9px;background:#fff;font-size:15px;font-weight:750;white-space:nowrap}
+.editor :global(.config-dialog-button:hover){background:#f5f7f7;border-color:#b9c3c3}
+.editor :global(.config-dialog-button.danger){color:var(--os-danger);border-color:#c94a4a4d}
+.editor :global(.config-dialog-button.danger:hover){background:#c94a4a0f;border-color:#c94a4a80}
+.editor :global(.config-dialog-close){width:36px;padding:0;display:grid;place-items:center}
+
+.editor :global(.config-drag){width:34px;height:30px;min-width:34px;border-color:var(--os-border-default);border-radius:8px;color:var(--os-text-muted);font-size:19px;user-select:none}
+.editor :global(.config-drag:hover),.editor :global(.config-drag:focus-visible){border-color:var(--os-brand-primary);background:var(--os-bg-selected);color:var(--os-brand-primary-active)}
+
+.editor :global(.config-drag){padding:1px 6px}

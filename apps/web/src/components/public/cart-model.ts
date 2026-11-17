@@ -1,15 +1,20 @@
 import {
-  createSelectionKey,
+  createSelectionKeyV2 as createSelectionKey,
+  sumMoney,
+  compareMoney,
+  parseProductSelectionV2,
+  type ConfigurationSnapshotV2,
   DEFAULT_ENGINE_LIMITS,
   validateMoneyString,
   type ConfigurationIssue,
   type PriceLine,
-  type ProductSelectionV1
+  type ProductSelectionV2
 } from "@menu/shared";
 import type { PublicProduct, PublicProductQuoteResponse } from "@/lib/api";
 
 export type LegacyCartItem = {
   mode: "LEGACY";
+  productId?: string;
   lineId: string;
   slug: string;
   name: string;
@@ -41,13 +46,14 @@ export type NetworkCartItem = {
   quantity: number;
   currency: string;
   imageUrl?: string | null;
-  selection: ProductSelectionV1;
+  selection: ProductSelectionV2;
+  configurationSnapshot: ConfigurationSnapshotV2;
   selectionKey: string;
   configurationRevision: number;
   runtimeContext: PublicProductQuoteResponse["runtimeContext"];
   acceptedQuote: NetworkQuoteValue;
   proposedQuote?: NetworkQuoteValue;
-  proposedSelection?: ProductSelectionV1;
+  proposedSelection?: ProductSelectionV2;
   status: NetworkCartStatus;
   issues: ConfigurationIssue[];
   note?: string;
@@ -80,10 +86,10 @@ export function putLegacyCartItem(cart: readonly CartItem[], product: PublicProd
   const existing = cart.find((item): item is LegacyCartItem => item.mode === "LEGACY" && item.slug === product.slug);
   if (quantity === 0) return cart.filter((item) => item !== existing);
   if (existing) return cart.map((item) => item === existing ? {
-    ...existing, quantity, price, priceText: product.basePriceExact ?? String(price), currency: product.currency, imageUrl, description: product.description
+    ...existing, quantity
   } : item);
   return [...cart, {
-    mode: "LEGACY", lineId: `legacy:${product.slug}`, slug: product.slug, name: product.name,
+    mode: "LEGACY", productId: product.id, lineId: `legacy:${product.slug}`, slug: product.slug, name: product.name,
     quantity, price, priceText: product.basePriceExact ?? String(price), currency: product.currency, imageUrl, description: product.description
   }];
 }
@@ -172,19 +178,26 @@ export function networkCartItemFromQuote(args: {
   lineId: string;
 }): NetworkCartItem | null {
   const { product, quote } = args;
-  if (!product.id || !nonempty(args.lineId) || quote.schemaVersion !== 1
+  if (!product.id || !nonempty(args.lineId) || quote.schemaVersion !== 2
     || quote.productId !== product.id || quote.currency !== product.currency
-    || quote.configurationOrderable !== true || quote.previewOnly !== true
-    || quote.orderingEnabled !== false || quote.orderAction !== "STAGE_6_REQUIRED"
+    || quote.configurationOrderable !== true
     || !money(quote.trustedTotal) || !priceLines(quote.priceBreakdown)
     || !selectionKey(quote.selectionKey) || !sourceVersions(quote.linkedSourceRevisions)
-    || !object(quote.canonicalSelection) || !Array.isArray(quote.canonicalSelection.groups)
+    || !parseProductSelectionV2(quote.canonicalSelection).selection
+    || !quote.snapshot || quote.snapshot.snapshotVersion !== 2 || quote.snapshot.productId !== quote.productId
+    || quote.snapshot.currency !== quote.currency || quote.snapshot.total !== quote.trustedTotal
+    || quote.snapshot.configurationRevision !== quote.configurationRevision
+    || quote.snapshot.selectionKey !== quote.selectionKey
+    || !parseProductSelectionV2(quote.snapshot.selection).selection
+    || JSON.stringify(quote.snapshot.selection) !== JSON.stringify(quote.canonicalSelection)
+    || JSON.stringify(quote.snapshot.priceLines) !== JSON.stringify(quote.priceBreakdown)
     || quote.canonicalSelection.productId !== product.id
     || quote.canonicalSelection.configurationRevision !== quote.configurationRevision
     || !quote.runtimeContext || quote.runtimeContext.scope !== "RESTAURANT") return null;
 
   try {
-    if (createSelectionKey(quote.canonicalSelection) !== quote.selectionKey) return null;
+    if (createSelectionKey(quote.canonicalSelection) !== quote.selectionKey
+      || compareMoney(sumMoney(quote.priceBreakdown.map(line => line.chargedAmount)), quote.trustedTotal) !== 0) return null;
   } catch {
     return null;
   }
@@ -202,7 +215,7 @@ export function networkCartItemFromQuote(args: {
     restaurantSlug: args.restaurantSlug, productId: quote.productId, slug: product.slug,
     name: product.name, quantity: 1, currency: quote.currency,
     imageUrl: product.imageUrl ?? product.images?.[0]?.url ?? null,
-    selection: quote.canonicalSelection, selectionKey: quote.selectionKey,
+    selection: quote.canonicalSelection, configurationSnapshot: quote.snapshot, selectionKey: quote.selectionKey,
     configurationRevision: quote.configurationRevision, runtimeContext: quote.runtimeContext,
     acceptedQuote: { total: quote.trustedTotal, priceBreakdown: quote.priceBreakdown, linkedSourceRevisions: quote.linkedSourceRevisions },
     status: "CURRENT", issues: []
@@ -218,7 +231,7 @@ export function addOrEditNetworkCartItem(cart: readonly CartItem[], incoming: Ne
   const matched = other.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.identity === incoming.identity && (item.note ?? "") === nextNote);
   if (other.reduce((sum, item) => sum + item.quantity, 0) + amount > 100) return [...cart];
   if (matched) return other.map((item) => item.lineId === matched.lineId ? {
-    ...matched, quantity: matched.quantity + amount, acceptedQuote: incoming.acceptedQuote,
+    ...incoming, lineId: matched.lineId, note: nextNote, quantity: matched.quantity + amount, acceptedQuote: incoming.acceptedQuote,
     proposedQuote: undefined, status: "CURRENT", issues: []
   } : item);
   const next = { ...incoming, quantity: amount, lineId: previous?.lineId ?? incoming.lineId, note: nextNote };
@@ -252,7 +265,7 @@ function sameChoicePresentation(left: readonly PriceLine[], right: readonly Pric
 }
 
 /** A revision-only rebase is safe only when every displayed choice is unchanged. */
-export function applyRebasedNetworkRecheck(item: NetworkCartItem, quote: PublicProductQuoteResponse, rebased: ProductSelectionV1): NetworkCartItem {
+export function applyRebasedNetworkRecheck(item: NetworkCartItem, quote: PublicProductQuoteResponse, rebased: ProductSelectionV2): NetworkCartItem {
   const refreshed = networkCartItemFromQuote({
     product: { id: item.productId, slug: item.slug, name: item.name, basePrice: null, currency: item.currency },
     restaurantSlug: item.restaurantSlug, quote, lineId: item.lineId
@@ -261,10 +274,6 @@ export function applyRebasedNetworkRecheck(item: NetworkCartItem, quote: PublicP
     || !sameChoicePresentation(item.acceptedQuote.priceBreakdown, refreshed.acceptedQuote.priceBreakdown)) {
     return { ...item, status: "INVALID", proposedQuote: undefined, proposedSelection: undefined,
       issues: [{ code: "CONFIGURATION_CHANGED", path: "$cart", message: "Review the current product choices before continuing." }] };
-  }
-  if (refreshed.acceptedQuote.total === item.acceptedQuote.total
-    && JSON.stringify(refreshed.acceptedQuote.priceBreakdown) === JSON.stringify(item.acceptedQuote.priceBreakdown)) {
-    return { ...refreshed, quantity: item.quantity, note: item.note };
   }
   return { ...item, status: "CHANGED", proposedQuote: refreshed.acceptedQuote,
     proposedSelection: quote.canonicalSelection, issues: [] };
@@ -295,7 +304,7 @@ function restoreLegacy(raw: unknown, currency: string): LegacyCartItem | null {
   if (!object(raw) || !nonempty(raw.slug) || !quantity(raw.quantity)
     || typeof raw.price !== "number" || !Number.isFinite(raw.price) || raw.price < 0) return null;
   return {
-    mode: "LEGACY", lineId: `legacy:${raw.slug}`, slug: raw.slug,
+    mode: "LEGACY", productId: nonempty(raw.productId) ? raw.productId : undefined, lineId: `legacy:${raw.slug}`, slug: raw.slug,
     name: nonempty(raw.name) ? raw.name : raw.slug, quantity: raw.quantity, price: raw.price,
     priceText: money(raw.priceText) ? raw.priceText : String(raw.price),
     currency: nonempty(raw.currency) ? raw.currency : currency,
@@ -312,13 +321,16 @@ function restoreNetwork(raw: unknown, restaurantSlug: string, currency: string):
     || !object(raw.selection) || !Array.isArray(raw.selection.groups)
     || raw.selection.productId !== raw.productId
     || !Number.isSafeInteger(raw.configurationRevision) || raw.selection.configurationRevision !== raw.configurationRevision
-    || !selectionKey(raw.selectionKey) || raw.selection.schemaVersion !== 1
+    || !selectionKey(raw.selectionKey) || raw.selection.schemaVersion !== 2
+    || !parseProductSelectionV2(raw.selection).selection
+    || !object(raw.configurationSnapshot) || raw.configurationSnapshot.snapshotVersion !== 2
+    || raw.configurationSnapshot.productId !== raw.productId || raw.configurationSnapshot.currency !== currency
     || !object(raw.runtimeContext)
     || raw.runtimeContext.scope !== "RESTAURANT" || !object(raw.acceptedQuote)
     || !money(raw.acceptedQuote.total) || !priceLines(raw.acceptedQuote.priceBreakdown)
     || !sourceVersions(raw.acceptedQuote.linkedSourceRevisions)) return null;
   try {
-    if (createSelectionKey(raw.selection as ProductSelectionV1) !== raw.selectionKey) return null;
+    if (createSelectionKey(raw.selection as ProductSelectionV2) !== raw.selectionKey) return null;
   } catch {
     return null;
   }
@@ -332,7 +344,7 @@ function restoreNetwork(raw: unknown, restaurantSlug: string, currency: string):
     restaurantSlug, productId: raw.productId, slug: raw.slug,
     name: nonempty(raw.name) ? raw.name : raw.slug, quantity: raw.quantity, currency,
     imageUrl: typeof raw.imageUrl === "string" ? raw.imageUrl : null,
-    selection: raw.selection as ProductSelectionV1, selectionKey: raw.selectionKey,
+    selection: raw.selection as ProductSelectionV2, configurationSnapshot: raw.configurationSnapshot as unknown as ConfigurationSnapshotV2, selectionKey: raw.selectionKey,
     configurationRevision: raw.configurationRevision as number, runtimeContext,
     acceptedQuote: { total: raw.acceptedQuote.total, priceBreakdown: raw.acceptedQuote.priceBreakdown as PriceLine[], linkedSourceRevisions },
     status: "CHECKING", issues: [],
@@ -376,4 +388,34 @@ export function restoreCartStorage(text: string | null, restaurantSlug: string, 
 
 export function serializeCartStorage(items: readonly CartItem[], restaurantSlug: string) {
   return JSON.stringify({ version: CART_STORAGE_VERSION, restaurantSlug, items });
+}
+
+/** Catalog evidence is an early UX guard only; checkout must still revalidate on the server.
+ * Missing historical identity is retained for review, never rebound by slug or name.
+ */
+export function cartCatalogReview(items: readonly CartItem[], products: readonly PublicProduct[]): Map<string, string> {
+  const byId = new Map(products.filter(p => p.id).map(p => [p.id, p]));
+  const issues = new Map<string, string>();
+  for (const item of items) {
+    const product = item.productId ? byId.get(item.productId) : undefined;
+    if (!product || product.slug !== item.slug || product.currency !== item.currency) {
+      issues.set(item.lineId, "IDENTITY_CHANGED"); continue;
+    }
+    if (item.mode === "LEGACY") {
+      if (product.productConfiguration || product.basePrice === null) issues.set(item.lineId, "TYPE_CHANGED");
+      else if (compareMoney(product.basePriceExact ?? String(product.basePrice), item.priceText ?? String(item.price)) !== 0)
+        issues.set(item.lineId, "PRICE_CHANGED");
+    }
+  }
+  return issues;
+}
+
+/** Explicit acceptance only. Quantity edits must not accept a changed price or rebind identity. */
+export function acceptLegacyCatalogPrice(items: readonly CartItem[], lineId: string, products: readonly PublicProduct[]): CartItem[] {
+  if (cartCatalogReview(items, products).get(lineId) !== "PRICE_CHANGED") return [...items];
+  return items.map(item => {
+    if (item.lineId !== lineId || item.mode !== "LEGACY") return item;
+    const product = products.find(p => p.id === item.productId)!;
+    return { ...item, price: product.basePrice!, priceText: product.basePriceExact ?? String(product.basePrice) };
+  });
 }

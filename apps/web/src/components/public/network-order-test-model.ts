@@ -1,4 +1,4 @@
-import type { ProductSelectionV1, PriceLine } from "@menu/shared";
+import type { ProductSelectionV2, PriceLine } from "@menu/shared";
 import type { CartItem } from "./cart-model";
 
 export type TestOrderDetails = {
@@ -14,7 +14,7 @@ export type TestOrderDetails = {
 
 export type TestOrderRequest = TestOrderDetails & {
   locale: "ar" | "en";
-  items: Array<{ productId: string; quantity: number; selection: ProductSelectionV1; note?: string }>;
+  items: Array<{ productId: string; quantity: number; selection: ProductSelectionV2; note?: string }>;
 };
 
 export type TrustedTestDraft = {

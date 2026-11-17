@@ -1,5 +1,5 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { MediaType, MediaVariantKind } from "@prisma/client";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma, MediaType, MediaVariantKind } from "@prisma/client";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -8,6 +8,7 @@ import {
   AttachProductVrDto
 } from "./dto/attach-product-media.dto";
 import { CreateMediaAssetDto } from "./dto/create-media-asset.dto";
+import { approvedModelFormat, allowedImageReference } from "./asset-reference";
 import { UpsertImageRuleDto } from "./dto/upsert-image-rule.dto";
 
 @Injectable()
@@ -32,7 +33,13 @@ export class MediaService {
     });
   }
 
-  async create(restaurantId: string, createdById: string | undefined, dto: CreateMediaAssetDto) {
+  async registerReference(restaurantId: string, userId: string | undefined, dto: CreateMediaAssetDto) {
+    if (dto.type === "MODEL_3D" || dto.type === "SVG_ICON") throw new BadRequestException("Upload the file to validate its contents");
+    await allowedImageReference(this.prisma,restaurantId,dto.url);
+    return this.create(restaurantId,userId,{ type:dto.type, url:dto.url, altText:dto.altText });
+  }
+
+  async create(restaurantId: string, createdById: string | undefined, dto: CreateMediaAssetDto, validatedFormat?: string) {
     await this.assertMediaFeature(restaurantId, dto.type);
     const variants = this.buildVariants(dto);
 
@@ -40,6 +47,7 @@ export class MediaService {
       data: {
         restaurantId,
         createdById,
+        validatedFormat,
         filename: dto.filename ?? this.filenameFromUrl(dto.url),
         originalFilename: dto.originalFilename ?? dto.filename ?? this.filenameFromUrl(dto.url),
         mimeType: dto.mimeType ?? this.inferMimeType(dto.url, dto.type),
@@ -116,11 +124,16 @@ export class MediaService {
 
   async attachImage(restaurantId: string, productId: string, dto: AttachProductImageDto) {
     await this.featureFlags.assertFeature(restaurantId, "PRODUCT_IMAGES");
-    await this.findProduct(restaurantId, productId);
+    return this.withProductEdit(restaurantId, productId, dto.expectedProductVersion, async tx => {
 
-    const count = await this.prisma.productImage.count({ where: { productId } });
+    if (dto.mediaId) {
+      const asset = await tx.mediaAsset.findFirst({ where: { id: dto.mediaId, restaurantId, url: dto.url, type: { in: ["IMAGE","PNG_ICON","SVG_ICON"] } }, select: { id: true } });
+      if (!asset) throw new BadRequestException("Media asset unavailable");
+    }
+    await allowedImageReference(tx,restaurantId,dto.url);
+    const count = await tx.productImage.count({ where: { productId } });
 
-    return this.prisma.productImage.create({
+    return tx.productImage.create({
       data: {
         productId,
         mediaId: dto.mediaId,
@@ -129,32 +142,36 @@ export class MediaService {
         sortOrder: count
       }
     });
+    });
   }
 
   async attach3d(restaurantId: string, productId: string, dto: AttachProduct3dDto) {
     await this.featureFlags.assertFeature(restaurantId, "PRODUCT_3D_VIEWER");
-    await this.findProduct(restaurantId, productId);
+    return this.withProductEdit(restaurantId, productId, dto.expectedProductVersion, async tx => {
 
-    return this.prisma.product3DModel.upsert({
+    const format = await approvedModelFormat(tx,restaurantId,dto.url);
+    return tx.product3DModel.upsert({
       where: { productId },
       create: {
         productId,
         url: dto.url,
-        format: dto.format ?? this.inferFormat(dto.url)
+        format: format
       },
       update: {
         url: dto.url,
-        format: dto.format ?? this.inferFormat(dto.url),
+        format: format,
         isActive: true
       }
+    });
     });
   }
 
   async attachVr(restaurantId: string, productId: string, dto: AttachProductVrDto) {
     await this.featureFlags.assertFeature(restaurantId, "PRODUCT_VR_VIEWER");
-    await this.findProduct(restaurantId, productId);
+    return this.withProductEdit(restaurantId, productId, dto.expectedProductVersion, async tx => {
 
-    return this.prisma.productVrMedia.upsert({
+    await allowedImageReference(tx,restaurantId,dto.panoramaUrl);
+    return tx.productVrMedia.upsert({
       where: { productId },
       create: {
         productId,
@@ -166,6 +183,22 @@ export class MediaService {
         type: dto.type ?? "equirectangular",
         isActive: true
       }
+    });
+    });
+  }
+
+  private async withProductEdit<T>(restaurantId: string, productId: string, version: number,
+    write: (tx: Prisma.TransactionClient) => Promise<T>) {
+    if (!Number.isSafeInteger(version) || version < 0) throw new BadRequestException("expectedProductVersion is required");
+    return this.prisma.$transaction(async tx => {
+      const updated = await tx.product.updateMany({ where: { id: productId, restaurantId, deletedAt: null, editVersion: version },
+        data: { editVersion: { increment: 1 } } });
+      if (updated.count !== 1) throw new ConflictException("Product changed or is unavailable; reload before attaching media");
+      return write(tx);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch(error => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034")
+        throw new ConflictException("Concurrent product edit; reload before attaching media");
+      throw error;
     });
   }
 
@@ -223,11 +256,6 @@ export class MediaService {
     }
 
     return "VR_PANORAMA";
-  }
-
-  private inferFormat(url: string) {
-    const extension = url.split("?")[0].split(".").pop()?.toLowerCase();
-    return extension && ["glb", "gltf", "usdz"].includes(extension) ? extension : "glb";
   }
 
   private buildVariants(dto: CreateMediaAssetDto) {

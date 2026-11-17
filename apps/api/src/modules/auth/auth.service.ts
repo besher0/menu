@@ -1,11 +1,15 @@
 import { Inject, Injectable, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { credentialVersion } from "../../common/security/session-credential";
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { LoginDto } from "./dto/login.dto";
 
 @Injectable()
 export class AuthService {
+  private readonly dummyPasswordHash = bcrypt.hash(randomBytes(32).toString("hex"), 10);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwtService: JwtService
@@ -17,31 +21,26 @@ export class AuthService {
     try {
       user = await this.prisma.user.findUnique({
         where: { email: dto.email },
-        include: {
+        select: {
+          id: true, email: true, name: true, role: true, passwordHash: true,
           memberships: {
-            include: {
-              restaurant: true
-            }
+            where: { restaurant: { deletedAt: null } },
+            select: { role: true, restaurant: { select: { id: true, name: true, slug: true } } }
           }
         }
       });
     } catch {
-      throw new ServiceUnavailableException("Database is not reachable. Check DATABASE_URL and Neon connectivity.");
+      throw new ServiceUnavailableException("Authentication is temporarily unavailable.");
     }
 
-    if (!user) {
-      throw new UnauthorizedException("Invalid credentials");
-    }
-
-    const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!passwordMatches) {
+    const passwordMatches = await bcrypt.compare(dto.password, user?.passwordHash ?? await this.dummyPasswordHash);
+    if (!user || !passwordMatches) {
       throw new UnauthorizedException("Invalid credentials");
     }
 
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
-      email: user.email,
-      role: user.role
+      cv: credentialVersion(user.passwordHash)
     });
 
     return {

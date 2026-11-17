@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSelectionKey, type ProductSelectionV1 } from "@menu/shared";
+import { createSelectionKeyV2 as createSelectionKey, subtractMoney, type ProductSelectionV2 } from "@menu/shared";
 import type { PublicProduct, PublicProductQuoteResponse } from "@/lib/api";
 import {
   acceptNetworkRecheck,
@@ -19,28 +19,31 @@ import {
 
 const product: PublicProduct = { id: "pizza", slug: "pizza", name: "بيتزا", basePrice: null, currency: "EGP" };
 
-function selection(size = "medium", revision = 1, instanceId = "unit-1", linkedSize = "small"): ProductSelectionV1 {
-  return { schemaVersion: 1, productId: "pizza", configurationRevision: revision, groups: [
+function selection(size = "medium", revision = 1, instanceId = "unit-1", linkedSize = "small"): ProductSelectionV2 {
+  return { schemaVersion: 2, productId: "pizza", configurationRevision: revision, groups: [
     { type: "SIZE", groupId: "sizes", sizeChoiceId: size },
     { type: "OPTIONS", groupId: "toppings", instances: [{ instanceId, optionId: "linked", children: [{ type: "OPTIONS", groupId: "sauces", instances: [{ instanceId: `${instanceId}-sauce`, optionId: "bbq" }] }],
-      linkedSelection: { schemaVersion: 1, productId: "source", configurationRevision: 1, groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: linkedSize }] }
+      linkedSelection: { schemaVersion: 2, productId: "source", configurationRevision: 1, groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: linkedSize }] }
     }] }
   ] };
 }
 
-function quote(selected = selection(), total = "280.000001", sourceRevision = 1): PublicProductQuoteResponse {
-  return {
-    schemaVersion: 1, productId: "pizza", configurationRevision: selected.configurationRevision,
-    selectionKey: createSelectionKey(selected), canonicalSelection: selected, currency: "EGP", trustedTotal: total,
+function quote(selected = selection(), total = "280.000001", sourceRevision = 1, currency = "EGP", sizePrice = "200"): PublicProductQuoteResponse {
+  const result = {
+    schemaVersion: 2 as const, productId: "pizza", configurationRevision: selected.configurationRevision,
+    selectionKey: createSelectionKey(selected), canonicalSelection: selected, currency, trustedTotal: total,
     baseIgnored: true,
     priceBreakdown: [
-      { kind: "SIZE", path: "$selection.groups.sizes", nodeId: "medium", label: "Medium", amount: "200", chargedAmount: "200", included: false },
-      { kind: "OPTION", path: "$selection.groups.toppings.unit-1.linked", nodeId: "linked", label: "Pizza slot", sourceProductId: "source", instanceId: "unit-1", amount: "80.000001", chargedAmount: "80.000001", included: false }
+      { kind: "SIZE", path: "$selection.groups.sizes", nodeId: "medium", label: "Medium", amount: sizePrice, chargedAmount: sizePrice, included: false },
+      { kind: "OPTION", path: "$selection.groups.toppings.unit-1.linked", nodeId: "linked", label: "Pizza slot", sourceProductId: "source", instanceId: "unit-1", amount: subtractMoney(total, sizePrice), chargedAmount: subtractMoney(total, sizePrice), included: false }
     ],
     linkedSourceRevisions: [{ sourceProductId: "source", mode: "NETWORK", configurationRevision: sourceRevision }],
-    configurationOrderable: true, previewOnly: true, orderAction: "STAGE_6_REQUIRED", orderingEnabled: false,
-    runtimeContext: { scope: "RESTAURANT", outletDifferentialApplied: false, serviceModeApplied: false, productScheduleApplied: false }
+    configurationOrderable: true as const,
+    runtimeContext: { scope: "RESTAURANT" as const, outletDifferentialApplied: false as const, serviceModeApplied: false as const, productScheduleApplied: false as const }
   };
+  return {...result,snapshot:{snapshotVersion:2,productId:result.productId,productName:product.name,currency,
+    configurationRevision:selected.configurationRevision,selectionKey:result.selectionKey,selection:selected,total,
+    baseIgnored:true,priceLines:result.priceBreakdown as PublicProductQuoteResponse["priceBreakdown"],createdAt:"2026-11-15T00:00:00Z"}} as PublicProductQuoteResponse;
 }
 
 function item(selected = selection(), total = "280.000001", sourceRevision = 1, lineId = "line-1") {
@@ -57,7 +60,7 @@ describe("versioned public cart model", () => {
     const merged = addOrEditNetworkCartItem([first], equivalent);
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({ mode: "NETWORK", quantity: 2, lineId: "line-1" });
-    expect((merged[0] as typeof first).selection.groups[1]).toMatchObject({ type: "OPTIONS", instances: [expect.objectContaining({ instanceId: "unit-1" })] });
+    expect((merged[0] as typeof first).selection.groups[1]).toMatchObject({ type: "OPTIONS", instances: [expect.objectContaining({ instanceId: "another-instance" })] });
   });
 
   it("keeps different sizes, revisions, linked child choices, source revisions, restaurants, and currencies apart", () => {
@@ -68,7 +71,7 @@ describe("versioned public cart model", () => {
       item(selection("medium", 1, "another", "large"), "290", 1, "linked-child"),
       item(selection(), "280", 2, "source-revision"),
       networkCartItemFromQuote({ product, restaurantSlug: "restaurant-b", quote: quote(), lineId: "other-tenant" })!,
-      networkCartItemFromQuote({ product: { ...product, currency: "USD" }, restaurantSlug: "restaurant-a", quote: { ...quote(), currency: "USD" }, lineId: "other-currency" })!
+      networkCartItemFromQuote({ product: { ...product, currency: "USD" }, restaurantSlug: "restaurant-a", quote: quote(selection(), "280", 1, "USD"), lineId: "other-currency" })!
     ];
     const cart = variants.reduce((current, variant) => addOrEditNetworkCartItem(current, variant), [first] as ReturnType<typeof addOrEditNetworkCartItem>);
     expect(cart).toHaveLength(7);
@@ -177,9 +180,7 @@ describe("versioned public cart model", () => {
   it("keeps revision-changed prices pending explicit acceptance without changing choices, note, or quantity", () => {
     const first = { ...item(), quantity: 3, note: "لا بصل" };
     const rebased = { ...first.selection, configurationRevision: 2 };
-    const currentQuote = quote(rebased, "285.000001", 2);
-    currentQuote.priceBreakdown = currentQuote.priceBreakdown.map((line, index) => index === 0
-      ? { ...line, amount: "205", chargedAmount: "205" } : line);
+    const currentQuote = quote(rebased, "285.000001", 2, "EGP", "205");
     const changed = applyRebasedNetworkRecheck(first, currentQuote, rebased);
     expect(changed).toMatchObject({ status: "CHANGED", selectionKey: first.selectionKey,
       proposedSelection: { configurationRevision: 2 }, proposedQuote: { total: "285.000001" } });
@@ -193,9 +194,24 @@ describe("versioned public cart model", () => {
     expect(applyRebasedNetworkRecheck(first, renamed, rebased).status).toBe("INVALID");
   });
 
+  it("requires explicit acceptance even when a configuration revision changes without changing its price", () => {
+    const first=item(),rebased={...first.selection,configurationRevision:2};
+    const samePrice=quote(rebased,first.acceptedQuote.total,1);
+    const changed=applyRebasedNetworkRecheck(first,samePrice,rebased);
+    expect(changed.status).toBe("CHANGED");expect(changed.configurationRevision).toBe(1);
+    expect(acceptNetworkRecheck(changed,samePrice).configurationRevision).toBe(2);
+  });
+  it.each(["snapshot-selection","snapshot-revision","breakdown-sum"])("rejects inconsistent V2 response %s before insertion", kind => {
+    const q=structuredClone(quote());
+    if(kind==="snapshot-selection")q.snapshot.selection={...q.snapshot.selection,configurationRevision:99};
+    if(kind==="snapshot-revision")q.snapshot.configurationRevision=99;
+    if(kind==="breakdown-sum"){q.priceBreakdown[0].chargedAmount="201";q.snapshot.priceLines=q.priceBreakdown;}
+    expect(networkCartItemFromQuote({product,restaurantSlug:"restaurant-a",quote:q,lineId:"inconsistent"})).toBeNull();
+  });
+
   it("rejects a forged quote contract before cart insertion", () => {
     expect(networkCartItemFromQuote({ product, restaurantSlug: "restaurant-a", quote: { ...quote(), trustedTotal: "1", selectionKey: "tampered" }, lineId: "forged" })).toBeNull();
-    expect(networkCartItemFromQuote({ product, restaurantSlug: "restaurant-a", quote: { ...quote(), orderingEnabled: true as false }, lineId: "forged" })).toBeNull();
+    expect(networkCartItemFromQuote({ product, restaurantSlug: "restaurant-a", quote: { ...quote(), snapshot: { ...quote().snapshot, snapshotVersion: 1 as 2 } }, lineId: "forged" })).toBeNull();
   });
 
   it("keeps Legacy add, edit, delete and explicit zero price independent from Network lines", () => {
@@ -228,7 +244,7 @@ describe("versioned public cart model", () => {
     expect(cartNeedsPreviewGate(legacy, [{ id: "water", slug: "water", name: "Water", basePrice: 0, currency: "EGP" }])).toBe(false);
     expect(cartNeedsPreviewGate([...legacy, item()], [])).toBe(true);
     expect(cartNeedsPreviewGate(legacy, [{ id: "water", slug: "water", name: "Water", basePrice: null, currency: "EGP", productConfiguration: {
-      mode: "NETWORK", configurationRevision: 1, orderable: true, previewOnly: true,
+      mode: "NETWORK", configurationRevision: 1, orderable: true,
       minimumPrice: "0", priceDisplay: "EXACT", issueCodes: []
     } }])).toBe(true);
   });

@@ -108,11 +108,11 @@ export function AdminOverviewClient() {
   return (
     <>
       <div className="admin-grid">
-        <StatCard label="إجمالي الدخل" value={formatMoney(cards?.totalIncome ?? 0)} note="+8%" icon={Banknote} />
-        <StatCard label="عدد المطاعم" value={String(cards?.restaurants ?? 0)} note="+8%" icon={Store} />
-        <StatCard label="المطاعم الفعالة" value={String(cards?.activeRestaurants ?? 0)} note="+8%" icon={Store} />
+        <StatCard label="إجمالي الدخل" value={formatMoney(cards?.totalIncome ?? 0)} icon={Banknote} />
+        <StatCard label="عدد المطاعم" value={String(cards?.restaurants ?? 0)} icon={Store} />
+        <StatCard label="المطاعم الفعالة" value={String(cards?.activeRestaurants ?? 0)} icon={Store} />
         <StatCard label="تنتهي قريبا" value={String(cards?.expiringSoon ?? 0)} note="خلال 7 أيام" icon={Clock} />
-        <StatCard label="طلبات واتساب اليوم" value={String(cards?.whatsappOrders ?? 0)} note="+8%" icon={ShoppingBag} />
+        <StatCard label="طلبات واتساب اليوم" value={String(cards?.whatsappOrders ?? 0)} icon={ShoppingBag} />
       </div>
 
       {status === "error" ? <EmptyState title="تعذر تحميل البيانات" text={message} /> : null}

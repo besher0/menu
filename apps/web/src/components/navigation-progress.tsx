@@ -27,20 +27,12 @@ export function NavigationProgress() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [active, setActive] = useState(false);
-  const [done, setDone] = useState(false);
   const timeoutRef = useRef<number | null>(null);
-  const startedAtRef = useRef(0);
 
   useEffect(() => {
     function stop() {
       window.clearTimeout(timeoutRef.current ?? undefined);
-      const elapsed = Date.now() - startedAtRef.current;
-      const remaining = Math.max(520 - elapsed, 180);
-      setDone(true);
-      timeoutRef.current = window.setTimeout(() => {
-        setActive(false);
-        setDone(false);
-      }, remaining);
+      setActive(false);
     }
 
     stop();
@@ -50,12 +42,9 @@ export function NavigationProgress() {
   useEffect(() => {
     function start() {
       window.clearTimeout(timeoutRef.current ?? undefined);
-      startedAtRef.current = Date.now();
-      setDone(false);
       setActive(true);
       timeoutRef.current = window.setTimeout(() => {
         setActive(false);
-        setDone(false);
       }, 8000);
     }
 
@@ -77,5 +66,5 @@ export function NavigationProgress() {
     };
   }, []);
 
-  return <div className={`navigation-progress ${active ? "active" : ""} ${done ? "done" : ""}`} aria-hidden="true" />;
+  return <div className={`navigation-progress ${active ? "active" : ""}`} aria-hidden="true" />;
 }

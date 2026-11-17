@@ -1,7 +1,7 @@
 import { compareMoney, currencyDisplayReconciliation, formatCurrencyAmount, multiplyMoney, normalizeMoney, sumMoney, validateMoneyString, DEFAULT_ENGINE_LIMITS } from "@menu/shared";
 import type {
-  ConfigurationGroup, GroupSelection, OptionChoice, OptionSelectionInstance,
-  PriceLine, ProductConfigurationV1, ProductSelectionV1
+  ConfigurationGroupV2 as ConfigurationGroup, GroupSelectionV2 as GroupSelection, OptionChoiceV2 as OptionChoice, OptionSelectionInstanceV2 as OptionSelectionInstance,
+  PriceLine, ProductConfigurationV2, ProductSelectionV2
 } from "@menu/shared";
 
 type Locale = "ar" | "en";
@@ -72,7 +72,7 @@ const words = {
     pickupTime: "Pickup time", orderNote: "Order note", itemNote: "Item note" }
 } as const;
 
-type StoredSource = { productId: string; productName: string; mode: "NETWORK" | "LEGACY"; configurationTree: ProductConfigurationV1 };
+type StoredSource = { productId: string; productName: string; mode: "NETWORK" | "LEGACY"; configurationTree: ProductConfigurationV2 };
 
 class LineRenderer {
   readonly rendered: string[] = [];
@@ -106,7 +106,7 @@ class LineRenderer {
     return line;
   }
 
-  render(configuration: ProductConfigurationV1, selection: ProductSelectionV1, headingSizeGroupId?: string) {
+  render(configuration: ProductConfigurationV2, selection: ProductSelectionV2, headingSizeGroupId?: string) {
     if (configuration.productId !== selection.productId || configuration.revision !== selection.configurationRevision) {
       throw new NetworkOrderSnapshotFormatError("SNAPSHOT_REVISION_MISMATCH", "$selection", "Configuration and selection differ.");
     }
@@ -152,9 +152,9 @@ class LineRenderer {
         this.price(groupPath, "SIZE", size.id);
         const sizeLabel = display(nonempty(size.label, `${groupPath}.${size.id}.label`), `${groupPath}.${size.id}.label`);
         if (!(depth === headingSizeDepth && groupId === headingSizeGroupId)) {
-          this.rendered.push(`${pad}📏 ${groupLabel} — ${sizeLabel}`);
+          this.rendered.push(`${pad}📏 ${group.hidePublicLabel ? sizeLabel : groupLabel + " — " + sizeLabel}`);
         }
-        this.groups(size.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1);
+        this.groups(group.children ?? [], groupSelection.children ?? [], `${groupPath}.${size.id}`, depth + 1);
       } else if (groupNode.type === "OPTIONS") {
         if (groupSelection && groupSelection.type !== "OPTIONS") {
           throw new NetworkOrderSnapshotFormatError("GROUP_TYPE_MISMATCH", groupPath, "Selection type differs from historical group.");
@@ -174,7 +174,7 @@ class LineRenderer {
           }
           continue;
         }
-        this.rendered.push(`${pad}➕ ${groupLabel}:`);
+        if (!group.hidePublicLabel) this.rendered.push(`${pad}➕ ${groupLabel}:`);
         const instanceIds = new Set<string>();
         const optionCounts = new Map<string, number>();
         const leafUnits = new Map<string, { label: string; count: number }>();
@@ -197,7 +197,7 @@ class LineRenderer {
           if (!option) throw new NetworkOrderSnapshotFormatError("UNKNOWN_OPTION", groupPath, "Selected option has no historical label.");
           const optionCount = (optionCounts.get(option.id) ?? 0) + 1;
           optionCounts.set(option.id, optionCount);
-          if (!Number.isSafeInteger(option.maxQuantity) || optionCount > option.maxQuantity) {
+          if (option.maxQuantity !== null && (!Number.isSafeInteger(option.maxQuantity) || optionCount > option.maxQuantity)) {
             throw new NetworkOrderSnapshotFormatError("INVALID_OPTION_QUANTITY", groupPath, "Selected option exceeds its historical quantity bound.");
           }
           const instancePath = `${groupPath}.${instanceId}`;
@@ -252,6 +252,7 @@ class LineRenderer {
           }
         }
         flushLeafUnits();
+        this.groups(group.children ?? [], groupSelection?.children ?? [], `${groupPath}.children`, depth + 1);
       } else {
         throw new NetworkOrderSnapshotFormatError("UNKNOWN_GROUP_TYPE", groupPath, "Unsupported historical group type.");
       }
@@ -340,9 +341,9 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   if (compareMoney(multiplyMoney(unitPrice, count), lineTotal) !== 0) {
     throw new NetworkOrderSnapshotFormatError("LINE_TOTAL_MISMATCH", `${path}.lineTotal`, "Saved line amount and quantity differ.");
   }
-  const configuration = object(item.configurationTree, `${path}.configurationTree`) as ProductConfigurationV1;
-  const selection = object(item.canonicalSelection, `${path}.canonicalSelection`) as ProductSelectionV1;
-  if (configuration.productId !== productId || selection.productId !== productId || item.configurationRevision !== configuration.revision) {
+  const configuration = object(item.configurationTree, `${path}.configurationTree`) as ProductConfigurationV2;
+  const selection = object(item.canonicalSelection, `${path}.canonicalSelection`) as ProductSelectionV2;
+  if (configuration.schemaVersion !== 2 || selection.schemaVersion !== 2 || configuration.productId !== productId || selection.productId !== productId || item.configurationRevision !== configuration.revision) {
     throw new NetworkOrderSnapshotFormatError("PRODUCT_SNAPSHOT_MISMATCH", path, "Historical product identity or revision differs.");
   }
   const priceLines = array(item.priceBreakdown, `${path}.priceBreakdown`).map((entry, lineIndex) =>
@@ -354,7 +355,10 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
     const size = selected?.type === "SIZE" ? group.sizes.find((choice) => choice.id === selected.sizeChoiceId) : undefined;
     return size ? [{ groupId: group.id, label: display(nonempty(size.label, `${path}.size.label`), `${path}.size.label`) }] : [];
   });
-  const sizeSuffix = topLevelSizes.length === 1 ? ` — ${topLevelSizes[0].label}` : "";
+  // Compare the already-sanitized text inside its bidi isolates. The price lines
+  // and the renderer's consumed root-size group remain unchanged.
+  const sizeSuffix = topLevelSizes.length === 1 && !name.slice(1, -1).endsWith(` — ${topLevelSizes[0].label.slice(1, -1)}`)
+    ? ` — ${topLevelSizes[0].label}` : "";
   const renderer = new LineRenderer(locale, priceLines, sources);
   const renderedChoices = renderer.render(configuration, selection, topLevelSizes.length === 1 ? topLevelSizes[0].groupId : undefined);
   const lines = [`${numbered ? `${index + 1}. ` : ""}${count} × ${name}${sizeSuffix}`, ...renderedChoices];
@@ -366,7 +370,7 @@ export function formatNetworkSnapshotLine(rawItem: unknown, locale: Locale, curr
   }
   const reconciliation = currencyDisplayReconciliation(priceLines.map((entry) => entry.chargedAmount), unitPrice, currency);
   if (reconciliation) lines.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  lines.push(`${words[locale].line}: ${formatCurrencyAmount(lineTotal, currency)}`);
+  lines.push(`${words[locale].line}: ${formatCurrencyAmount(lineTotal, currency, locale)}`);
   return { lines, lineTotal };
 }
 
@@ -397,7 +401,7 @@ export function formatNetworkOrderWhatsappMessage(snapshotValue: unknown): strin
   const reconciliation = currencyDisplayReconciliation(lineTotals, total, currency);
   if (details.orderNote) output.push(details.orderNote, "━━━━━━━━━━━━━━", "");
   if (reconciliation) output.push(`${locale === "ar" ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency)}`);
+  output.push(`💵 ${w.total}: ${formatCurrencyAmount(total, currency, locale)}`);
   output.push(...details.footer);
   return formatWhatsappMessageLines(output, locale);
 }

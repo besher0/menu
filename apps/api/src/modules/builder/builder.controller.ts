@@ -1,3 +1,4 @@
+import { requireRestaurantPermission } from "../../common/restaurant-permission";
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { AppRequest } from "../../common/app-request";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -19,26 +20,31 @@ export class BuilderController {
 
   @Post("sections")
   addSection(@Req() request: AppRequest, @Body() dto: AddSectionDto) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.builderService.addSection(request.restaurant!.id, dto);
   }
 
   @Patch("sections/reorder")
   reorderSections(@Req() request: AppRequest, @Body() dto: ReorderSectionsDto) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.builderService.reorderSections(request.restaurant!.id, dto);
   }
 
   @Patch("sections/:id")
   updateSection(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpdateSectionDto) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.builderService.updateSection(request.restaurant!.id, id, dto);
   }
 
   @Delete("sections/:id")
   deleteSection(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.builderService.deleteSection(request.restaurant!.id, id);
   }
 
   @Post("publish")
   publish(@Req() request: AppRequest) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.builderService.publish(request.restaurant!.id, request.user?.sub);
   }
 }

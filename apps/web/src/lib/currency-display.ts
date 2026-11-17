@@ -1,10 +1,10 @@
 import { currencyDisplayReconciliation, formatCurrencyAmount } from "@menu/shared";
 
 /** UI-only rendering. Invalid historical values are never rounded into valid prices. */
-export function displayCurrencyAmount(value: string | number | null | undefined, currency: string): string {
+export function displayCurrencyAmount(value: string | number | null | undefined, currency: string, locale?: "ar" | "en"): string {
   if (value === null || value === undefined) return "—";
   try {
-    return formatCurrencyAmount(String(value), currency);
+    return formatCurrencyAmount(String(value), currency, locale);
   } catch {
     return "سعر غير صالح للعملة";
   }

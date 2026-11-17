@@ -124,9 +124,9 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     snapshot.currency = "SYP";
     snapshot.items[0].currency = "SYP";
     const message = formatNetworkOrderWhatsappMessage(snapshot);
-    expect(message).toContain("إجمالي الطلب: 43 SYP");
+    expect(message).toContain("إجمالي الطلب: 43 ل.س");
     expect(message.match(/• 1 × ⁨بيتزا/g)).toHaveLength(3);
-    expect(message).not.toMatch(/مشمول|مجاني|\.00 SYP/);
+    expect(message).not.toMatch(/مشمول|مجاني|\.00 ل\.س|SYP/);
   });
 
   it("keeps a zero-priced linked size visible without a misleading individual price", () => {
@@ -241,4 +241,18 @@ describe("Stage 6D.1 immutable-snapshot WhatsApp formatter", () => {
     expect(() => formatNetworkOrderWhatsappMessage({ items: [] })).toThrow(/UNSUPPORTED_ORDER_SNAPSHOT/);
     expect(() => buildNetworkWhatsappPreviewUrl("+1 555 123 4567", "test")).toThrow(/INVALID_PREVIEW_PHONE/);
   });
+});
+
+it.each(["ar", "en"] as const)("does not duplicate an already suffixed root product size in %s", locale => {
+  const snapshot = copy(buildNetworkWhatsappDemo("pizza", locale)) as any;
+  const item = snapshot.items[0];
+  const group = item.configurationTree.groups.find((g: any) => g.type === "SIZE");
+  const selected = item.canonicalSelection.groups.find((g: any) => g.groupId === group.id);
+  const size = group.sizes.find((x: any) => x.id === selected.sizeChoiceId);
+  item.productName += " — " + size.label;
+  const before = JSON.stringify(snapshot);
+  const message = formatNetworkOrderWhatsappMessage(snapshot);
+  expect(message).toContain("× \u2068" + item.productName + "\u2069");
+  expect(message).not.toContain("\u2069 — \u2068" + size.label + "\u2069");
+  expect(JSON.stringify(snapshot)).toBe(before);
 });

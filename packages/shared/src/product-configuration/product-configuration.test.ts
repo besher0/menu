@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   ProductConfigurationContext,
-  ProductConfigurationV1,
-  ProductSelectionV1,
+  ProductConfigurationV2,
+  ProductSelectionV2,
   PRODUCT_CONFIGURATION_SCHEMA_VERSION,
   PRODUCT_SELECTION_SCHEMA_VERSION
-} from "./types";
+} from "./v2-types";
 import { addMoney, multiplyMoney, normalizeMoney } from "./money";
 import { validateConfiguration } from "./validation";
 import { validateSelection } from "./selection";
@@ -14,13 +14,13 @@ import { calculateMinimumPrice } from "./minimum-price";
 import { createConfigurationSnapshot, createSelectionKey } from "./snapshot";
 import { validateDependencyGraph } from "./dependencies";
 
-const context: ProductConfigurationContext = { catalogId: "catalog-1", linkedProducts: new Map() };
+const context: ProductConfigurationContext = { catalogId: "catalog-1", currency: "EGP", linkedProducts: new Map() };
 
-function config(groups: ProductConfigurationV1["groups"] = [], basePrice: string | null = "100", productId = "product-1"): ProductConfigurationV1 {
+function config(groups: ProductConfigurationV2["groups"] = [], basePrice: string | null = "100", productId = "product-1"): ProductConfigurationV2 {
   return { schemaVersion: PRODUCT_CONFIGURATION_SCHEMA_VERSION, productId, revision: 1, basePrice, groups };
 }
 
-function selection(groups: ProductSelectionV1["groups"] = [], productId = "product-1", revision = 1): ProductSelectionV1 {
+function selection(groups: ProductSelectionV2["groups"] = [], productId = "product-1", revision = 1): ProductSelectionV2 {
   return { schemaVersion: PRODUCT_SELECTION_SCHEMA_VERSION, productId, configurationRevision: revision, groups };
 }
 
@@ -41,11 +41,8 @@ describe("configuration and selection validation", () => {
   it("forbids Size after Size on one path", () => {
     const value = config([
       {
-        type: "SIZE", id: "size-1", label: "First", sizes: [
-          { id: "small", label: "Small", price: "10", children: [
-            { type: "SIZE", id: "size-2", label: "Second", sizes: [{ id: "tiny", label: "Tiny", price: "5" }] }
-          ] }
-        ]
+        type: "SIZE", id: "size-1", label: "First", sizes: [{ id: "small", label: "Small", price: "10" }],
+        children: [{ type: "SIZE", id: "size-2", label: "Second", sizes: [{ id: "tiny", label: "Tiny", price: "5" }] }]
       }
     ]);
     expect(validateConfiguration(value).map((issue) => issue.code)).toContain("SIZE_AFTER_SIZE");
@@ -58,13 +55,13 @@ describe("configuration and selection validation", () => {
         type: "OPTIONS", id: "mods", label: "Mods", min: 0, max: 2, includedQuantity: 0,
         options: [{
           id: "cheese", label: "Cheese", price: "3", maxQuantity: 3,
-          priceOverrides: [{ sizeChoiceId: "small", price: null }, { sizeChoiceId: "small", price: "0" }]
+          priceBySize: { sizeGroupId: "sizes", overrides: { small: null, unknown: "0" } }
         }]
       }
     ]);
     const codes = validateConfiguration(value).map((issue) => issue.code);
     expect(codes).toContain("OPTION_MAX_EXCEEDS_GROUP_MAX");
-    expect(codes).toContain("DUPLICATE_SIZE_PRICE_OVERRIDE");
+    expect(codes).toContain("UNKNOWN_SIZE_PRICE_OVERRIDE");
     expect(codes).not.toContain("INVALID_MONEY");
   });
 
@@ -132,7 +129,7 @@ describe("configuration and selection validation", () => {
       type: "OPTIONS", id: "required", label: "Required", min: 0, max: 1, includedQuantity: 0,
       options: [{ id: "sold-out", label: "Sold out", price: "5", minQuantity: 1, maxQuantity: 1, available: false }]
     }]);
-    expect(validateSelection(value, selection(), context).map((issue) => issue.code)).toContain("OPTION_MIN_NOT_MET");
+    expect(validateSelection(value, selection(), context).map((issue) => issue.code)).toContain("UNSATISFIABLE_CONFIGURATION");
     expect(calculateMinimumPrice(value, context)).toMatchObject({ orderable: false, display: "UNAVAILABLE" });
   });
 });
@@ -173,7 +170,7 @@ describe("pricing rules", () => {
     const make = (override: string | null) => config([
       { type: "SIZE", id: "sizes", label: "Size", sizes: [{ id: "large", label: "Large", price: "100" }] },
       { type: "OPTIONS", id: "mods", label: "Mods", min: 1, max: 1, includedQuantity: 0,
-        options: [{ id: "cheese", label: "Cheese", price: "30", maxQuantity: 1, priceOverrides: [{ sizeChoiceId: "large", price: override }] }] }
+        options: [{ id: "cheese", label: "Cheese", price: "30", maxQuantity: 1, priceBySize: { sizeGroupId: "sizes", overrides: { large: override } } }] }
     ]);
     const selected = selection([
       { type: "SIZE", groupId: "sizes", sizeChoiceId: "large" },
@@ -235,8 +232,8 @@ describe("pricing rules", () => {
   it("prices linked products locally without adding the standalone source Base (CFG-20)", () => {
     const source = config([], "300", "source");
     const linkedContext: ProductConfigurationContext = {
-      catalogId: "catalog-1",
-      linkedProducts: new Map([["source", { productId: "source", catalogId: "catalog-1", configuration: source, available: true, orderable: true }]])
+      catalogId: "catalog-1", currency: "EGP",
+      linkedProducts: new Map([["source", { productId: "source", catalogId: "catalog-1", currency: "EGP", configuration: source, available: true, orderable: true }]])
     };
     const parent = config([{
       type: "OPTIONS", id: "combo", label: "Combo", min: 1, max: 1, includedQuantity: 0,
@@ -254,8 +251,8 @@ describe("pricing rules", () => {
       options: [{ id: "source-choice", label: "Source choice", price: "50", maxQuantity: 1 }]
     }], "300", "source");
     const linkedContext: ProductConfigurationContext = {
-      catalogId: "catalog-1",
-      linkedProducts: new Map([["source", { productId: "source", catalogId: "catalog-1", configuration: liveSource }]])
+      catalogId: "catalog-1", currency: "EGP",
+      linkedProducts: new Map([["source", { productId: "source", catalogId: "catalog-1", currency: "EGP", configuration: liveSource }]])
     };
     const sourceSelection = selection([{
       type: "OPTIONS", groupId: "source-group", instances: [{ instanceId: "source-unit", optionId: "source-choice" }]
@@ -264,7 +261,7 @@ describe("pricing rules", () => {
       type: "OPTIONS", id: "links", label: "Links", min: 1, max: 1, includedQuantity: 0,
       options: [{
         id: "original", label: "Original", price: "10", maxQuantity: 1,
-        linkedProduct: { sourceProductId: "source", mode: "ORIGINAL", originalPriceOverrides: { "source-choice": "20" } }
+        linkedProduct: { sourceProductId: "source", mode: "ORIGINAL", originalPriceOverrides: { "source-choice": {price:"20"} } }
       }]
     }], "0");
     const originalSelection = selection([{
@@ -297,9 +294,9 @@ describe("pricing rules", () => {
   it("makes a required linked branch unorderable when its live source is unavailable (CFG-27)", () => {
     const source = config([], "300", "source");
     const linkedContext: ProductConfigurationContext = {
-      catalogId: "catalog-1",
+      catalogId: "catalog-1", currency: "EGP",
       linkedProducts: new Map([["source", {
-        productId: "source", catalogId: "catalog-1", configuration: source, available: false, orderable: false
+        productId: "source", catalogId: "catalog-1", currency: "EGP", configuration: source, available: false, orderable: false
       }]])
     };
     const parent = config([{

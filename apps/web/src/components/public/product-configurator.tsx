@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useRestaurantShell } from "./restaurant-shell-context";
 import { AlertTriangle, Check, Loader2, Minus, Plus, ShoppingBag } from "lucide-react";
-import { multiplyMoney } from "@menu/shared";
+import { multiplyMoney, compareMoney, effectiveOptionPriceV2, parseProductSelectionV2 } from "@menu/shared";
 import type {
-  ConfigurationGroup,
-  GroupSelection,
-  OptionGroupSelection,
-  OptionSelectionInstance,
-  ProductConfigurationV1,
-  ProductSelectionV1,
-  SizeGroupSelection
+  ConfigurationGroupV2 as ConfigurationGroup,
+  GroupSelectionV2 as GroupSelection,
+  OptionGroupSelectionV2 as OptionGroupSelection,
+  OptionSelectionInstanceV2 as OptionSelectionInstance,
+  ProductConfigurationV2,
+  ProductSelectionV2,
+  SizeGroupSelectionV2 as SizeGroupSelection
 } from "@menu/shared";
 import {
   getPublicProductConfiguration,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/api";
 import {
   buildInitialSelection,
+  completeForcedSelection,
   buildOptionInstance,
   canAddOptionInstance,
   calculatePublicPreview,
@@ -30,9 +32,11 @@ import {
   LatestQuoteGate,
   updateOptionGroup
 } from "./product-configurator-model";
+import { groupNeedsChoice, validationPresentation } from "./configuration-validation-presentation";
 import styles from "./product-configurator.module.css";
-import { summarizeConfigurationPriceLines } from "./product-configurator-summary";
-import { displayCurrencyAmount, displayRoundingDifference } from "@/lib/currency-display";
+import { SummaryRows } from "./configuration-summary-rows";
+import { selectionScope } from "./option-selection-bounds";
+import { ConfigurationAmount } from "./configuration-amount";
 
 type Props = {
   restaurantSlug: string;
@@ -40,7 +44,7 @@ type Props = {
   currency: string;
   cartHref?: string;
   cartCount?: number;
-  initialSelection?: ProductSelectionV1 | null;
+  initialSelection?: ProductSelectionV2 | null;
   editingLineId?: string;
   initialQuantity?: number;
   maxQuantity?: number;
@@ -85,11 +89,11 @@ function issueText(code: string, fallback: string, locale: "ar" | "en") {
   return (locale === "ar" ? messages : english)[code] ?? fallback;
 }
 
-function groupSelection(selection: ProductSelectionV1, groupId: string) {
+function groupSelection(selection: ProductSelectionV2, groupId: string) {
   return selection.groups.find((item) => item.groupId === groupId);
 }
 
-function replaceGroup(selection: ProductSelectionV1, group: GroupSelection) {
+function replaceGroup(selection: ProductSelectionV2, group: GroupSelection) {
   return {
     ...selection,
     groups: selection.groups.some((item) => item.groupId === group.groupId)
@@ -102,7 +106,19 @@ function sourceMap(sources: readonly PublicLinkedConfigurationSource[]) {
   return new Map(sources.map((source) => [source.productId, source]));
 }
 
-function SelectionGroups({
+function shouldFrame(node: { label: string; highlightInPriceSummary?: boolean; hidePublicLabel?: boolean }, ancestorHasFrame: boolean) {
+  return !ancestorHasFrame && node.highlightInPriceSummary === true && !node.hidePublicLabel && node.label.trim().length > 0;
+}
+
+const ValidationDisplay = createContext<{ issues: {code:string;path:string;message:string}[]; highlighted: string | null }>({issues:[],highlighted:null});
+function validationAttributes(group: ConfigurationGroup, path: string, key: string, display: React.ContextType<typeof ValidationDisplay>) {
+  const missing = groupNeedsChoice(group, path, display.issues);
+  const highlighted = missing && display.highlighted === key;
+  return { "data-validation-key": key, "data-missing-choice": missing || undefined,
+    "data-validation-highlight": highlighted || undefined, "aria-invalid": highlighted || undefined, tabIndex: -1 };
+}
+
+export function SelectionGroups({
   configuration,
   selection,
   sources,
@@ -112,34 +128,41 @@ function SelectionGroups({
   createId,
   onChange,
   onSelectionProblem,
-  depth = 0
+  ancestorHasFrame, inheritedSizes = new Map<string,string>(), depth = 0, scopePath = "$selection.groups", scopeKey = "$selection.groups"
 }: {
-  configuration: ProductConfigurationV1;
-  selection: ProductSelectionV1;
+  ancestorHasFrame: boolean;
+  configuration: ProductConfigurationV2;
+  selection: ProductSelectionV2;
   sources: ReadonlyMap<string, PublicLinkedConfigurationSource>;
   currency: string;
   locale: "ar" | "en";
   showPrices: boolean;
   createId: (prefix: string) => string;
-  onChange: (selection: ProductSelectionV1) => void;
+  onChange: (selection: ProductSelectionV2) => void;
   onSelectionProblem: (label: string) => void;
-  depth?: number;
+  inheritedSizes?: ReadonlyMap<string,string>; depth?: number; scopePath?: string; scopeKey?: string;
 }) {
+  const validation = useContext(ValidationDisplay);
+  const scope = selectionScope(sources);
+  const selectedSizes = new Map([...inheritedSizes, ...selection.groups.filter(g => g.type === "SIZE").map(g => [g.groupId,g.sizeChoiceId] as const)]);
   return <div className={styles.groups} data-depth={depth}>{configuration.groups.map((group) => {
+    const groupPath = `${scopePath}.${group.id}`, groupKey = `${scopeKey}.${group.id}`;
     if (group.type === "SIZE") {
       const selected = groupSelection(selection, group.id) as SizeGroupSelection | undefined;
+      const framed = shouldFrame(group, ancestorHasFrame);
       const selectedSize = group.sizes.find((size) => size.id === selected?.sizeChoiceId);
-      return <section className={styles.group} key={group.id} data-group-type="SIZE">
-        <header className={styles.groupHeader}>
+      const sizes = group.sizes.filter(s => group.available !== false && s.available !== false && (group.children ?? []).every(scope.possible));
+      return <section {...validationAttributes(group,groupPath,groupKey,validation)} className={styles.group} key={group.id} data-group-id={group.id} data-group-type="SIZE" data-framed={framed || undefined}>
+        {!group.hidePublicLabel && <header className={styles.groupHeader}>
           <div><b dir="auto">{group.label}</b><span className={styles.required}>{say(locale, "مطلوب", "Required")}</span></div>
-        </header>
-        <div className={styles.sizeGrid} role="radiogroup" aria-label={group.label}>
+        </header>}
+        {sizes.length === 1 && selected?.sizeChoiceId === sizes[0].id ? <div className={styles.componentHeading}><h3>{sizes[0].label}</h3>{showPrices && <small><ConfigurationAmount value={sizes[0].price} currency={currency} locale={locale} /></small>}</div> : <div className={styles.sizeGrid} role="radiogroup" aria-label={group.hidePublicLabel ? say(locale,"الحجم","Size") : group.label}>
           {group.sizes.map((size) => <button
             type="button"
             role="radio"
             aria-checked={selected?.sizeChoiceId === size.id}
             className={selected?.sizeChoiceId === size.id ? styles.selected : ""}
-            disabled={size.available === false}
+            disabled={!sizes.includes(size)}
             key={size.id}
             onClick={() => {
               const result = changeSizeSelection(selection, group, size.id, sources, createId);
@@ -148,19 +171,21 @@ function SelectionGroups({
             }}
           >
             <span dir="auto">{size.label}</span>
-            {showPrices ? <strong>{displayCurrencyAmount(size.price, currency)}</strong> : null}
+            {showPrices ? <strong><ConfigurationAmount value={size.price} currency={currency} locale={locale} /></strong> : null}
           </button>)}
-        </div>
-        {selectedSize && selected && (selectedSize.children?.length ?? 0) > 0 ? <div className={styles.nested}>
+        </div>}
+        {selectedSize && selected && (group.children?.length ?? 0) > 0 ? <div className={styles.nested} data-branch="nested">
           <SelectionGroups
-            configuration={{ ...configuration, groups: selectedSize.children ?? [] }}
+            ancestorHasFrame={ancestorHasFrame || framed}
+            configuration={{ ...configuration, groups: group.children ?? [] }}
             selection={{ ...selection, groups: selected.children ?? [] }}
             sources={sources}
             currency={currency}
             locale={locale}
             showPrices={showPrices}
             createId={createId}
-            depth={depth + 1}
+            inheritedSizes={selectedSizes} depth={depth + 1}
+            scopePath={`${groupPath}.children`} scopeKey={`${groupKey}.children`}
             onChange={(nested) => onChange(replaceGroup(selection, { ...selected, children: nested.groups }))}
             onSelectionProblem={onSelectionProblem}
           />
@@ -170,7 +195,9 @@ function SelectionGroups({
 
     return <OptionGroup
       key={group.id}
+      ancestorHasFrame={ancestorHasFrame}
       group={group}
+      groupPath={groupPath} groupKey={groupKey}
       configuration={configuration}
       selection={selection}
       sources={sources}
@@ -178,7 +205,7 @@ function SelectionGroups({
       locale={locale}
       showPrices={showPrices}
       createId={createId}
-      depth={depth}
+      selectedSizes={selectedSizes} depth={depth}
       onChange={onChange}
       onSelectionProblem={onSelectionProblem}
     />;
@@ -186,7 +213,7 @@ function SelectionGroups({
 }
 
 function OptionGroup({
-  group,
+  group, groupPath, groupKey,
   configuration,
   selection,
   sources,
@@ -194,62 +221,83 @@ function OptionGroup({
   locale,
   showPrices,
   createId,
-  depth,
+  ancestorHasFrame, depth, selectedSizes,
   onChange,
   onSelectionProblem
 }: {
   group: Extract<ConfigurationGroup, { type: "OPTIONS" }>;
-  configuration: ProductConfigurationV1;
-  selection: ProductSelectionV1;
+  groupPath: string; groupKey: string;
+  ancestorHasFrame: boolean;
+  configuration: ProductConfigurationV2;
+  selection: ProductSelectionV2;
   sources: ReadonlyMap<string, PublicLinkedConfigurationSource>;
   currency: string;
   locale: "ar" | "en";
   showPrices: boolean;
   createId: (prefix: string) => string;
-  depth: number;
-  onChange: (selection: ProductSelectionV1) => void;
+  selectedSizes: ReadonlyMap<string,string>; depth: number;
+  onChange: (selection: ProductSelectionV2) => void;
   onSelectionProblem: (label: string) => void;
 }) {
+  const validation = useContext(ValidationDisplay);
   const selected = groupSelection(selection, group.id) as OptionGroupSelection | undefined;
   const instances = selected?.instances ?? [];
-  const radioMode = group.max === 1 && group.options.every(
-    (option) => option.maxQuantity === 1 && (option.minQuantity ?? 0) === 0
-  );
+  const bounds = selectionScope(sources).analyze(group);
+  const impossible = bounds.state === "ZERO_VALID_SELECTIONS";
+  const radioMode = group.min === 1 && group.max === 1 && group.options.every(option => (option.minQuantity ?? 0) === 0);
+  const required = group.min > 0 || group.options.some(o => (o.minQuantity ?? 0) > 0);
   const max = group.max ?? 100;
 
   function setInstances(next: OptionSelectionInstance[]) {
-    onChange(updateOptionGroup(selection, group.id, next));
+    const children = next.length ? selected?.children ?? buildInitialSelection({ ...configuration, groups: group.children ?? [] }, sources, createId).groups : [];
+    onChange(updateOptionGroup(selection, group.id, next, children));
   }
 
-  return <section className={styles.group} data-group-type="OPTIONS">
-    <header className={styles.groupHeader}>
-      <div>
+  const framed = shouldFrame(group, ancestorHasFrame);
+  const insideGroupFrame = ancestorHasFrame || framed;
+  const components = group.options.length > 0 && group.options.every(option => option.linkedProduct);
+  return <section {...validationAttributes(group,groupPath,groupKey,validation)} className={styles.group} data-group-id={group.id} data-framed={framed || undefined} data-group-type="OPTIONS" data-components={components || undefined}>
+    {(!group.hidePublicLabel || (group.max !== null && group.max > 1) || instances.length < group.min) && <header className={styles.groupHeader}>
+      {!group.hidePublicLabel && <div>
         <b dir="auto">{group.label}</b>
-        <span className={group.min > 0 ? styles.required : styles.optional}>{group.min > 0 ? say(locale, "مطلوب", "Required") : say(locale, "اختياري", "Optional")}</span>
-      </div>
-      {group.max === 1 ? <small>{group.min > 0 ? say(locale, "اختر خيارًا واحدًا", "Choose one option") : say(locale, "اختر خيارًا واحدًا كحد أقصى", "Choose up to one option")}</small>
-        : group.max !== null && group.min === group.max ? <small>{say(locale, `اختر ${group.min} خيارات`, `Choose ${group.min} options`)}</small>
-        : group.max !== null ? <small>{group.min > 0
-          ? say(locale, `اختر من ${group.min} إلى ${group.max} خيارات`, `Choose ${group.min} to ${group.max} options`)
-          : say(locale, `اختر حتى ${group.max} خيارات`, `Choose up to ${group.max} options`)}</small>
-          : group.min > 0 ? <small>{say(locale, `اختر ${group.min} خيارات على الأقل`, `Choose at least ${group.min} options`)}</small> : null}
-    </header>
-    <div className={styles.options} role={radioMode ? "radiogroup" : "group"} aria-label={group.label}>
+        <span className={required ? styles.required : styles.optional}>{required ? say(locale, "مطلوب", "Required") : say(locale, "اختياري", "Optional")}</span>
+      </div>}
+      {group.max !== null && group.max > 1 ? <span className={styles.tally} aria-live="polite" aria-atomic="true">
+        {instances.length} {say(locale, "من", "of")} {group.max}
+      </span> : null}
+    </header>}
+    {impossible && <p role="status">{say(locale,"لا يمكن إكمال هذه المجموعة بالخيارات المتاحة","This group cannot be completed with the available options")}</p>}
+    <div className={styles.options} role={radioMode && bounds.state === "MULTIPLE_VALID_SELECTIONS" ? "radiogroup" : "group"} aria-label={group.hidePublicLabel ? say(locale,"الخيارات","Choices") : group.label}>
       {group.options.map((option) => {
+        const optionFrame = shouldFrame(option, insideGroupFrame);
+        const range = bounds.ranges.get(option.id)!;
+        if (!range.available) {
+          const previouslySelected = instances.some(i => i.optionId === option.id);
+          return <article key={option.id} data-option-id={option.id} data-framed={optionFrame || undefined} className={styles.unavailableOption} role="group" aria-label={option.label} aria-disabled={previouslySelected ? undefined : true}>
+            <b dir="auto">{option.label}</b><small>{say(locale, "غير متاح", "Unavailable")}</small>
+            {previouslySelected && <button type="button" onClick={() => setInstances(instances.filter(i => i.optionId !== option.id))}>
+              {say(locale,"إزالة الاختيار غير المتاح","Remove unavailable selection")}
+            </button>}
+          </article>;
+        }
         const optionInstances = instances.filter((instance) => instance.optionId === option.id);
         const count = optionInstances.length;
+        const singleUnit = (impossible ? option.maxQuantity ?? max : range.max) === 1;
+        const pricePending = !!option.priceBySize && !selectedSizes.has(option.priceBySize.sizeGroupId);
+        const amount = pricePending ? option.price : effectiveOptionPriceV2(option, selectedSizes);
         const canAdd = canAddOptionInstance({
-          available: option.available !== false,
+          available: !pricePending,
           optionCount: count,
-          optionMax: option.maxQuantity,
+          optionMax: impossible ? option.maxQuantity ?? max : range.max,
           groupCount: instances.length,
           groupMax: max,
           radioMode
         });
-        const canRemove = count > (option.minQuantity ?? 0);
+        const canRemove = count > (impossible ? option.minQuantity ?? 0 : range.min);
         const source = option.linkedProduct ? sources.get(option.linkedProduct.sourceProductId) : null;
         const sourceNameAlreadyShown = Boolean(source && option.label.includes(source.name));
-        const priceHint = option.priceOverrides?.length ? say(locale, "يتغير حسب الحجم", "Varies by size") : option.price;
+        const priceHint = pricePending ? say(locale,"اختر الحجم أولًا","Choose a size first") : compareMoney(amount,"0") === 0
+          ? say(locale,"دون زيادة","No extra charge") : <ConfigurationAmount value={amount} currency={currency} locale={locale} />;
 
         function add() {
           if (!canAdd) return;
@@ -266,43 +314,65 @@ function OptionGroup({
           setInstances(instances.filter((instance) => instance.instanceId !== id));
         }
 
-        return <article className={`${styles.option} ${count ? styles.optionSelected : ""}`.trim()} key={option.id}>
-          <div className={styles.optionRow}>
+        const fixedComponent = !impossible && range.min === range.max && count === range.min;
+        const childConfig = linkedConfiguration(option, sources);
+        function hasPaidSelectedSize(groups: ConfigurationGroup[], choices: GroupSelection[]) {
+          return groups.some(g => {
+            if (g.type !== "SIZE") return false;
+            const chosen = choices.find(choice => choice.groupId === g.id);
+            const size = chosen?.type === "SIZE" && g.sizes.find(s => s.id === chosen.sizeChoiceId && s.available !== false);
+            return size && compareMoney(size.price,"0") > 0;
+          });
+        }
+        const suppressZero = fixedComponent && count > 0 && compareMoney(amount,"0") === 0
+          && group.includedQuantity === 0 && optionInstances.every(instance =>
+            hasPaidSelectedSize(option.children ?? [],instance.children ?? []) ||
+            (childConfig && hasPaidSelectedSize(childConfig.groups,instance.linkedSelection?.groups ?? [])));
+        return <article className={`${styles.option} ${count ? styles.optionSelected : ""}`.trim()} key={option.id} data-option-id={option.id} data-framed={optionFrame || undefined} data-component={option.linkedProduct ? option.id : undefined}>
+          {fixedComponent ? <header className={styles.componentHeading}>
+            <div className={styles.componentNames}><h3 dir="auto">{option.label}{count > 1 ? " × " + count : ""}</h3>
+              {source && !sourceNameAlreadyShown ? <span dir="auto">{source.name}</span> : null}
+            </div>
+            {count === 0 ? <small>{say(locale,"غير محدد","Not selected")}</small> : showPrices && !suppressZero ? <small>{priceHint}</small> : null}
+          </header> : <div className={styles.optionRow}>
             <button
               type="button"
               className={styles.optionLabel}
-              role={radioMode ? "radio" : option.maxQuantity === 1 ? "checkbox" : undefined}
-              aria-checked={radioMode || option.maxQuantity === 1 ? count > 0 : undefined}
-              disabled={option.available === false}
-              onClick={() => count > 0 && (radioMode || option.maxQuantity === 1) && canRemove ? remove() : add()}
+              role={radioMode ? "radio" : singleUnit ? "checkbox" : undefined}
+              aria-checked={radioMode || singleUnit ? count > 0 : undefined}
+              disabled={!canAdd && !(count > 0 && (radioMode || singleUnit) && canRemove)}
+              onClick={() => count > 0 && radioMode ? undefined : count > 0 && singleUnit && canRemove ? remove() : add()}
             >
-              <i>{count > 0 ? <Check size={14} /> : null}</i>
-              <span><b dir="auto">{option.label}</b>{showPrices ? <small>{priceHint === option.price ? displayCurrencyAmount(option.price, currency) : priceHint}</small> : null}</span>
+              {singleUnit ? <i aria-hidden="true">{count > 0 ? <Check size={13} /> : null}</i> : null}
+              <span><b dir="auto">{option.label}</b>{showPrices ? <small>{priceHint}</small> : null}</span>
             </button>
-            {option.maxQuantity > 1 ? <div className={styles.quantity}>
+            {!singleUnit ? <div className={styles.quantity}>
               <button type="button" onClick={remove} disabled={!canRemove} aria-label={`${say(locale, "تقليل", "Decrease")} ${option.label}`}><Minus size={14} /></button>
               <strong>{count}</strong>
               <button type="button" onClick={add} disabled={!canAdd} aria-label={`${say(locale, "زيادة", "Increase")} ${option.label}`}><Plus size={14} /></button>
             </div> : null}
-          </div>
-          {option.linkedProduct && (!sourceNameAlreadyShown || source?.orderable === false) ? <div className={styles.linkedMeta}>
-            {!sourceNameAlreadyShown ? <b dir="auto">{source?.name ?? say(locale, "مصدر غير متاح", "Source unavailable")}</b> : null}
+          </div>}
+          {option.linkedProduct && ((!fixedComponent || !source) && !sourceNameAlreadyShown || source?.orderable === false) ? <div className={styles.linkedMeta}>
+            {(!fixedComponent || !source) && !sourceNameAlreadyShown ? <b dir="auto">{source?.name ?? say(locale, "مصدر غير متاح", "Source unavailable")}</b> : null}
             {source && !source.orderable ? <small>{say(locale, "غير قابل للطلب حاليًا", "Currently unavailable")}</small> : null}
           </div> : null}
-          {optionInstances.map((instance) => {
+          {optionInstances.map((instance, index) => {
             const linked = linkedConfiguration(option, sources);
             const hasLinkedChoices = Boolean(linked?.groups.length && instance.linkedSelection);
             if (!(option.children?.length ?? 0) && !hasLinkedChoices) return null;
             return <div className={styles.instance} key={instance.instanceId}>
-              {(option.children?.length ?? 0) > 0 ? <div className={styles.nested}>
+              {optionInstances.length > 1 ? <small className={styles.instanceName}>{option.label} · {index + 1}</small> : null}
+              {(option.children?.length ?? 0) > 0 ? <div className={styles.nested} data-branch="nested">
                 <SelectionGroups
+                  scopePath={`${groupPath}.instances[${instances.indexOf(instance)}].children`} scopeKey={`${groupKey}.${instance.instanceId}.children`}
                   configuration={{ ...configuration, groups: option.children ?? [] }}
-                  selection={{ ...selection, groups: instance.children ?? [] }}
+                  inheritedSizes={selectedSizes} selection={{ ...selection, groups: instance.children ?? [] }}
                   sources={sources}
                   currency={currency}
                   locale={locale}
                   showPrices={showPrices}
                   createId={createId}
+                  ancestorHasFrame={insideGroupFrame || optionFrame}
                   depth={depth + 1}
                   onChange={(nested) => setInstances(instances.map((item) => item.instanceId === instance.instanceId
                     ? { ...item, children: nested.groups }
@@ -310,15 +380,17 @@ function OptionGroup({
                   onSelectionProblem={onSelectionProblem}
                 />
               </div> : null}
-              {hasLinkedChoices && linked && instance.linkedSelection ? <div className={styles.linkedSelection}>
+              {hasLinkedChoices && linked && instance.linkedSelection ? <div className={styles.linkedSelection} data-branch="linked">
                 <SelectionGroups
                   configuration={linked}
+                  scopePath={`${groupPath}.instances[${instances.indexOf(instance)}].linkedSelection.groups`} scopeKey={`${groupKey}.${instance.instanceId}.linkedSelection.groups`}
                   selection={instance.linkedSelection}
                   sources={sources}
                   currency={currency}
                   locale={locale}
                   showPrices={showPrices}
                   createId={createId}
+                  ancestorHasFrame={insideGroupFrame || optionFrame}
                   depth={depth + 1}
                   onChange={(linkedSelection) => setInstances(instances.map((item) => item.instanceId === instance.instanceId
                     ? { ...item, linkedSelection }
@@ -331,17 +403,29 @@ function OptionGroup({
         </article>;
       })}
     </div>
+    {instances.length > 0 && selected && (group.children?.length ?? 0) > 0 ? <div className={styles.nested} data-branch="shared">
+      <SelectionGroups scopePath={`${groupPath}.children`} scopeKey={`${groupKey}.children`} configuration={{ ...configuration, groups: group.children ?? [] }} selection={{ ...selection, groups: selected.children ?? [] }}
+        sources={sources} currency={currency} locale={locale} showPrices={showPrices} createId={createId}
+        inheritedSizes={selectedSizes} depth={depth + 1} ancestorHasFrame={insideGroupFrame}
+        onChange={nested => onChange(replaceGroup(selection, { ...selected, children: nested.groups }))} onSelectionProblem={onSelectionProblem} />
+    </div> : null}
   </section>;
 }
+
 
 export function ProductConfigurator({ restaurantSlug, productId, currency, cartHref, cartCount = 0, initialSelection,
   editingLineId, initialQuantity = 1, maxQuantity = 100, onNetworkQuote, checkoutEnabled = false,
   orderingEnabled = false, showPrices = true, showBottomBar = false, hideBottomBarCartIcon = false, freshStart = false,
   editableQuantity = false, locale = "ar" }: Props) {
+  const shell = useRestaurantShell();
+  // Revalidation must not replace an in-progress configuration/selection.
+  useEffect(() => shell?.holdSnapshot(), [shell?.holdSnapshot]);
   const [envelope, setEnvelope] = useState<PublicProductConfigurationResponse | null>(null);
-  const [selection, setSelection] = useState<ProductSelectionV1 | null>(null);
+  const [selection, setSelection] = useState<ProductSelectionV2 | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [continueMessage, setContinueMessage] = useState<string | null>(null);
+  const root = useRef<HTMLElement>(null);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
   const [quoteAdded, setQuoteAdded] = useState(false);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [staleEdit, setStaleEdit] = useState(false);
@@ -357,36 +441,40 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
   useEffect(() => {
     let cancelled = false;
     quoteGate.current.invalidate();
+    setHighlighted(null);
     setEnvelope(null);
     setSelection(null);
     setError(null);
     setQuoteAdded(false);
     setStaleEdit(false);
-    void getPublicProductConfiguration(restaurantSlug, productId)
+    void (shell ? shell.configurations.load(restaurantSlug, productId, locale, currency)
+      : getPublicProductConfiguration(restaurantSlug, productId))
       .then((value) => {
         if (cancelled) return;
+        if (value.schemaVersion !== 2 || value.currency !== currency) throw new Error("Configuration currency or version mismatch");
         const sources = sourceMap(value.linkedProducts);
-        const storageKey = `ordersawa:configurator:${restaurantSlug}:${productId}:r${value.configurationRevision}`;
-        let initial: ProductSelectionV1 | null = null;
+        const storageKey = `ordersawa:configurator:v2:${restaurantSlug}:${productId}:r${value.configurationRevision}`;
+        let initial: ProductSelectionV2 | null = null;
         if (!freshStart) {
           try {
             const stored = window.sessionStorage.getItem(storageKey);
             if (stored) {
-              const parsed = JSON.parse(stored) as ProductSelectionV1;
-              if (parsed.productId === value.productId && parsed.configurationRevision === value.configurationRevision) initial = parsed;
+              const parsed = parseProductSelectionV2(JSON.parse(stored)).selection;
+              if (parsed && parsed.productId === value.productId && parsed.configurationRevision === value.configurationRevision) initial = parsed;
             }
           } catch {
             // Invalid local preview drafts are ignored without affecting server data.
           }
         }
         setEnvelope(value);
+        if (value.issues.some(issue => issue.code === "GROUP_LEVEL_LIMIT")) return;
         if (editingLineId && initialSelection) {
-          const compatible = initialSelection.productId === value.productId
+          const compatible = initialSelection.schemaVersion === 2 && initialSelection.productId === value.productId
             && initialSelection.configurationRevision === value.configurationRevision;
           setStaleEdit(!compatible);
-          setSelection(compatible ? initialSelection : buildInitialSelection(value.configuration, sources, createId));
+          setSelection(compatible ? completeForcedSelection(value.configuration, initialSelection, sources, createId, currency) : buildInitialSelection(value.configuration, sources, createId));
         } else {
-          setSelection(initial ?? buildInitialSelection(value.configuration, sources, createId));
+          setSelection(initial ? completeForcedSelection(value.configuration, initial, sources, createId, currency) : buildInitialSelection(value.configuration, sources, createId));
         }
       })
       .catch(() => {
@@ -399,7 +487,7 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
 
   useEffect(() => {
     if (!envelope || !selection || freshStart) return;
-    const storageKey = `ordersawa:configurator:${restaurantSlug}:${productId}:r${envelope.configurationRevision}`;
+    const storageKey = `ordersawa:configurator:v2:${restaurantSlug}:${productId}:r${envelope.configurationRevision}`;
     try {
       window.sessionStorage.setItem(storageKey, JSON.stringify(selection));
     } catch {
@@ -414,11 +502,25 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
   );
 
   if (error) return <section className={styles.state} dir={locale === "ar" ? "rtl" : "ltr"}><AlertTriangle size={22} /><b>{locale === "ar" ? error : "Could not load this product's choices."}</b></section>;
-  if (!envelope || !selection || !preview) return <section className={styles.state} dir={locale === "ar" ? "rtl" : "ltr"}><Loader2 className={styles.spin} size={22} /><b>{say(locale, "جارٍ تحميل خيارات الصنف...", "Loading product choices...")}</b></section>;
+  if (envelope?.issues.some(issue => issue.code === "GROUP_LEVEL_LIMIT")) return <section className={styles.state} role="status">{say(locale, "تجاوز هذا التكوين الحد المسموح للتداخل.", "This configuration exceeds the nesting limit.")}</section>;
+  if (!envelope || !selection || !preview) return <section className={`${styles.state} public-configuration-loading`} dir={locale === "ar" ? "rtl" : "ltr"}><Loader2 className={styles.spin} size={22} /><b>{say(locale, "جارٍ تحميل خيارات الصنف...", "Loading product choices...")}</b></section>;
 
+  const presentation = validationPresentation(preview.issues);
+  function revealMissing() {
+    const target = root.current?.querySelector<HTMLElement>('[data-missing-choice="true"]');
+    if (!target) return;
+    setHighlighted(target.dataset.validationKey ?? null);
+    // Current selected branches are expanded. Preserve support for native disclosure ancestors.
+    for (let parent = target.parentElement; parent && parent !== root.current; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    }
+    target.focus({preventScroll:true});
+    target.scrollIntoView({block:"center",behavior:matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"});
+  }
   async function continuePreview() {
     if (!preview?.valid || preview.total === null) {
-      setContinueMessage(say(locale, "أكمل الاختيارات المطلوبة وصحّح الأخطاء أولًا.", "Complete the required choices first."));
+      if (presentation.missing.length) { setContinueMessage(null); revealMissing(); }
+      else setContinueMessage(say(locale, "تعذر التحقق من هذا التكوين.", "This configuration could not be validated."));
       return;
     }
     if (!orderingEnabled || !envelope?.orderable || !selection || !onNetworkQuote || draftQuantity > maxQuantity) {
@@ -443,6 +545,9 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       setStaleEdit(false);
     } catch (error) {
       if (!quoteGate.current.isCurrent(requestId)) return;
+      // Keep the user's selection, but do not reuse a possibly obsolete graph
+      // on the next opening after an authoritative quote rejection.
+      shell?.configurations.clear();
       if (error instanceof PublicProductQuoteError) {
         const firstIssue = error.issues[0];
         setContinueMessage(firstIssue ? issueText(firstIssue.code, firstIssue.message, locale) : error.message);
@@ -454,9 +559,9 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     }
   }
 
-  const canAdd = orderingEnabled && preview.valid && envelope.orderable && draftQuantity <= maxQuantity && !quoteBusy;
-  return <>
-    <section className={styles.configurator} dir={locale === "ar" ? "rtl" : "ltr"} data-testid="public-product-configurator">
+  const canAdd = orderingEnabled && (preview.valid || (presentation.missing.length > 0 && !presentation.other.length)) && envelope.orderable && draftQuantity <= maxQuantity && !quoteBusy;
+  return <ValidationDisplay.Provider value={{issues:presentation.missing,highlighted}}>
+    <section ref={root} className={styles.configurator} dir={locale === "ar" ? "rtl" : "ltr"} data-testid="public-product-configurator">
     <header className={styles.heading}>
       <h2>{say(locale, "تخصيص الصنف", "Customize product")}</h2>
     </header>
@@ -466,6 +571,7 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     {staleEdit ? <div className={styles.unavailable}><AlertTriangle size={18} /><div><b>{say(locale, "تغيّر تكوين الصنف منذ إضافته للسلة", "Product choices changed since this item was added")}</b><p>{say(locale, "اختيارات السلة القديمة محفوظة دون تعديل. راجع التكوين الحالي واحفظه إذا رغبت.", "Your previous cart choices were not changed. Review and save the current choices if you wish.")}</p></div></div> : null}
 
     <SelectionGroups
+      ancestorHasFrame={false}
       configuration={envelope.configuration}
       selection={selection}
       sources={sources}
@@ -473,7 +579,7 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       locale={locale}
       showPrices={showPrices}
       createId={createId}
-      onChange={(next) => { quoteGate.current.invalidate(); setQuoteBusy(false); setContinueMessage(null); setQuoteAdded(false); setSelection(next); }}
+      onChange={(next) => { quoteGate.current.invalidate(); setQuoteBusy(false); setContinueMessage(null); setQuoteAdded(false); setSelection(completeForcedSelection(envelope.configuration, next, sources, createId, currency)); }}
       onSelectionProblem={(label) => setContinueMessage(say(locale,
         `لا يمكن نقل اختيار «${label}» إلى الحجم الجديد. صحّح الاختيار أولًا ثم حاول مجددًا.`,
         `The choice “${label}” is not valid for the new size. Adjust it first, then try again.`))}
@@ -482,19 +588,18 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
     {showPrices ? <aside className={styles.summary} aria-live="polite">
       <div className={styles.summaryTitle}><span>{say(locale, "ملخص السعر", "Price summary")}</span></div>
       {preview.valid && preview.total !== null ? <>
-        <ul>{summarizeConfigurationPriceLines(preview.lines, envelope.productName).map((line, index) => <li key={`${line.label}-${index}`}>
-          <span dir="auto">{line.label}</span>
-          {line.chargedAmount !== undefined ? <b>{displayCurrencyAmount(line.chargedAmount, currency)}</b> : null}
-        </li>)}</ul>
-        {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)
-          ? <p className={styles.hint}>{say(locale, "فرق عرض الأسعار", "Displayed price difference")}: {displayRoundingDifference(preview.lines.map((line) => line.chargedAmount), preview.total, currency)}</p> : null}
-        <div className={styles.unitPrice}><span>{say(locale, "سعر القطعة مع الإضافات", "Price per item with choices")}</span><b>{displayCurrencyAmount(preview.total, currency)}</b></div>
+        <SummaryRows lines={preview.lines} total={preview.total} envelope={envelope} selection={selection} currency={currency} locale={locale} />
+        <div className={styles.unitPrice}><span>{say(locale, "سعر القطعة مع الإضافات", "Price per item with choices")}</span><b><ConfigurationAmount value={preview.total} currency={currency} locale={locale} /></b></div>
         <div className={styles.unitPrice}><span>{say(locale, "الكمية", "Quantity")}</span><b>× {draftQuantity}</b></div>
-        <div className={styles.total}><span>{say(locale, "الإجمالي", "Total")}</span><strong>{displayCurrencyAmount(multiplyMoney(preview.total, draftQuantity), currency)}</strong></div>
-      </> : <div className={styles.errors}>
-        <b>{say(locale, "لا يمكن عرض سعر نهائي بعد", "A final price is not available yet")}</b>
-        <ul>{preview.issues.slice(0, 8).map((issue, index) => <li key={`${issue.code}-${index}`}>{issueText(issue.code, issue.message, locale)}</li>)}</ul>
-      </div>}
+        <div className={styles.total}><span>{say(locale, "الإجمالي", "Total")}</span><strong><ConfigurationAmount value={multiplyMoney(preview.total, draftQuantity)} currency={currency} locale={locale} /></strong></div>
+      </> : <>
+        {presentation.missing.length > 0 && <div className={styles.incomplete} data-testid="incomplete-choices">
+          <b>{say(locale,"بقيت اختيارات مطلوبة","Required choices remain")}</b>
+          <span>{say(locale,"أكمل اختياراتك لعرض السعر النهائي.","Complete your choices to see the final price.")}</span>
+          <button type="button" onClick={revealMissing}>{say(locale,"عرض الخيارات الناقصة","Show missing choices")}</button>
+        </div>}
+        {presentation.other.length > 0 && <div className={styles.errors}><ul>{presentation.other.slice(0,8).map((issue,index)=><li key={index}>{issueText(issue.code,issue.message,locale)}</li>)}</ul></div>}
+      </>}
     </aside> : null}
 
     <div className={styles.previewGate}>
@@ -526,5 +631,5 @@ export function ProductConfigurator({ restaurantSlug, productId, currency, cartH
       </button>
       {cartHref ? <a href={cartHref} className="product-network-cart-shortcut" aria-label={say(locale, "عرض السلة", "View cart")} title={say(locale, "عرض السلة", "View cart")}><ShoppingBag size={20} /><b>{cartCount}</b></a> : null}
     </div> : null}
-  </>;
+  </ValidationDisplay.Provider>;
 }

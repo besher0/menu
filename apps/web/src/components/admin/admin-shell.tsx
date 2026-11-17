@@ -6,18 +6,17 @@ import { useEffect, useState } from "react";
 import {
   BadgeDollarSign,
   BarChart3,
-  Bell,
   Globe2,
   Home,
   Image,
   LayoutDashboard,
   MapPinned,
+  MessageSquare,
   Package,
   Palette,
   PanelsTopLeft,
   QrCode,
   ReceiptText,
-  Search,
   Settings,
   ShoppingBag,
   Store,
@@ -26,7 +25,7 @@ import {
 } from "lucide-react";
 import { RestaurantContextSync } from "@/components/dashboard/restaurant-context-sync";
 import { DashboardRestaurantSwitcher } from "@/components/dashboard/dashboard-restaurant-switcher";
-import { getBrowserSession } from "@/lib/session";
+import { getBrowserSession, resolveStoredRestaurant } from "@/lib/session";
 
 const adminBaseNavItems = [
   { href: "/admin", label: "الرئيسية", icon: LayoutDashboard },
@@ -39,6 +38,7 @@ const restaurantOwnerNavItems = [
   { href: "/dashboard/products", label: "المنيو", icon: ShoppingBag },
   { href: "/dashboard/categories", label: "الأقسام", icon: Tags },
   { href: "/dashboard/banners", label: "البنرات", icon: Image },
+  { href: "/dashboard/feedback", label: "التقييمات والشكاوي", icon: MessageSquare },
   { href: "/dashboard/settings", label: "الإعدادات", icon: Settings }
 ];
 
@@ -55,6 +55,7 @@ const restaurantAdminNavItems = [
   { href: "/dashboard/branches", label: "الفروع", icon: MapPinned },
   { href: "/dashboard/qr", label: "رموز QR", icon: QrCode },
   { href: "/dashboard/domains", label: "الدومينات", icon: Globe2 },
+  { href: "/dashboard/feedback", label: "التقييمات والشكاوي", icon: MessageSquare },
   { href: "/dashboard/settings", label: "الإعدادات", icon: Settings }
 ];
 
@@ -72,9 +73,9 @@ export function AdminShell({
   const searchParams = useSearchParams();
   const [authChecked, setAuthChecked] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
+  const [canViewFeedback, setCanViewFeedback] = useState(false);
   const isDashboard = active.startsWith("/dashboard");
-  const ownerNavItems = restaurantOwnerNavItems.filter((item) => item.href !== "/dashboard/categories");
+  const ownerNavItems = restaurantOwnerNavItems.filter((item) => item.href !== "/dashboard/categories" && (item.href !== "/dashboard/feedback" || canViewFeedback));
   const navItems = active.startsWith("/admin")
     ? adminNavItems
     : isSuperAdmin
@@ -91,18 +92,10 @@ export function AdminShell({
     }
 
     setIsSuperAdmin(session.user.role === "SUPER_ADMIN");
+    const restaurantId = resolveStoredRestaurant(session)?.id;
+    setCanViewFeedback(session.user.role === "SUPER_ADMIN" || session.memberships.some(m => m.restaurant.id === restaurantId && m.role === "OWNER"));
     setAuthChecked(true);
   }, [pathname, router, searchParams]);
-
-  useEffect(() => {
-    setGlobalSearch("");
-    window.dispatchEvent(new CustomEvent("admin:global-search", { detail: "" }));
-  }, [active]);
-
-  function updateGlobalSearch(value: string) {
-    setGlobalSearch(value);
-    window.dispatchEvent(new CustomEvent("admin:global-search", { detail: value }));
-  }
 
   if (!authChecked) {
     return null;
@@ -130,20 +123,7 @@ export function AdminShell({
       </aside>
       <main className="admin-main restaurant-admin-main">
         <RestaurantContextSync />
-        <header className={isDashboard ? "admin-topbar restaurant-topbar has-restaurant-switcher" : "admin-topbar restaurant-topbar"}>
-          {isDashboard ? <DashboardRestaurantSwitcher /> : null}
-          <button className="icon-button" aria-label="الإشعارات">
-            <Bell size={23} />
-          </button>
-          <label className="search-box">
-            <Search size={23} />
-            <input
-              value={globalSearch}
-              onChange={(event) => updateGlobalSearch(event.target.value)}
-              placeholder="Search"
-            />
-          </label>
-        </header>
+        {isDashboard && <div className="merchant-switcher"><DashboardRestaurantSwitcher /></div>}
         {children}
       </main>
     </div>

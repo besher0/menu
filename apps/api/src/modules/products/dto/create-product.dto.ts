@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, Min } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from "class-validator";
 
 type IngredientInput = string | {
   name?: string;
@@ -11,6 +11,8 @@ type ProductImageInput = {
 };
 
 export class CreateProductDto {
+  @IsOptional() @IsInt() @Min(0)
+  expectedProductVersion?: number;
   // POST-only intent. The product remains a hidden Legacy shell until its tree is saved.
   @IsOptional()
   @IsIn(["NETWORK_SETUP"])

@@ -1,9 +1,9 @@
-import { ProductConfigurationV1, validateConfiguration } from "@menu/shared";
+import { ProductConfigurationV2, validateConfigurationV2 as validateConfiguration } from "@menu/shared";
 
-/** A real, persisted V1 tree with no price source; Shared pricing rejects a sale. */
-export function initialNetworkSetupConfiguration(productId: string): ProductConfigurationV1 {
-  const configuration: ProductConfigurationV1 = {
-    schemaVersion: 1,
+/** A real, persisted V2 tree with no price source; Shared pricing rejects a sale. */
+export function initialNetworkSetupConfiguration(productId: string): ProductConfigurationV2 {
+  const configuration: ProductConfigurationV2 = {
+    schemaVersion: 2,
     productId,
     revision: 1,
     basePrice: null,
@@ -16,8 +16,8 @@ export function initialNetworkSetupConfiguration(productId: string): ProductConf
 
 export function isUnpricedNetworkSetup(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const configuration = value as Partial<ProductConfigurationV1>;
-  return configuration.schemaVersion === 1
+  const configuration = value as Partial<ProductConfigurationV2>;
+  return configuration.schemaVersion === 2
     && configuration.basePrice === null
     && Array.isArray(configuration.groups)
     && configuration.groups.length === 0;

@@ -1,3 +1,8 @@
+/**
+ * Deprecated historical V1 source declarations, not a financial engine.
+ * All V1 operational exports are blocked by integration-boundary.ts.
+ * Active editor/public/cart/checkout consumers use explicit V2 contracts. Historical tools remain fail-closed.
+ */
 export const PRODUCT_CONFIGURATION_SCHEMA_VERSION = 1 as const;
 export const PRODUCT_SELECTION_SCHEMA_VERSION = 1 as const;
 export const PRODUCT_CONFIGURATION_SNAPSHOT_VERSION = 1 as const;
@@ -12,6 +17,8 @@ export type ConfigurationIssue = {
   path: string;
   message: string;
 };
+
+export const MAX_GROUP_LEVELS = 3;
 
 export type EngineLimits = {
   maxDepth: number;
@@ -67,11 +74,15 @@ export type SizeGroup = {
   type: "SIZE";
   id: string;
   label: string;
+  /** Generated editor label; the merchant left the public heading blank. */
+  hidePublicLabel?: boolean;
+  highlightInPriceSummary?: boolean;
   available?: boolean;
   sizes: SizeChoice[];
 };
 
 export type OptionChoice = {
+  highlightInPriceSummary?: boolean;
   id: string;
   label: string;
   /** Local price per selected unit. For linked products this is the parent-context price. */
@@ -88,6 +99,9 @@ export type OptionGroup = {
   type: "OPTIONS";
   id: string;
   label: string;
+  /** Generated editor label; the merchant left the public heading blank. */
+  hidePublicLabel?: boolean;
+  highlightInPriceSummary?: boolean;
   available?: boolean;
   /** Counts selected units, not distinct option IDs. */
   min: number;

@@ -7,6 +7,6 @@ export const revalidate = 0;
 
 export default async function ProductIndexPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  await getPublicMenuOrNotFound(slug, { track: false });
+  await getPublicMenuOrNotFound(slug);
   redirect(restaurantPath(slug, "/menu", true));
 }

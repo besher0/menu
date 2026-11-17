@@ -1,15 +1,16 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { checkoutSigningKey } from "../../common/security/production-config";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { currencyDisplayReconciliation, formatCurrencyAmount, validateCurrencyAmount } from "@menu/shared";
-import { compareMoney, createConfigurationSnapshot, createSelectionKey, multiplyMoney, sumMoney, type PriceLine, type ProductConfigurationContext, type ProductSelectionV1 } from "@menu/shared";
+import { compareMoney, createSelectionKeyV2 as createSelectionKey, multiplyMoney, sumMoney, type PriceLine, type ConfigurationSnapshotV2, type ProductSelectionV2 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { sha256, stableJson } from "../orders/network-order-contract";
 import {
   buildNetworkWhatsappPreviewUrl, formatNetworkOrderDetails, formatNetworkSnapshotLine,
   formatWhatsappDisplayText, formatWhatsappMessageLines, NetworkOrderSnapshotFormatError
 } from "../orders/network-order-whatsapp-formatter";
-import { resolvePublicProductConfiguration } from "./public-product-configuration";
+import { preparePublicConfigurationCatalog, resolvePublicProductConfiguration } from "./public-product-configuration";
 import { quotePublicProductConfiguration } from "./public-product-quote";
 import { parseWhatsappCheckoutRequest, type WhatsappCheckoutRequest } from "./public-whatsapp-checkout.contract";
 import { readDeliveryFee } from "./delivery-fee";
@@ -18,9 +19,10 @@ import { reserveDailyWhatsappOrderNumber } from "./daily-whatsapp-order-number";
 type NetworkDisplayLine = {
   snapshotVersion: 1; mode: "NETWORK"; locale: "ar" | "en"; currency: string;
   productId: string; productName: string; quantity: number; note?: string;
-  configurationRevision: number; canonicalSelection: ProductSelectionV1;
+  configurationRevision: number; canonicalSelection: ProductSelectionV2;
   unitPrice: string; lineTotal: string; priceBreakdown: PriceLine[];
   configurationTree: unknown;
+  configurationSnapshot: Omit<ConfigurationSnapshotV2, "createdAt">;
   linkedSources: { productId: string; productName: string; mode: "NETWORK" | "LEGACY"; configurationTree: unknown }[];
 };
 
@@ -40,11 +42,11 @@ type TrustedDraft = {
 };
 
 function checkoutKey(): Buffer {
-  const encoded = process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY;
-  if (!encoded || !/^[0-9a-fA-F]{64,}$/.test(encoded) || encoded.length % 2 !== 0) {
+  const key = checkoutSigningKey(process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY);
+  if (!key) {
     throw new ServiceUnavailableException({ error: "WHATSAPP_CHECKOUT_KEY_UNAVAILABLE", message: "WhatsApp checkout is not configured." });
   }
-  return Buffer.from(encoded, "hex");
+  return key;
 }
 
 function publicDraft(draft: TrustedDraft) {
@@ -59,7 +61,7 @@ function publicDraft(draft: TrustedDraft) {
 }
 
 function issueToken(key: Buffer, restaurantId: string, digest: string) {
-  const payload = Buffer.from(JSON.stringify({ v: 1, restaurantId, digest, expiresAt: Date.now() + 10 * 60_000 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ v: 1, restaurantId, digest, nonce: randomBytes(16).toString("hex"), expiresAt: Date.now() + 10 * 60_000 })).toString("base64url");
   const signature = createHmac("sha256", key).update(`v1.${payload}`).digest("base64url");
   return `v1.${payload}.${signature}`;
 }
@@ -140,7 +142,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft, orderNumber?: st
     } else {
       output.push(`${line.quantity} × ${formatWhatsappDisplayText(line.productName, `$items[${index}].name`)}`);
       if (line.note) output.push(`*🔸️ ${ar ? "ملاحظة الصنف" : "Item note"}: ${formatWhatsappDisplayText(line.note, `$items[${index}].note`, 500)}*`);
-      output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency)}`);
+      output.push(`${ar ? "إجمالي الصنف" : "Line total"}: ${formatCurrencyAmount(line.lineTotal, draft.currency, draft.locale)}`);
     }
     output.push("━━━━━━━━━━━━━━", "");
   }
@@ -153,14 +155,14 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft, orderNumber?: st
       "━━━━━━━━━━━━━━", "");
   }
   if (reconciliation) output.push(`${ar ? "فرق عرض التقريب" : "Display rounding difference"}: ${reconciliation}`);
-  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.itemsSubtotal, draft.currency)}`);
+  output.push(`${ar ? "مجموع الأصناف" : "Items subtotal"}: ${formatCurrencyAmount(draft.itemsSubtotal, draft.currency, draft.locale)}`);
   output.push(`${ar ? "رسوم التوصيل" : "Delivery fee"}: ${draft.details.fulfillmentType !== "delivery"
     ? ar ? "لا تُضاف للاستلام" : "Not charged for pickup"
     : draft.deliveryFee === null ? ar ? "تُحدّد حسب المنطقة" : "Determined by area"
-    : draft.deliveryFee === "0" ? ar ? "مجاني" : "Free" : formatCurrencyAmount(draft.deliveryFee, draft.currency)}`);
+    : draft.deliveryFee === "0" ? ar ? "مجاني" : "Free" : formatCurrencyAmount(draft.deliveryFee, draft.currency, draft.locale)}`);
   output.push(`${ar ? "💵 الإجمالي" : "💵 Total"}: ${draft.totalAmount === null
     ? ar ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
-    : formatCurrencyAmount(draft.totalAmount, draft.currency)}`);
+    : formatCurrencyAmount(draft.totalAmount, draft.currency, draft.locale)}`);
   output.push("", ...details.footer);
   return formatWhatsappMessageLines(output, draft.locale);
 }
@@ -249,18 +251,19 @@ export class PublicWhatsappCheckoutService {
       // prevent linked source updates between revalidation and draft construction.
       await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Product" WHERE "restaurantId" = ${restaurant.id} ORDER BY "id" FOR SHARE`;
       const catalog = await tx.product.findMany({ where: { restaurantId: restaurant.id }, select: {
-        id: true, slug: true, name: true, currency: true, basePrice: true, configurationTree: true,
+        id: true, restaurantId: true, slug: true, name: true, currency: true, basePrice: true, configurationTree: true,
         configurationVersion: true, isActive: true, isAvailable: true, deletedAt: true
       } });
       const needsNetwork = request.items.some((line) => line.mode === "NETWORK");
       const capability = needsNetwork ? enabled("PRODUCT_CONFIGURATION") : false;
       if (needsNetwork && !capability) throw new ForbiddenException({ error: "PRODUCT_CONFIGURATION_CAPABILITY_UNAVAILABLE" });
+      const preparedCatalog = preparePublicConfigurationCatalog({ restaurantId: restaurant.id, currency: restaurant.currency, catalogProducts: catalog, capabilityEnabled: capability });
       const lineErrors: { lineId: string; code: string; issues: { code: string; path: string; message: string }[] }[] = [];
       const lineErrorStatuses: number[] = [];
       const lines: TrustedLine[] = request.items.flatMap<TrustedLine>((line) => {
         try {
-        const product = catalog.find((candidate) => line.mode === "LEGACY"
-          ? candidate.slug === line.productSlug : candidate.id === line.productId);
+        const product = catalog.find((candidate) => candidate.id === line.productId
+          && (line.mode !== "LEGACY" || candidate.slug === line.productSlug));
         if (!product || !product.isActive || !product.isAvailable || product.deletedAt) {
           throw new ConflictException({ error: "WHATSAPP_PRODUCT_UNAVAILABLE", lineId: line.lineId });
         }
@@ -286,7 +289,7 @@ export class PublicWhatsappCheckoutService {
           throw new ConflictException({ error: "WHATSAPP_PRODUCT_TYPE_CHANGED", lineId: line.lineId });
         }
         const result = quotePublicProductConfiguration({ restaurantId: restaurant.id, owner: product,
-          catalogProducts: catalog, capabilityEnabled: capability, currency: restaurant.currency, selection: line.selection });
+          catalogProducts: catalog, capabilityEnabled: capability, currency: restaurant.currency, selection: line.selection, preparedCatalog });
         if (!result.ok) {
           const payload = { error: result.error.code, message: result.error.message,
             issues: result.error.issues, currentRevision: result.error.currentRevision, lineId: line.lineId };
@@ -294,26 +297,16 @@ export class PublicWhatsappCheckoutService {
           throw new BadRequestException(payload);
         }
         const resolved = resolvePublicProductConfiguration({ restaurantId: restaurant.id, owner: product,
-          catalogProducts: catalog, capabilityEnabled: capability, currency: restaurant.currency });
+          catalogProducts: catalog, capabilityEnabled: capability, currency: restaurant.currency, preparedCatalog });
         if (!resolved?.orderable) throw new ConflictException({ error: "CONFIGURATION_NOT_ORDERABLE", lineId: line.lineId });
-        const context: ProductConfigurationContext = { catalogId: restaurant.id,
-          linkedProducts: new Map(resolved.linkedProducts.map((source) => [source.productId, {
-            productId: source.productId, catalogId: restaurant.id, configuration: source.configuration,
-            available: source.available, orderable: source.orderable
-          }])) };
-        const snapshot = createConfigurationSnapshot({ configuration: resolved.configuration,
-          selection: result.quote.canonicalSelection, context, productName: product.name,
-          currency: restaurant.currency, createdAt: new Date().toISOString() });
-        if (!snapshot.valid || !snapshot.snapshot || snapshot.snapshot.total !== result.quote.trustedTotal) {
-          throw new ConflictException({ error: "WHATSAPP_SNAPSHOT_PRICE_MISMATCH", lineId: line.lineId });
-        }
+        const { createdAt: _quotedAt, ...configurationSnapshot } = result.quote.snapshot;
         const unitPrice = result.quote.trustedTotal;
         const lineTotal = multiplyMoney(unitPrice, line.quantity);
         const display: NetworkDisplayLine = { snapshotVersion: 1, mode: "NETWORK", locale: request.locale,
           currency: restaurant.currency, productId: product.id, productName: product.name,
           quantity: line.quantity, ...note, configurationRevision: result.quote.configurationRevision,
           canonicalSelection: result.quote.canonicalSelection, unitPrice, lineTotal,
-          priceBreakdown: snapshot.snapshot.priceLines, configurationTree: resolved.configuration,
+          configurationSnapshot, priceBreakdown: result.quote.snapshot.priceLines, configurationTree: resolved.configuration,
           linkedSources: resolved.linkedProducts.map((source) => ({ productId: source.productId,
             productName: source.name, mode: source.mode, configurationTree: source.configuration })) };
         return [{ mode: "NETWORK" as const, lineId: line.lineId, productId: product.id, productName: product.name,
@@ -403,14 +396,24 @@ export class PublicWhatsappCheckoutService {
       : `legacy:${sha256(fields.acceptanceToken).slice(0, 64)}`;
     const request = parseWhatsappCheckoutRequest(fields.request);
     const requestHash = sha256(request);
+    const acceptanceTokenHash = sha256(fields.acceptanceToken);
     const restaurant = await this.prisma.restaurant.findFirst({ where: { slug, isActive: true, deletedAt: null }, select: { id: true } });
     if (!restaurant) throw new NotFoundException("Restaurant not found");
     const replay = async () => {
-      const existing = await this.prisma.order.findUnique({ where: { restaurantId_idempotencyKey: {
+      let existing = await this.prisma.order.findUnique({ where: { restaurantId_idempotencyKey: {
         restaurantId: restaurant.id, idempotencyKey
       } } });
-      if (!existing) return null;
-      if (existing.requestHash !== requestHash) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
+      if (!existing) {
+        // A concurrent commit may become visible between these two reads.
+        // Replay the same key; reject only a token committed under another key.
+        const tokenOrder = await this.prisma.order.findUnique({ where: { restaurantId_acceptanceTokenHash: {
+          restaurantId: restaurant.id, acceptanceTokenHash
+        } } });
+        if (!tokenOrder) return null;
+        if (tokenOrder.idempotencyKey !== idempotencyKey) throw new ConflictException({ error: "ACCEPTANCE_TOKEN_ALREADY_USED" });
+        existing = tokenOrder;
+      }
+      if (existing.requestHash !== requestHash || (existing.acceptanceTokenHash !== null && existing.acceptanceTokenHash !== acceptanceTokenHash)) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
       const snapshot = existing.cartSnapshot as Record<string, unknown> | null;
       if (snapshot?.whatsappCheckoutVersion !== 1 || typeof snapshot.orderNumber !== "string"
         || typeof snapshot.whatsappPhone !== "string" || !snapshot.draft || !existing.whatsappMessage) {
@@ -429,7 +432,7 @@ export class PublicWhatsappCheckoutService {
           restaurantId: restaurant.id, idempotencyKey
         } } });
         if (existing) {
-          if (existing.requestHash !== requestHash) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
+          if (existing.requestHash !== requestHash || (existing.acceptanceTokenHash !== null && existing.acceptanceTokenHash !== acceptanceTokenHash)) throw new ConflictException({ error: "IDEMPOTENCY_KEY_REUSED" });
           const snapshot = existing.cartSnapshot as Record<string, unknown> | null;
           if (snapshot?.whatsappCheckoutVersion !== 1 || typeof snapshot.orderNumber !== "string"
             || typeof snapshot.whatsappPhone !== "string" || !snapshot.draft || !existing.whatsappMessage) {
@@ -439,6 +442,9 @@ export class PublicWhatsappCheckoutService {
             message: existing.whatsappMessage,
             whatsappUrl: buildNetworkWhatsappPreviewUrl(snapshot.whatsappPhone, existing.whatsappMessage), replayed: true };
         }
+        if (await tx.order.findUnique({ where: { restaurantId_acceptanceTokenHash: {
+          restaurantId: restaurant.id, acceptanceTokenHash
+        } }, select: { id: true } })) throw new ConflictException({ error: "ACCEPTANCE_TOKEN_ALREADY_USED" });
         const draft = await this.buildDraftInTransaction(tx, slug, request, true);
         const digest = sha256({ request, draft });
         if (!verifyToken(key, fields.acceptanceToken as string, draft.restaurantId, digest)) {
@@ -458,11 +464,11 @@ export class PublicWhatsappCheckoutService {
           customerName: draft.details.customerName, customerPhone: draft.details.customerPhone,
           totalAmount: new Prisma.Decimal(draft.totalAmount ?? draft.itemsSubtotal), currency: draft.currency,
           status: "PENDING_WHATSAPP", source: "WHATSAPP", whatsappMessage: message, cartSnapshot: snapshot,
-          idempotencyKey, requestHash,
+          idempotencyKey, requestHash, acceptanceTokenHash,
           items: { create: draft.items.map((line) => ({
             productId: line.productId, name: line.productName, quantity: line.quantity, note: line.note,
             unitPrice: new Prisma.Decimal(line.unitPrice), totalPrice: new Prisma.Decimal(line.lineTotal),
-            options: line.display ? JSON.parse(JSON.stringify(line.display)) as Prisma.InputJsonValue : Prisma.JsonNull
+            options: line.display ? JSON.parse(JSON.stringify({ ...line.display, configurationSnapshot: { ...line.display.configurationSnapshot, createdAt: new Date().toISOString() } })) as Prisma.InputJsonValue : Prisma.JsonNull
           })) }
         } });
         await tx.analyticsEvent.create({ data: { restaurantId: draft.restaurantId, branchId: draft.branchId,

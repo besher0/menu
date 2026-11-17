@@ -4,27 +4,36 @@ import {
   GroupSelection,
   OptionGroupSelection,
   ProductConfigurationContext,
-  ProductConfigurationV1,
-  ProductSelectionV1,
+  ProductConfigurationV2,
+  ProductSelectionV2,
   PRODUCT_SELECTION_SCHEMA_VERSION,
   SizeGroupSelection
-} from "./types";
-import { resolveEngineLimits, validateConfiguration } from "./validation";
+} from "./v2-types";
+import { resolveEngineLimits, validateConfiguration, validateGroupLevels } from "./validation";
 import { resolveLinkedConfiguration } from "./resolution";
+import { validateConfigurationCurrencyV2 } from "./v2-helpers";
 
 export function validateSelection(
-  configuration: ProductConfigurationV1,
-  selection: ProductSelectionV1,
+  configuration: ProductConfigurationV2,
+  selection: ProductSelectionV2,
   context: ProductConfigurationContext
 ): ConfigurationIssue[] {
+  if (!context || typeof context !== "object" || !context.catalogId || !context.currency) {
+    return [{code:"INVALID_CONTEXT",path:"$context",message:"Catalog and currency are required."}];
+  }
   const limits = resolveEngineLimits(context.limits);
   const issues = [...validateConfiguration(configuration, limits)];
+  if (!issues.length && context.linkedProducts?.size) issues.push(...validateGroupLevels(configuration, id => context.linkedProducts?.get(id)?.configuration));
+  if (issues.length) return issues;
+  issues.push(...validateConfigurationCurrencyV2(configuration, context.currency));
+  if (issues.length) return issues;
+  if (!selection || typeof selection !== "object") return [{code:"INVALID_SELECTION",path:"$selection",message:"Invalid selection."}];
   const instanceIds = new Set<string>();
   let instanceCount = 0;
 
   function validateProductSelection(
-    config: ProductConfigurationV1,
-    selected: ProductSelectionV1,
+    config: ProductConfigurationV2,
+    selected: ProductSelectionV2,
     path: string,
     productStack: readonly string[]
   ) {
@@ -50,6 +59,10 @@ export function validateSelection(
     path: string,
     productStack: readonly string[]
   ) {
+    if (!Array.isArray(selections) || selections.length > limits.maxNodes ||
+        selections.some(s => !s || typeof s !== "object" || typeof s.groupId !== "string")) {
+      issues.push({code:"INVALID_GROUP_SELECTIONS",path,message:"Invalid or excessive selections."}); return;
+    }
     const byGroup = new Map<string, GroupSelection>();
     selections.forEach((groupSelection, index) => {
       if (byGroup.has(groupSelection.groupId)) {
@@ -102,7 +115,7 @@ export function validateSelection(
     if (size.available === false) {
       issues.push({ code: "SIZE_UNAVAILABLE", path, message: "Selected Size is unavailable." });
     }
-    validateGroups(size.children ?? [], sizeSelection.children ?? [], `${path}.children`, productStack);
+    validateGroups(group.children ?? [], sizeSelection.children ?? [], `${path}.children`, productStack);
   }
 
   function validateOptionGroup(
@@ -116,6 +129,9 @@ export function validateSelection(
       return;
     }
     const optionSelection = selected as OptionGroupSelection | undefined;
+    if (optionSelection && !Array.isArray(optionSelection.instances)) {
+      issues.push({code:"INVALID_INSTANCES",path,message:"Instances must be an array."}); return;
+    }
     const instances = optionSelection?.instances ?? [];
     const effectiveMax = group.max ?? limits.maxQuantityPerGroup;
     const requiredMinimum = Math.max(
@@ -127,7 +143,7 @@ export function validateSelection(
       if (requiredMinimum > 0) {
         issues.push({ code: "REQUIRED_OPTIONS_GROUP_UNAVAILABLE", path, message: "A required Options group is unavailable." });
       }
-      if (instances.length) {
+      if (instances.length || optionSelection?.children?.length) {
         issues.push({ code: "OPTIONS_GROUP_UNAVAILABLE", path, message: "Selections cannot be made in an unavailable group." });
       }
       return;
@@ -139,14 +155,23 @@ export function validateSelection(
       issues.push({ code: "GROUP_MAX_EXCEEDED", path, message: `Options group allows at most ${effectiveMax} selected units.` });
     }
 
+    if (instances.length > limits.maxSelectionInstances) {
+      issues.push({code:"SELECTION_INSTANCE_LIMIT_EXCEEDED",path,message:"Too many instances."}); return;
+    }
+    if (instances.length) validateGroups(group.children ?? [], optionSelection?.children ?? [], path + ".children", productStack);
+    else if (optionSelection?.children?.length) issues.push({code:"INACTIVE_SHARED_SELECTION",path,message:"An inactive group has no shared selections."});
     const counts = new Map<string, number>();
     instances.forEach((instance, index) => {
       const instancePath = `${path}.instances[${index}]`;
+      if (!instance || typeof instance !== "object") {
+        issues.push({code:"INVALID_INSTANCE",path:instancePath,message:"Invalid selected unit."}); return;
+      }
       instanceCount += 1;
       if (instanceCount > limits.maxSelectionInstances) {
         issues.push({ code: "SELECTION_INSTANCE_LIMIT_EXCEEDED", path: instancePath, message: "Selection instance safety limit exceeded." });
+        return;
       }
-      if (!instance.instanceId?.trim()) {
+      if (typeof instance.instanceId !== "string" || !instance.instanceId.trim() || instance.instanceId.length > 512) {
         issues.push({ code: "MISSING_SELECTION_INSTANCE_ID", path: `${instancePath}.instanceId`, message: "Every selected unit requires a stable instance ID." });
       } else if (instanceIds.has(instance.instanceId)) {
         issues.push({ code: "DUPLICATE_SELECTION_INSTANCE_ID", path: `${instancePath}.instanceId`, message: "Selection instance IDs must be globally unique." });
@@ -173,6 +198,7 @@ export function validateSelection(
         issues.push(...resolved.issues);
         if (!resolved.resolved) return;
         const linkedConfig = resolved.resolved.configuration;
+        issues.push(...validateConfigurationCurrencyV2(linkedConfig, context.currency));
         if (!instance.linkedSelection && linkedConfig.groups.length > 0) {
           issues.push({ code: "MISSING_LINKED_SELECTION", path: instancePath, message: "Linked product configuration is required." });
         } else if (instance.linkedSelection) {
@@ -187,7 +213,7 @@ export function validateSelection(
       if (count < min) {
         issues.push({ code: "OPTION_MIN_NOT_MET", path: `${path}.${option.id}`, message: `Option requires at least ${min} selected units.` });
       }
-      if (count > option.maxQuantity) {
+      if (count > Math.min(option.maxQuantity ?? limits.maxQuantityPerGroup, effectiveMax)) {
         issues.push({ code: "OPTION_MAX_EXCEEDED", path: `${path}.${option.id}`, message: `Option allows at most ${option.maxQuantity} selected units.` });
       }
     }

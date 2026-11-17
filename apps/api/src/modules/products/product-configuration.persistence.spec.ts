@@ -1,15 +1,15 @@
-import { ProductConfigurationV1 } from "@menu/shared";
+import { ProductConfigurationV2 } from "@menu/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   findDependencyCycle,
-  persistProductConfiguration,
+  persistProductConfigurationInTransaction as persistProductConfiguration,
   ProductConfigurationConflictError,
   ProductConfigurationValidationError
 } from "./product-configuration.persistence";
 
-function configuration(productId = "owner", revision = 1): ProductConfigurationV1 {
+function configuration(productId = "owner", revision = 1): ProductConfigurationV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     productId,
     revision,
     basePrice: null,
@@ -53,7 +53,7 @@ function transactionHarness(args?: {
 describe("product configuration persistence preparation", () => {
   it("rejects a fractional SYP option in the same transaction before any write", async () => {
     const { prisma, transaction } = transactionHarness({ currency: "ل.س" });
-    await expect(persistProductConfiguration(prisma as any, {
+    await expect(persistProductConfiguration(transaction as any, {
       restaurantId: "restaurant-1", productId: "owner", expectedVersion: 0,
       configuration: configuration()
     })).rejects.toMatchObject({ kind: "PRODUCT_CONFIGURATION_VALIDATION",
@@ -80,7 +80,7 @@ describe("product configuration persistence preparation", () => {
     const { prisma, transaction } = transactionHarness();
     const value = configuration();
 
-    await expect(persistProductConfiguration(prisma as any, {
+    await expect(persistProductConfiguration(transaction as any, {
       restaurantId: "restaurant-1",
       productId: "owner",
       expectedVersion: 0,
@@ -88,7 +88,7 @@ describe("product configuration persistence preparation", () => {
       disablePublicOrdering: true
     })).resolves.toEqual({ productId: "owner", configurationVersion: 1, dependencyCount: 0 });
 
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.product.updateMany).toHaveBeenCalledTimes(1);
     expect(transaction.product.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ restaurantId: "restaurant-1", configurationVersion: 0 }),
       data: expect.objectContaining({ basePrice: null, configurationVersion: 1, isAvailable: false })
@@ -99,8 +99,8 @@ describe("product configuration persistence preparation", () => {
   });
 
   it("requires a single next revision", async () => {
-    const { prisma } = transactionHarness();
-    await expect(persistProductConfiguration(prisma as any, {
+    const { prisma, transaction } = transactionHarness();
+    await expect(persistProductConfiguration(transaction as any, {
       restaurantId: "restaurant-1",
       productId: "owner",
       expectedVersion: 0,
@@ -110,7 +110,7 @@ describe("product configuration persistence preparation", () => {
   });
 
   it("rejects an invalid self-link before opening a transaction", async () => {
-    const { prisma } = transactionHarness();
+    const { prisma, transaction } = transactionHarness();
     const value = configuration();
     value.groups = [{
       type: "OPTIONS",
@@ -128,7 +128,7 @@ describe("product configuration persistence preparation", () => {
       }]
     }];
 
-    await expect(persistProductConfiguration(prisma as any, {
+    await expect(persistProductConfiguration(transaction as any, {
       restaurantId: "restaurant-1",
       productId: "owner",
       expectedVersion: 0,
@@ -156,7 +156,7 @@ describe("product configuration persistence preparation", () => {
     }];
 
     const missing = transactionHarness({ sources: [] });
-    await expect(persistProductConfiguration(missing.prisma as any, {
+    await expect(persistProductConfiguration(missing.transaction as any, {
       restaurantId: "restaurant-1",
       productId: "owner",
       expectedVersion: 0,
@@ -167,7 +167,7 @@ describe("product configuration persistence preparation", () => {
     const unconfigured = transactionHarness({
       sources: [{ id: "source", configurationTree: null, configurationVersion: 0 }]
     });
-    await expect(persistProductConfiguration(unconfigured.prisma as any, {
+    await expect(persistProductConfiguration(unconfigured.transaction as any, {
       restaurantId: "restaurant-1",
       productId: "owner",
       expectedVersion: 0,
@@ -208,7 +208,7 @@ describe("product configuration persistence preparation", () => {
       ]
     });
 
-    await expect(persistProductConfiguration(prisma as any, {
+    await expect(persistProductConfiguration(transaction as any, {
       restaurantId: "restaurant-1",
       productId: "owner",
       expectedVersion: 0,

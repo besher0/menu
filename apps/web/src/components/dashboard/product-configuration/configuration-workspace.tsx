@@ -11,8 +11,10 @@ import {
   Link2,
   PackagePlus,
   Plus,
+  Star,
   Trash2
 } from "lucide-react";
+import { MAX_GROUP_LEVELS, validateGroupLevels } from "@menu/shared";
 import type {
   ConfigurationGroup,
   OptionChoice,
@@ -44,9 +46,10 @@ type WorkspaceProps = {
   ensureSource: (productId: string) => Promise<ProductConfigurationEnvelope>;
   readOnly?: boolean;
   compact?: boolean;
+  parentLevel?: number;
 };
 
-type TreeProps = Pick<WorkspaceProps, "configuration" | "onChange" | "readOnly"> & {
+type TreeProps = Pick<WorkspaceProps, "configuration" | "onChange" | "readOnly" | "parentLevel"> & {
   selectedId: string | null;
   onSelect: (ref: EditorNodeRef) => void;
 };
@@ -54,6 +57,15 @@ type TreeProps = Pick<WorkspaceProps, "configuration" | "onChange" | "readOnly">
 function nodeHasData(node: EditableNode) {
   if ("type" in node) return (node.type === "SIZE" ? node.sizes.length : node.options.length) > 0;
   return countDescendants(node) > 0 || Boolean(node.label.trim());
+}
+
+function SummaryStar({ node, disabled, onToggle }: { node: ConfigurationGroup | OptionChoice; disabled?: boolean; onToggle: () => void }) {
+  const hidden = "type" in node && node.hidePublicLabel;
+  const active = !hidden && node.highlightInPriceSummary === true;
+  return <button type="button" aria-label={`تمييز ${node.label} في ملخص السعر`} aria-pressed={active}
+    disabled={disabled || hidden || !node.label.trim()} onClick={onToggle}>
+    <Star size={15} fill={active ? "currentColor" : "none"} />
+  </button>;
 }
 
 function TreeActions({
@@ -111,6 +123,7 @@ function ConfigurationBranches({
                 <b>{group.label || "بلا اسم"}</b>
                 <small>{choices.length} عناصر</small>
               </button>
+              {<SummaryStar node={group} disabled={readOnly} onToggle={() => onChange(updateNode(configuration, group.id, () => ({ ...group, highlightInPriceSummary: !group.highlightInPriceSummary })))} />}
               <TreeActions
                 refValue={groupRef}
                 node={group}
@@ -132,6 +145,7 @@ function ConfigurationBranches({
                         <small>{choice.price}</small>
                         {"linkedProduct" in choice && choice.linkedProduct ? <Link2 size={14} aria-label="صنف مرتبط" /> : null}
                       </button>
+                      {"maxQuantity" in choice && <SummaryStar node={choice} disabled={readOnly} onToggle={() => onChange(updateNode(configuration, choice.id, () => ({ ...choice, highlightInPriceSummary: !choice.highlightInPriceSummary })))} />}
                       <TreeActions
                         refValue={choiceRef}
                         node={choice}
@@ -172,7 +186,7 @@ export function ConfigurationTreePanel(props: TreeProps) {
     <section className="pc-tree-panel" aria-label="شجرة تكوين الصنف">
       <header>
         <div><Boxes size={19} /><b>بنية الشبكة</b></div>
-        {!props.readOnly ? (
+        {!props.readOnly && (props.parentLevel ?? 0) < MAX_GROUP_LEVELS ? (
           <span>
             <button type="button" onClick={() => props.onChange(appendRootGroup(props.configuration, "SIZE"))}><CirclePlus size={15} /> أحجام</button>
             <button type="button" onClick={() => props.onChange(appendRootGroup(props.configuration, "OPTIONS"))}><CirclePlus size={15} /> خيارات</button>
@@ -218,6 +232,7 @@ function SourceTree({ configuration }: { configuration: ProductConfigurationV1 }
 function LinkedProductEditor({
   option,
   onOptionChange,
+  parentLevel = 0,
   configuration,
   currentProductId,
   candidates,
@@ -261,11 +276,20 @@ function LinkedProductEditor({
     if (linked?.sourceProductId && !source) void ensureSource(linked.sourceProductId).catch(() => undefined);
   }, [linked?.sourceProductId, source, ensureSource]);
 
+  const ownerLevel = parentLevel + (findNode(configuration, option.id)?.level ?? 1);
+  function fitsDepth(tree: ProductConfigurationV1 | null) {
+    if (!tree) return true;
+    const issues = validateGroupLevels(tree, id => sourceConfigurations.get(id)?.configurationTree ?? undefined, ownerLevel);
+    if (issues.length) setMessage("يتجاوز هذا الربط حد ثلاثة مستويات.");
+    return !issues.length;
+  }
+
   async function selectSource(sourceProductId: string) {
     setLoading(true);
     setMessage("");
     try {
       const envelope = await ensureSource(sourceProductId);
+      if (!fitsDepth(envelope.configurationTree)) return;
       onOptionChange({
         ...option,
         linkedProduct: envelope.mode === "NETWORK"
@@ -285,6 +309,7 @@ function LinkedProductEditor({
     const snapshot = source.configurationTree
       ? JSON.parse(JSON.stringify(source.configurationTree)) as ProductConfigurationV1
       : { schemaVersion: 1 as const, productId: source.productId, revision: source.configurationVersion, basePrice: source.basePrice, groups: [] };
+    if (!fitsDepth(snapshot)) return;
     onOptionChange({ ...option, linkedProduct: { sourceProductId: linked.sourceProductId, mode: "CUSTOM", customConfiguration: snapshot } });
     setMessage("تم إنشاء لقطة CUSTOM صريحة داخل هذا السياق. عدّلها أدناه حسب الحاجة.");
   }
@@ -315,7 +340,7 @@ function LinkedProductEditor({
               type="button"
               className={linked.mode === "ORIGINAL" ? "active" : ""}
               disabled={readOnly || source?.mode !== "NETWORK"}
-              onClick={() => onOptionChange({ ...option, linkedProduct: { sourceProductId: linked.sourceProductId, mode: "ORIGINAL", originalPriceOverrides: {} } })}
+              onClick={() => { if (source && fitsDepth(source.configurationTree)) onOptionChange({ ...option, linkedProduct: { sourceProductId: linked.sourceProductId, mode: "ORIGINAL", originalPriceOverrides: {} } }); }}
             >ORIGINAL</button>
             <button
               type="button"
@@ -357,6 +382,7 @@ function LinkedProductEditor({
                 <>
                   <div className="pc-snapshot-head"><b>محرر اللقطة المخصصة</b>{!readOnly ? <button type="button" onClick={createSnapshot}>إعادة اللقطة من المصدر</button> : null}</div>
                   <ConfigurationWorkspace
+                    parentLevel={ownerLevel}
                     configuration={linked.customConfiguration}
                     onChange={(customConfiguration) => onOptionChange({ ...option, linkedProduct: { ...linked, mode: "CUSTOM", customConfiguration } })}
                     currentProductId={linked.customConfiguration.productId}
@@ -377,7 +403,7 @@ function LinkedProductEditor({
   );
 }
 
-function NodeInspector(props: WorkspaceProps & { selected: { node: EditableNode; ref: EditorNodeRef } | null }) {
+function NodeInspector(props: WorkspaceProps & { selected: { node: EditableNode; ref: EditorNodeRef; level: number } | null }) {
   const { selected, configuration, onChange, readOnly } = props;
   if (!selected) return <aside className="pc-inspector pc-empty-inspector"><PackagePlus size={30} /><b>اختر عنصرًا من الشجرة لتعديله</b></aside>;
   const { node, ref } = selected;
@@ -388,7 +414,10 @@ function NodeInspector(props: WorkspaceProps & { selected: { node: EditableNode;
     return (
       <aside className="pc-inspector">
         <header><span>{group.type === "SIZE" ? "مجموعة أحجام" : "مجموعة خيارات"}</span><code>{group.id}</code></header>
-        <label><span>اسم المجموعة</span><input disabled={readOnly} value={group.label} onChange={(event) => apply({ ...group, label: event.target.value })} /></label>
+        <label><span>اسم المجموعة</span><input disabled={readOnly} placeholder="اسم اختياري" value={group.hidePublicLabel ? "" : group.label} onChange={(event) => {
+          const label = event.target.value;
+          apply({ ...group, hidePublicLabel: !label.trim(), highlightInPriceSummary: label.trim() ? group.highlightInPriceSummary : undefined, label: label.trim() ? label : (group.type === "SIZE" ? "مجموعة أحجام جديدة" : "مجموعة خيارات جديدة") });
+        }} /></label>
         <Toggle disabled={readOnly} checked={group.available !== false} label="المجموعة متاحة" onChange={(available) => apply({ ...group, available })} />
         {group.type === "OPTIONS" ? (
           <div className="pc-field-grid">
@@ -411,7 +440,7 @@ function NodeInspector(props: WorkspaceProps & { selected: { node: EditableNode;
         <label><span>السعر الكامل</span><input inputMode="decimal" disabled={readOnly} value={size.price} onChange={(event) => apply({ ...size, price: event.target.value })} /></label>
         <label><span>السعرات (اختياري)</span><input disabled={readOnly} value={size.calories ?? ""} onChange={(event) => apply({ ...size, calories: event.target.value || null })} /></label>
         <Toggle disabled={readOnly} checked={size.available !== false} label="الحجم متاح" onChange={(available) => apply({ ...size, available })} />
-        {!readOnly ? <div className="pc-nested-actions"><b>إضافة أسفل الحجم</b><button type="button" onClick={() => onChange(appendChildGroup(configuration, size.id, "OPTIONS"))}>مجموعة خيارات</button></div> : null}
+        {!readOnly && (props.parentLevel ?? 0) + props.selected!.level < MAX_GROUP_LEVELS ? <div className="pc-nested-actions"><b>إضافة أسفل الحجم</b><button type="button" onClick={() => onChange(appendChildGroup(configuration, size.id, "OPTIONS", props.parentLevel))}>مجموعة خيارات</button></div> : null}
       </aside>
     );
   }
@@ -421,7 +450,7 @@ function NodeInspector(props: WorkspaceProps & { selected: { node: EditableNode;
   return (
     <aside className="pc-inspector">
       <header><span>خيار / Modifier</span><code>{option.id}</code></header>
-      <label><span>اسم الخيار</span><input disabled={readOnly} value={option.label} onChange={(event) => apply({ ...option, label: event.target.value })} /></label>
+      <label><span>اسم الخيار</span><input disabled={readOnly} value={option.label} onChange={(event) => apply({ ...option, highlightInPriceSummary: event.target.value.trim() ? option.highlightInPriceSummary : undefined, label: event.target.value })} /></label>
       <label><span>السعر الافتراضي</span><input inputMode="decimal" disabled={readOnly} value={option.price} onChange={(event) => apply({ ...option, price: event.target.value })} /></label>
       <div className="pc-field-grid">
         <label><span>أقل كمية</span><input type="number" min="0" disabled={readOnly} value={option.minQuantity ?? ""} placeholder="0" onChange={(event) => apply({ ...option, minQuantity: event.target.value === "" ? undefined : numberValue(event.target.value) })} /></label>
@@ -440,7 +469,7 @@ function NodeInspector(props: WorkspaceProps & { selected: { node: EditableNode;
           })}
         </section>
       ) : null}
-      {!readOnly ? <div className="pc-nested-actions"><b>مجموعات متداخلة</b><button type="button" onClick={() => onChange(appendChildGroup(configuration, option.id, "OPTIONS"))}>إضافة خيارات</button><button type="button" onClick={() => onChange(appendChildGroup(configuration, option.id, "SIZE"))}>إضافة أحجام</button></div> : null}
+      {!readOnly && (props.parentLevel ?? 0) + props.selected!.level < MAX_GROUP_LEVELS ? <div className="pc-nested-actions"><b>مجموعات متداخلة</b><button type="button" onClick={() => onChange(appendChildGroup(configuration, option.id, "OPTIONS", props.parentLevel))}>إضافة خيارات</button><button type="button" onClick={() => onChange(appendChildGroup(configuration, option.id, "SIZE", props.parentLevel))}>إضافة أحجام</button></div> : null}
       <LinkedProductEditor {...props} option={option} onOptionChange={apply} />
     </aside>
   );

@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { requireRestaurantPermission } from "../../common/restaurant-permission";
+import { Body, ForbiddenException, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { AppRequest } from "../../common/app-request";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RestaurantContextGuard } from "../../common/guards/restaurant-context.guard";
@@ -23,8 +24,9 @@ export class DashboardController {
   }
 
   @Get("overview")
-  overview(@Req() request: AppRequest) {
-    return this.dashboardService.overview(request.restaurant!.id);
+  overview(@Req() request: AppRequest, @Query("days") days?: string, @Query("view") view?: string) {
+    requireRestaurantPermission(request, "analytics.view");
+    return this.dashboardService.overview(request.restaurant!.id, days, request.user?.role === "SUPER_ADMIN" || request.restaurant?.role === "OWNER", view === "ranking");
   }
 
   @Get("branches")
@@ -34,16 +36,19 @@ export class DashboardController {
 
   @Post("branches")
   createBranch(@Req() request: AppRequest, @Body() dto: UpsertBranchDto) {
+    requireRestaurantPermission(request, "branch.create");
     return this.dashboardService.createBranch(request.restaurant!.id, dto);
   }
 
   @Patch("branches/:id")
   updateBranch(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpsertBranchDto) {
+    requireRestaurantPermission(request, "branch.update");
     return this.dashboardService.updateBranch(request.restaurant!.id, id, dto);
   }
 
   @Delete("branches/:id")
   deleteBranch(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "branch.update");
     return this.dashboardService.deleteBranch(request.restaurant!.id, id);
   }
 
@@ -54,6 +59,7 @@ export class DashboardController {
 
   @Post("categories")
   createCategory(@Req() request: AppRequest, @Body() dto: UpsertCategoryDto) {
+    if (request.user?.role !== "SUPER_ADMIN") throw new ForbiddenException();
     return this.dashboardService.createCategory(request.restaurant!.id, dto);
   }
 
@@ -64,16 +70,19 @@ export class DashboardController {
 
   @Patch("categories/reorder")
   reorderCategories(@Req() request: AppRequest, @Body() dto: ReorderCategoriesDto) {
+    if (request.user?.role !== "SUPER_ADMIN" && request.restaurant?.role !== "OWNER") throw new ForbiddenException();
     return this.dashboardService.reorderCategories(request.restaurant!.id, dto.items);
   }
 
   @Patch("categories/:id")
   updateCategory(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpsertCategoryDto) {
+    if (request.user?.role !== "SUPER_ADMIN") throw new ForbiddenException();
     return this.dashboardService.updateCategory(request.restaurant!.id, id, dto);
   }
 
   @Delete("categories/:id")
   deleteCategory(@Req() request: AppRequest, @Param("id") id: string) {
+    if (request.user?.role !== "SUPER_ADMIN") throw new ForbiddenException();
     return this.dashboardService.deleteCategory(request.restaurant!.id, id);
   }
 
@@ -89,26 +98,31 @@ export class DashboardController {
 
   @Post("domains")
   createDomain(@Req() request: AppRequest, @Body() dto: CreateDomainDto) {
+    requireRestaurantPermission(request, "domain.manage");
     return this.dashboardService.createDomain(request.restaurant!.id, dto);
   }
 
   @Post("domains/:id/verify")
   verifyDomain(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "domain.manage");
     return this.dashboardService.verifyDomain(request.restaurant!.id, id);
   }
 
   @Delete("domains/:id")
   disableDomain(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "domain.manage");
     return this.dashboardService.disableDomain(request.restaurant!.id, id);
   }
 
   @Patch("theme")
   updateTheme(@Req() request: AppRequest, @Body() dto: UpdateThemeDto) {
+    requireRestaurantPermission(request, "theme.update");
     return this.dashboardService.updateTheme(request.restaurant!.id, dto);
   }
 
   @Get("analytics")
   analytics(@Req() request: AppRequest) {
+    requireRestaurantPermission(request, "analytics.view");
     return this.dashboardService.analytics(request.restaurant!.id);
   }
 
@@ -119,16 +133,19 @@ export class DashboardController {
 
   @Post("banners")
   createBanner(@Req() request: AppRequest, @Body() dto: UpsertDashboardBannerDto) {
+    requireRestaurantPermission(request, "theme.update");
     return this.dashboardService.createBanner(request.restaurant!.id, dto);
   }
 
   @Patch("banners/:id")
   updateBanner(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpsertDashboardBannerDto) {
+    requireRestaurantPermission(request, "theme.update");
     return this.dashboardService.updateBanner(request.restaurant!.id, id, dto);
   }
 
   @Delete("banners/:id")
   deleteBanner(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "theme.update");
     return this.dashboardService.deleteBanner(request.restaurant!.id, id);
   }
 
@@ -139,6 +156,7 @@ export class DashboardController {
 
   @Patch("settings")
   updateSettings(@Req() request: AppRequest, @Body() dto: UpdateDashboardSettingsDto) {
+    requireRestaurantPermission(request, "restaurant.update");
     return this.dashboardService.updateSettings(request.restaurant!.id, dto, request.user?.role === "SUPER_ADMIN");
   }
 }

@@ -5,11 +5,12 @@ import { ProductsController } from "./products.controller";
 import { ProductsImportService } from "./products-import.service";
 import { ProductsService } from "./products.service";
 import { ProductConfigurationService } from "./product-configuration.service";
+import { ProductEditorService } from "./product-editor.service";
 
 @Module({
   imports: [FeatureFlagsModule, MediaModule],
   controllers: [ProductsController],
-  providers: [ProductsService, ProductsImportService, ProductConfigurationService],
+  providers: [ProductsService, ProductsImportService, ProductConfigurationService, ProductEditorService],
   exports: [ProductsService]
 })
 export class ProductsModule {}

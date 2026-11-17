@@ -14,6 +14,12 @@ export class PublicOrderItemDto {
   @IsString()
   productSlug: string;
 
+  @IsString()
+  productId: string;
+
+  @IsString()
+  expectedUnitPrice: string;
+
   @IsInt()
   @Min(1)
   quantity: number;

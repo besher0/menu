@@ -3,11 +3,11 @@ import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { existsSync, mkdirSync } from "fs";
-import { join } from "path";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import { AppModule } from "./app.module";
 import { ApiResponseInterceptor } from "./common/api-response.interceptor";
+import { getUploadsDirectory } from "./common/uploads-directory";
 import { readPositiveInt, readStringList } from "./common/security/env";
 import { rateLimitMiddleware } from "./common/security/rate-limit.middleware";
 import { securityHeadersMiddleware } from "./common/security/security-headers.middleware";
@@ -64,8 +64,8 @@ function isAllowedRestaurantOrigin(origin: string | null, rootDomain?: string | 
       return false;
     }
 
-    const subdomain = hostname.slice(0, -(domain.length + 1)).split(".")[0] ?? "";
-    return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain)
+    const subdomain = hostname.slice(0, -(domain.length + 1));
+    return url.protocol === "https:" && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain)
       && !["www", "api", "admin", "dashboard", "app"].includes(subdomain);
   } catch {
     return false;
@@ -74,6 +74,7 @@ function isAllowedRestaurantOrigin(origin: string | null, rootDomain?: string | 
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.getHttpAdapter().getInstance().set("query parser", "extended");
   const config = app.get(ConfigService);
   const bodyLimit = `${readPositiveInt("REQUEST_BODY_LIMIT_KB", 256)}kb`;
   const allowedOrigins = uniqueOrigins([
@@ -82,6 +83,9 @@ async function bootstrap() {
     ...originList(config.get<string>("API_ORIGIN") ?? "http://localhost:5000"),
     ...originList(process.env.NEXT_PUBLIC_API_URL)
   ]);
+  if (process.env.NODE_ENV === "production" && allowedOrigins.includes("*")) {
+    throw new Error("Credentialed production CORS requires explicit origins");
+  }
   const rootDomain = config.get<string>("ROOT_DOMAIN") ?? config.get<string>("NEXT_PUBLIC_ROOT_DOMAIN") ?? "ordersawa.com";
   const trustProxy = config.get<string>("TRUST_PROXY");
 
@@ -89,8 +93,9 @@ async function bootstrap() {
     app.getHttpAdapter().getInstance().set("trust proxy", trustProxy === "true" ? 1 : trustProxy);
   }
 
+  app.enableShutdownHooks();
   app.enableCors({
-    origin(origin, callback) {
+    origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
       const normalizedOrigin = normalizeOrigin(origin);
 
       if (
@@ -127,12 +132,20 @@ async function bootstrap() {
     })
   );
   app.useGlobalInterceptors(new ApiResponseInterceptor());
-  const uploadsDir = process.env.ORDERSAWA_DEMO_UPLOADS_DIR || join(process.cwd(), "uploads");
+  const uploadsDir = getUploadsDirectory();
   if (!existsSync(uploadsDir)) {
     mkdirSync(uploadsDir, { recursive: true });
   }
   app.use(
     "/uploads",
+    (request: Request, response: Response, next: NextFunction) => {
+      // All public local files are flat raster assets or SVGs admitted by the geometric validator.
+      if (!/^\/(?:[a-z0-9_-]+\.(?:png|webp|gif|jpe?g)|verified-svg-[a-z0-9-]+\.svg)$/i.test(request.path)) {
+        response.sendStatus(404);
+        return;
+      }
+      next();
+    },
     express.static(uploadsDir, {
       maxAge: "1d",
       immutable: true,
@@ -142,20 +155,9 @@ async function bootstrap() {
         response.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox");
         response.setHeader("X-Content-Type-Options", "nosniff");
 
-        if (extension === "glb") {
-          response.setHeader("Content-Type", "model/gltf-binary");
-        }
-
-        if (extension === "gltf") {
-          response.setHeader("Content-Type", "model/gltf+json");
-        }
-
-        if (extension === "usdz") {
-          response.setHeader("Content-Type", "model/vnd.usdz+zip");
-        }
-
-        if (extension === "glb" || extension === "gltf" || extension === "usdz") {
-          response.setHeader("Access-Control-Allow-Origin", "*");
+        if (extension === "svg") {
+          response.setHeader("Content-Type", "image/svg+xml");
+          response.setHeader("Content-Disposition", "attachment");
         }
       }
     })
@@ -166,4 +168,7 @@ async function bootstrap() {
   await app.listen(port, host);
 }
 
-void bootstrap();
+void bootstrap().catch(() => {
+  console.error("API startup failed. Check application configuration and database availability.");
+  process.exit(1);
+});

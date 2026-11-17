@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { DEFAULT_ENGINE_LIMITS, validateMoneyString, type ProductSelectionV1 } from "@menu/shared";
+import { DEFAULT_ENGINE_LIMITS, validateMoneyString, type ProductSelectionV2 } from "@menu/shared";
 import { parseNetworkOrderDetails, type NetworkOrderDetails } from "../orders/network-order-contract";
 import { parsePublicQuoteSelection } from "./public-product-quote";
 
@@ -9,7 +9,7 @@ export type WhatsappCheckoutLine = {
   productSlug?: string;
   productId?: string;
   quantity: number;
-  selection?: ProductSelectionV1;
+  selection?: ProductSelectionV2;
   note?: string;
   expectedUnitPrice?: string;
   expectedLinkedSourceRevisions?: { sourceProductId: string; mode: "NETWORK" | "LEGACY"; configurationRevision: number }[];
@@ -55,7 +55,7 @@ export function parseWhatsappCheckoutRequest(value: unknown): WhatsappCheckoutRe
   const items = value.items.map((raw, index): WhatsappCheckoutLine => {
     if (!record(raw) || Object.keys(raw).some((key) => !["mode", "lineId", "productSlug", "productId", "quantity", "selection", "note", "expectedUnitPrice", "expectedLinkedSourceRevisions"].includes(key))
       || (raw.mode !== "LEGACY" && raw.mode !== "NETWORK")
-      || typeof raw.lineId !== "string" || !/^[A-Za-z0-9:_-]{1,128}$/.test(raw.lineId)
+      || typeof raw.lineId !== "string" || !/^[\p{L}\p{N}:_-]{1,128}$/u.test(raw.lineId)
       || ids.has(raw.lineId) || !Number.isSafeInteger(raw.quantity) || (raw.quantity as number) < 1 || (raw.quantity as number) > 100) {
       fail("INVALID_WHATSAPP_CHECKOUT_LINE", `Invalid line ${index}.`);
     }
@@ -67,9 +67,9 @@ export function parseWhatsappCheckoutRequest(value: unknown): WhatsappCheckoutRe
       fail("INVALID_WHATSAPP_EXPECTED_PRICE", "Expected price must be an exact decimal string.");
     }
     if (raw.mode === "LEGACY") {
-      if (typeof raw.productSlug !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(raw.productSlug)
-        || raw.productId !== undefined || raw.selection !== undefined || raw.expectedLinkedSourceRevisions !== undefined) fail("INVALID_WHATSAPP_CHECKOUT_LINE", `Invalid Legacy line ${index}.`);
-      return { mode: "LEGACY", lineId: raw.lineId, productSlug: raw.productSlug, quantity: raw.quantity as number,
+      if (typeof raw.productSlug !== "string" || !/^[\p{L}\p{N}_-]{1,128}$/u.test(raw.productSlug)
+        || (typeof raw.productId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(raw.productId)) || raw.selection !== undefined || raw.expectedLinkedSourceRevisions !== undefined) fail("INVALID_WHATSAPP_CHECKOUT_LINE", `Invalid Legacy line ${index}.`);
+      return { mode: "LEGACY", lineId: raw.lineId, productSlug: raw.productSlug, productId: raw.productId as string, quantity: raw.quantity as number,
         ...(note ? { note } : {}), ...(raw.expectedUnitPrice !== undefined ? { expectedUnitPrice: raw.expectedUnitPrice as string } : {}) };
     }
     if (typeof raw.productId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(raw.productId) || raw.productSlug !== undefined) {

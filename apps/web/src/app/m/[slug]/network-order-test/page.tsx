@@ -9,7 +9,7 @@ export const revalidate = 0;
 export default async function NetworkOrderTestPage({ params }: { params: Promise<{ slug: string }> }) {
   if (!(await networkOrderTestPageEnabled())) notFound();
   const { slug } = await params;
-  const menu = await getPublicMenuOrNotFound(slug, { track: false });
+  const menu = await getPublicMenuOrNotFound(slug);
   if (!menu.restaurant.currency) notFound();
   return <NetworkOrderTestClient restaurantSlug={menu.restaurant.slug} currency={menu.restaurant.currency} />;
 }

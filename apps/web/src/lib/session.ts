@@ -119,3 +119,11 @@ export function setStoredRestaurant(restaurant: { id: string; slug: string; name
   window.localStorage.setItem("menu-builder-restaurant", JSON.stringify(restaurant));
   return true;
 }
+
+export function canReorderCatalog(session = getBrowserSession()) {
+  if (!session) return false;
+  const restaurant = resolveStoredRestaurant(session);
+  return session.user.role === "SUPER_ADMIN" || session.memberships.some(
+    membership => membership.restaurant.id === restaurant?.id && membership.role === "OWNER"
+  );
+}

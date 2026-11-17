@@ -83,14 +83,20 @@ export function formatDecimalForDisplay(value: string, scale: 0 | 2): string {
   return formatMinor(minorUnits(value, scale), scale);
 }
 
-export function formatCurrencyAmount(value: string, currency: string): string {
+export function currencyDisplayLabel(currency: string, locale?: "ar" | "en"): string {
+  if (locale && (currency === "SYP" || currency === "ل.س")) return locale === "ar" ? "ل.س" : "SYP";
+  return currency;
+}
+
+export function formatCurrencyAmount(value: string, currency: string, locale?: "ar" | "en"): string {
+  const label = currencyDisplayLabel(currency, locale);
   const scale = currencyDisplayScale(currency);
   if (scale === null) {
     const issues = validateMoneyString(value, "$amount", DEFAULT_ENGINE_LIMITS);
     if (issues.length) throw new Error(`INVALID_CURRENCY_AMOUNT: ${issues[0].code}`);
-    return `${normalizeMoney(value)} ${currency}`;
+    return `${normalizeMoney(value)} ${label}`;
   }
-  return `${formatDecimalForDisplay(value, scale)} ${currency}`;
+  return `${formatDecimalForDisplay(value, scale)} ${label}`;
 }
 
 /** Difference caused solely by rounding displayed lines independently of their exact total. */

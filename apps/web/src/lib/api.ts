@@ -1,10 +1,11 @@
 import {
   ABO_MALEK_THEME,
   themeToCssVariables,
+  type ConfigurationSnapshotV2,
   type ConfigurationIssue,
   type PriceLine,
-  type ProductConfigurationV1,
-  type ProductSelectionV1,
+  type ProductConfigurationV2,
+  type ProductSelectionV2,
   type ThemeSettings
 } from "@menu/shared";
 
@@ -51,7 +52,7 @@ export type PublicProduct = {
   price?: number | string | null;
   currency: string;
   imageUrl?: string | null;
-  images?: Array<{ url: string; altText?: string | null }>;
+  images?: Array<{ url: string; altText?: string | null; width?: number; height?: number }>;
   isFeatured?: boolean;
   isNew?: boolean;
   isPopular?: boolean;
@@ -83,7 +84,6 @@ export type PublicProduct = {
     mode: "NETWORK";
     configurationRevision: number;
     orderable: boolean;
-    previewOnly: true;
     minimumPrice: string | null;
     priceDisplay: "EXACT" | "STARTING_AT" | "UNAVAILABLE";
     issueCodes: string[];
@@ -94,23 +94,24 @@ export type PublicLinkedConfigurationSource = {
   productId: string;
   slug: string;
   name: string;
+  currency: string;
+  configurationRevision: number;
   mode: "NETWORK" | "LEGACY";
   available: boolean;
   orderable: boolean;
-  configuration: ProductConfigurationV1;
+  configuration: ProductConfigurationV2;
 };
 
 export type PublicProductConfigurationResponse = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   productId: string;
   productSlug: string;
   productName: string;
+  currency: string;
   configurationRevision: number;
-  configuration: ProductConfigurationV1;
+  configuration: ProductConfigurationV2;
   linkedProducts: PublicLinkedConfigurationSource[];
   orderable: boolean;
-  previewOnly: true;
-  orderAction: "STAGE_6_REQUIRED";
   minimumPrice: string | null;
   maximumRequiredPrice: string | null;
   priceDisplay: "EXACT" | "STARTING_AT" | "UNAVAILABLE";
@@ -124,20 +125,18 @@ export type PublicProductConfigurationResponse = {
 };
 
 export type PublicProductQuoteResponse = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   productId: string;
   configurationRevision: number;
   selectionKey: string;
-  canonicalSelection: ProductSelectionV1;
+  canonicalSelection: ProductSelectionV2;
   currency: string;
   trustedTotal: string;
   baseIgnored: boolean;
   priceBreakdown: PriceLine[];
+  snapshot: ConfigurationSnapshotV2;
   linkedSourceRevisions: { sourceProductId: string; mode: "NETWORK" | "LEGACY"; configurationRevision: number }[];
   configurationOrderable: true;
-  previewOnly: true;
-  orderAction: "STAGE_6_REQUIRED";
-  orderingEnabled: false;
   runtimeContext: PublicProductConfigurationResponse["runtimeContext"];
 };
 
@@ -167,6 +166,8 @@ export type PublicMenuData = {
     facebookUrl?: string | null;
     tiktokUrl?: string | null;
     whatsappUrl?: string | null;
+    feedbackMode?: "DASHBOARD" | "WHATSAPP";
+    googleMapsUrl?: string | null;
     phone?: string | null;
     email?: string | null;
     description?: string | null;
@@ -188,6 +189,8 @@ export type PublicMenuData = {
       id: string;
       name: string;
       address?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
       city?: string | null;
       whatsappPhone?: string | null;
       openingHours?: Array<Record<string, unknown>> | Record<string, unknown> | null;
@@ -259,7 +262,7 @@ export type PublicWhatsappCheckoutRequest = {
     productSlug?: string;
     productId?: string;
     quantity: number;
-    selection?: ProductSelectionV1;
+    selection?: ProductSelectionV2;
     note?: string;
     expectedUnitPrice?: string;
     expectedLinkedSourceRevisions?: PublicProductQuoteResponse["linkedSourceRevisions"];
@@ -351,7 +354,7 @@ export function isPublicMenuNotFoundError(error: unknown) {
   return error instanceof PublicMenuApiError && error.kind === "not-found";
 }
 
-async function apiGet<T>(path: string): Promise<T> {
+async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   try {
     // Preview-only server rendering can use the loopback API while browsers use
     // the same-origin /api proxy behind an authenticated external preview.
@@ -359,7 +362,7 @@ async function apiGet<T>(path: string): Promise<T> {
       ? process.env.ORDERSAWA_PREVIEW_INTERNAL_API_URL
       : API_URL;
     const response = await fetch(`${apiUrl}${path}`, {
-      cache: "no-store"
+      cache: "no-store", signal
     });
 
     if (!response.ok) {
@@ -381,24 +384,25 @@ async function apiGet<T>(path: string): Promise<T> {
   }
 }
 
-export async function getPublicMenu(slug: string, options: { track?: boolean } = {}): Promise<PublicMenuData> {
-  const track = options.track === false ? "?track=0" : "";
-  return apiGet<PublicMenuData>(`/public/menus/${slug}${track}`);
+export async function getPublicMenu(slug: string, signal?: AbortSignal): Promise<PublicMenuData> {
+  // One canonical read URL. Keep track=0 during rolling updates with older APIs.
+  return apiGet<PublicMenuData>(`/public/menus/${encodeURIComponent(slug)}?track=0`, signal);
 }
 
 export async function getPublicProductConfiguration(
   restaurantSlug: string,
-  productId: string
+  productId: string,
+  signal?: AbortSignal
 ): Promise<PublicProductConfigurationResponse> {
   return apiGet<PublicProductConfigurationResponse>(
-    `/public/menus/${encodeURIComponent(restaurantSlug)}/products/${encodeURIComponent(productId)}/configuration`
+    `/public/menus/${encodeURIComponent(restaurantSlug)}/products/${encodeURIComponent(productId)}/configuration`, signal
   );
 }
 
 export async function getPublicProductQuote(
   restaurantSlug: string,
   productId: string,
-  selection: ProductSelectionV1,
+  selection: ProductSelectionV2,
   signal?: AbortSignal
 ): Promise<PublicProductQuoteResponse> {
   let response: Response;

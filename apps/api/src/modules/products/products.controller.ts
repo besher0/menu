@@ -1,3 +1,4 @@
+import { requireRestaurantPermission } from "../../common/restaurant-permission";
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Inject, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { roleHasPermission } from "@menu/shared";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -15,6 +16,8 @@ import { UpdateProductSortDto } from "./dto/update-product-sort.dto";
 import { ProductsImportService } from "./products-import.service";
 import { ProductsService } from "./products.service";
 import { ProductConfigurationService } from "./product-configuration.service";
+import { ProductEditorService } from "./product-editor.service";
+import { SaveProductEditorDto } from "./dto/save-product-editor.dto";
 
 const excelUploadOptions = () => ({
   storage: memoryStorage(),
@@ -35,7 +38,8 @@ export class ProductsController {
   constructor(
     @Inject(ProductsService) private readonly productsService: ProductsService,
     @Inject(ProductsImportService) private readonly productsImportService: ProductsImportService,
-    @Inject(ProductConfigurationService) private readonly productConfigurationService: ProductConfigurationService
+    @Inject(ProductConfigurationService) private readonly productConfigurationService: ProductConfigurationService,
+    @Inject(ProductEditorService) private readonly productEditorService?: ProductEditorService
   ) {}
 
   @Get()
@@ -46,6 +50,7 @@ export class ProductsController {
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateProductDto) {
     if (dto.configurationIntent === "NETWORK_SETUP") this.assertCanManageConfiguration(request);
+    requireRestaurantPermission(request, "product.create");
     return this.productsService.create(request.restaurant!.id, dto, request.user?.role === "SUPER_ADMIN");
   }
 
@@ -77,6 +82,7 @@ export class ProductsController {
 
   @Patch("reorder")
   reorder(@Req() request: AppRequest, @Body() dto: ReorderProductsDto) {
+    if (request.user?.role !== "SUPER_ADMIN" && request.restaurant?.role !== "OWNER") throw new ForbiddenException();
     return this.productsService.reorder(request.restaurant!.id, dto.items);
   }
 
@@ -100,6 +106,19 @@ export class ProductsController {
     return this.productConfigurationService.get(request.restaurant!.id, id);
   }
 
+  @Get(":id/editor")
+  editor(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "product.update");
+    return this.productEditorService!.read(request.restaurant!.id, id);
+  }
+
+  @Put(":id/editor")
+  saveEditor(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: SaveProductEditorDto) {
+    requireRestaurantPermission(request, dto.create ? "product.create" : "product.update");
+    if (dto.configuration !== undefined) this.assertCanManageConfiguration(request);
+    return this.productEditorService!.save(request.restaurant!.id, id, dto, request.user?.role === "SUPER_ADMIN");
+  }
+
   @Put(":id/configuration")
   saveConfiguration(
     @Req() request: AppRequest,
@@ -112,26 +131,31 @@ export class ProductsController {
 
   @Patch(":id")
   update(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: CreateProductDto) {
+    requireRestaurantPermission(request, "product.update");
     return this.productsService.update(request.restaurant!.id, id, dto, request.user?.role === "SUPER_ADMIN");
   }
 
   @Patch(":id/toggle-availability")
   toggleAvailability(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "product.update");
     return this.productsService.toggleAvailability(request.restaurant!.id, id);
   }
 
   @Patch(":id/price")
   updatePrice(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpdateProductPriceDto) {
-    return this.productsService.updatePrice(request.restaurant!.id, id, dto.basePrice);
+    requireRestaurantPermission(request, "product.update");
+    return this.productsService.updatePrice(request.restaurant!.id, id, dto.basePrice, dto.expectedProductVersion);
   }
 
   @Patch(":id/sort-order")
   updateSortOrder(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpdateProductSortDto) {
+    if (request.user?.role !== "SUPER_ADMIN" && request.restaurant?.role !== "OWNER") throw new ForbiddenException();
     return this.productsService.updateSortOrder(request.restaurant!.id, id, dto.sortOrder);
   }
 
   @Delete(":id")
   delete(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "product.create");
     return this.productsService.delete(request.restaurant!.id, id);
   }
 

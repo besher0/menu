@@ -1,0 +1,18 @@
+{
+  "deviceSizes": [384, 640, 828, 1080, 1600],
+  "imageSizes": [64, 128, 256],
+  "qualities": [75],
+  "formats": ["image/webp"],
+  "minimumCacheTTL": 300,
+  "maximumResponseBody": 20971520,
+  "maximumDiskCacheSize": 268435456,
+  "dangerouslyAllowSVG": false,
+  "localPatterns": [
+    { "pathname": "/assets/brand/**", "search": "" },
+    { "pathname": "/assets/public/**", "search": "" }
+  ],
+  "remotePatterns": [
+    { "protocol": "https", "hostname": "images.pexels.com", "port": "", "pathname": "/photos/**" },
+    { "protocol": "https", "hostname": "res.cloudinary.com", "port": "", "pathname": "/*/image/upload/**" }
+  ]
+}

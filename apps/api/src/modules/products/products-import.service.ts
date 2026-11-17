@@ -2,8 +2,9 @@ import { BadRequestException, Inject, Injectable, StreamableFile } from "@nestjs
 import ExcelJS from "exceljs";
 import { Prisma } from "@prisma/client";
 import { validateCurrencyAmount } from "@menu/shared";
-import { readFile } from "fs/promises";
-import { basename, extname, resolve } from "path";
+import { open } from "fs/promises";
+import { extname, resolve } from "path";
+import { getUploadsDirectory } from "../../common/uploads-directory";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { MediaStorageService, StoredUpload } from "../media/media-storage.service";
 import { ProductLibraryService } from "../media/product-library.service";
@@ -182,6 +183,7 @@ export class ProductsImportService {
     ];
     products.getRow(1).font = { bold: true };
 
+    let imageBudget = 32 * 1024 * 1024;
     for (const product of exportedProducts) {
       const row = products.addRow([
         "",
@@ -195,7 +197,8 @@ export class ProductsImportService {
         this.exportLibraryNames(product.ingredients, ["adminName", "displayName", "name"]).join(", "),
         this.exportMealDetailNames(product.nutrition).join(", ")
       ]);
-      const images = await this.loadExportImages(product.images.map((image) => image.url));
+      const images = await this.loadExportImages(restaurantId, product.images.map((image) => image.url), imageBudget);
+      imageBudget -= images.reduce((total, item) => total + item.buffer.length, 0);
       if (images.length) {
         row.height = 42;
         images.forEach((image, imageIndex) => {
@@ -581,14 +584,20 @@ export class ProductsImportService {
     return this.exportLibraryNames(record.details ?? null, ["adminName", "displayName", "label", "value"]);
   }
 
-  private async loadExportImages(urls: string[]) {
+  private async loadExportImages(restaurantId: string, urls: string[], budget: number) {
     const images: ExportableWorkbookImage[] = [];
     for (const url of urls.slice(0, PRODUCT_IMPORT_LIMITS.maxImagesPerProduct)) {
       const extension = this.workbookImageExtension(url);
       if (!extension) continue;
 
-      const buffer = await this.readImageBuffer(url).catch(() => null);
+      if (budget <= 0) break;
+      const asset = await this.prisma.mediaAsset.findFirst({
+        where: { restaurantId, url, type: { in: ["IMAGE","VR_PANORAMA","PNG_ICON"] } }, select: {filename:true,provider:true}
+      });
+      if (!asset) continue;
+      const buffer = await this.readImageBuffer(url, asset, Math.min(budget, PRODUCT_IMPORT_LIMITS.maxImageBytes)).catch(() => null);
       if (buffer?.length) {
+        budget -= buffer.length;
         images.push({ buffer, extension });
       }
     }
@@ -603,30 +612,41 @@ export class ProductsImportService {
     return null;
   }
 
-  private async readImageBuffer(url: string) {
-    for (const localPath of this.localUploadPaths(url)) {
-      const buffer = await readFile(localPath).catch(() => null);
-      if (buffer) return buffer;
+  private async readImageBuffer(raw: string, asset: {provider: string; filename: string | null}, limit: number) {
+    if (asset.provider === "LOCAL") {
+      const name = asset.filename;
+      if (!name || !/^[a-z0-9_-]+\.(?:png|jpe?g)$/i.test(name) || this.urlPathname(raw) !== "/uploads/" + name) return null;
+      const file = await open(resolve(getUploadsDirectory(), name), "r");
+      try {
+        const size = (await file.stat()).size;
+        if (!size || size > limit) return null;
+        const bytes = Buffer.alloc(size);
+        const {bytesRead} = await file.read(bytes, 0, size, 0);
+        return bytesRead === size ? bytes : null;
+      } finally { await file.close(); }
     }
-
-    if (/^https?:\/\//i.test(url)) {
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      return Buffer.from(await response.arrayBuffer());
+    if (asset.provider !== "CLOUDINARY") return null;
+    const url = new URL(raw);
+    const account = process.env.CLOUDINARY_CLOUD_NAME;
+    if (!account || url.origin !== "https://res.cloudinary.com" || url.username || url.password ||
+        !url.pathname.startsWith("/" + account + "/image/upload/")) return null;
+    const response = await fetch(url, {redirect:"error", signal:AbortSignal.timeout(5000)});
+    if (!response.ok || !response.body || !/^image\/(?:png|jpeg)$/i.test(response.headers.get("content-type") ?? "")) {
+      await response.body?.cancel();
+      return null;
     }
-
-    return null;
-  }
-
-  private localUploadPaths(url: string) {
-    const pathname = this.urlPathname(url);
-    if (!pathname.startsWith("/uploads/")) return [];
-
-    const filename = basename(pathname);
-    return [
-      resolve("uploads", filename),
-      resolve("apps/api/uploads", filename)
-    ];
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) return Buffer.concat(chunks,size);
+        size += part.value.length;
+        if (size > limit) return null;
+        chunks.push(part.value);
+      }
+    } finally { await reader.cancel(); }
   }
 
   private urlPathname(url: string) {

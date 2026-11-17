@@ -3,14 +3,16 @@ import {
   ConfigurationSnapshot,
   GroupSelection,
   ProductConfigurationContext,
-  ProductConfigurationV1,
-  ProductSelectionV1,
+  ProductConfigurationV2,
+  ProductSelectionV2,
   PRODUCT_CONFIGURATION_SNAPSHOT_VERSION,
   SnapshotResult
-} from "./types";
+} from "./v2-types";
 
 function canonicalGroups(groups: readonly GroupSelection[]): unknown[] {
   return [...groups]
+    // For valid selections, an omitted optional group and an explicitly empty group mean the same choice.
+    .filter(group => group.type !== "OPTIONS" || group.instances.length > 0 || (group.children?.length ?? 0) > 0)
     .sort((left, right) => (left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0))
     .map((group) => {
       if (group.type === "SIZE") {
@@ -26,6 +28,7 @@ function canonicalGroups(groups: readonly GroupSelection[]): unknown[] {
         children: canonicalGroups(instance.children ?? []),
         linkedSelection: instance.linkedSelection
           ? {
+              schemaVersion: instance.linkedSelection.schemaVersion,
               productId: instance.linkedSelection.productId,
               configurationRevision: instance.linkedSelection.configurationRevision,
               groups: canonicalGroups(instance.linkedSelection.groups)
@@ -37,12 +40,13 @@ function canonicalGroups(groups: readonly GroupSelection[]): unknown[] {
         const b = JSON.stringify(right);
         return a < b ? -1 : a > b ? 1 : 0;
       });
-      return { type: group.type, groupId: group.groupId, instances };
+      return { type: group.type, groupId: group.groupId, instances, children: canonicalGroups(group.children ?? []) };
     });
 }
 
 /** Stable semantic key: instance IDs and array ordering do not change configuration identity. */
-export function createSelectionKey(selection: ProductSelectionV1): string {
+export function createSelectionKey(selection: ProductSelectionV2): string {
+  if (selection.schemaVersion !== 2) throw new Error("Selection V2 is required");
   return JSON.stringify({
     schemaVersion: selection.schemaVersion,
     productId: selection.productId,
@@ -64,8 +68,8 @@ function deepFreeze<T>(value: T): T {
 }
 
 export function createConfigurationSnapshot(args: {
-  configuration: ProductConfigurationV1;
-  selection: ProductSelectionV1;
+  configuration: ProductConfigurationV2;
+  selection: ProductSelectionV2;
   context: ProductConfigurationContext;
   productName: string;
   currency: string;
@@ -77,6 +81,9 @@ export function createConfigurationSnapshot(args: {
   }
   if (!args.currency.trim()) {
     metadataIssues.push({ code: "MISSING_CURRENCY", path: "$snapshot.currency", message: "Snapshot currency is required." });
+  }
+  if (args.currency !== args.context.currency) {
+    metadataIssues.push({code:"SNAPSHOT_CURRENCY_MISMATCH",path:"$snapshot.currency",message:"Snapshot and pricing context currency must match."});
   }
   if (!args.createdAt.trim() || !Number.isFinite(Date.parse(args.createdAt))) {
     metadataIssues.push({ code: "INVALID_SNAPSHOT_TIME", path: "$snapshot.createdAt", message: "Snapshot time must be a valid date-time string." });

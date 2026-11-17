@@ -3,19 +3,20 @@ import {
   ConfigurationIssue,
   DependencyEdge,
   ProductConfigurationRecord,
-  ProductConfigurationV1
-} from "./types";
+  ProductConfigurationV2
+} from "./v2-types";
+import { validateConfiguration } from "./validation";
 
-export function collectDependencyEdges(configuration: ProductConfigurationV1): DependencyEdge[] {
+export function collectDependencyEdges(configuration: ProductConfigurationV2): DependencyEdge[] {
+  const issues = validateConfiguration(configuration);
+  if (issues.length) throw new Error("Invalid dependency configuration: " + issues[0].code);
   const edges: DependencyEdge[] = [];
 
   function visit(groups: readonly ConfigurationGroup[], path: string) {
     groups.forEach((group, groupIndex) => {
       const groupPath = `${path}.groups[${groupIndex}]`;
-      if (group.type === "SIZE") {
-        group.sizes.forEach((size, sizeIndex) => visit(size.children ?? [], `${groupPath}.sizes[${sizeIndex}]`));
-        return;
-      }
+      visit(group.children ?? [], groupPath + ".children");
+      if (group.type === "SIZE") return;
 
       group.options.forEach((option, optionIndex) => {
         const optionPath = `${groupPath}.options[${optionIndex}]`;
@@ -41,11 +42,19 @@ export function collectDependencyEdges(configuration: ProductConfigurationV1): D
 }
 
 export function validateDependencyGraph(records: readonly ProductConfigurationRecord[]): ConfigurationIssue[] {
+  if (!Array.isArray(records) || records.length > 1000) {
+    return [{code:"DEPENDENCY_GRAPH_LIMIT_EXCEEDED",path:"$records",message:"Invalid or excessive dependency records."}];
+  }
   const issues: ConfigurationIssue[] = [];
   const byProduct = new Map<string, ProductConfigurationRecord>();
   const adjacency = new Map<string, DependencyEdge[]>();
 
   for (const record of records) {
+    if (!record || typeof record !== "object") {
+      issues.push({code:"INVALID_PRODUCT_RECORD",path:"$records",message:"Invalid dependency record."}); continue;
+    }
+    const invalid = validateConfiguration(record.configuration);
+    if (invalid.length) { issues.push(...invalid); continue; }
     if (byProduct.has(record.productId)) {
       issues.push({ code: "DUPLICATE_PRODUCT_RECORD", path: record.productId, message: "Dependency input contains a duplicate product record." });
       continue;
@@ -58,6 +67,7 @@ export function validateDependencyGraph(records: readonly ProductConfigurationRe
   }
 
   for (const record of records) {
+    if (!record) continue;
     for (const edge of adjacency.get(record.productId) ?? []) {
       const target = byProduct.get(edge.sourceProductId);
       if (!target) {

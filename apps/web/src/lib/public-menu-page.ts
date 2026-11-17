@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { getPublicMenu, isPublicMenuNotFoundError, type PublicMenuData } from "@/lib/api";
 
-export async function getPublicMenuOrNotFound(
-  slug: string,
-  options: { track?: boolean } = {}
-): Promise<PublicMenuData> {
+// React cache is scoped to one server render, not a cross-request/tenant cache.
+// Primitive slug key avoids distinct metadata/page options breaking deduplication.
+export const getPublicMenuOrNotFound = cache(async (slug: string): Promise<PublicMenuData> => {
   try {
-    return await getPublicMenu(slug, options);
+    return await getPublicMenu(slug);
   } catch (error) {
     if (isPublicMenuNotFoundError(error)) {
       notFound();
@@ -14,4 +14,4 @@ export async function getPublicMenuOrNotFound(
 
     throw error;
   }
-}
+});

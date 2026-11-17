@@ -1,5 +1,7 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+import { MerchantHome } from "./merchant-home";
 import { useEffect, useState } from "react";
 import { BarChart3, MousePointerClick, ShoppingCart, TrendingUp } from "lucide-react";
 import { apiFetch } from "@/lib/client-api";
@@ -16,6 +18,11 @@ type Analytics = {
 };
 
 export function AnalyticsClient() {
+  const params = useSearchParams();
+  return params.get("view") === "products" ? <MerchantHome rankingOnly /> : <AnalyticsSummary />;
+}
+
+function AnalyticsSummary() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
@@ -67,7 +74,7 @@ export function AnalyticsClient() {
       {status === "ready" && analytics ? (
         <>
           <div className="admin-grid four">
-            <StatCard label="الزيارات" value={String(analytics.visits)} note="MENU_VIEWED" icon={BarChart3} />
+            <StatCard label="الزيارات" value={String(analytics.visits)} icon={BarChart3} />
             <StatCard label="مشاهدات المنتجات" value={String(analytics.productViews)} note="PRODUCT_VIEWED" icon={TrendingUp} />
             <StatCard label="إضافة للسلة" value={String(analytics.addToCart)} note="ADD_TO_CART" icon={ShoppingCart} />
             <StatCard label="ضغط واتساب" value={String(analytics.whatsappClicks)} note={`${analytics.conversionRate}%`} icon={MousePointerClick} />

@@ -59,3 +59,11 @@ describe("compact network cart choices", () => {
     ]);
   });
 });
+
+it("does not duplicate an accepted root size already in the product name, or mutate the quote", () => {
+  const item = {name: "بيتزا Pizza — كبير", acceptedQuote: {priceBreakdown: [line("$selection.groups.size", "large", "كبير", "21000", {kind:"SIZE"})]}};
+  const before = JSON.stringify(item);
+  expect(networkCartHeading(item)).toBe(item.name);
+  expect(networkCartChoiceLabels(item.acceptedQuote.priceBreakdown)).toEqual([]);
+  expect(JSON.stringify(item)).toBe(before);
+});

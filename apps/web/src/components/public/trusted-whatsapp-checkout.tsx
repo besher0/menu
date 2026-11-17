@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { clientUuid } from "@/lib/client-uuid";
 import { compareMoney, multiplyMoney, sumMoney } from "@menu/shared";
 import {
   confirmPublicWhatsappCheckout, preparePublicWhatsappCheckout, PublicWhatsappCheckoutError,
@@ -53,6 +54,12 @@ export function trustedCheckoutErrorMessage(error: unknown, locale: Locale, deta
   if (error.code === "WHATSAPP_CHECKOUT_CONCURRENT_UPDATE") {
     return ar ? "تحدّثت القائمة أثناء التحقق. حاول مجددًا." : "The menu changed during verification. Try again.";
   }
+  if (error.status === 403) {
+    return ar ? "إتمام الطلب غير متاح حاليًا على هذا الرابط. بقيت السلة وبياناتك محفوظة." : "Order confirmation is unavailable on this link. Your cart and details are saved.";
+  }
+  if (["INVALID_WHATSAPP_CHECKOUT_LINE","INVALID_WHATSAPP_SELECTION","INVALID_WHATSAPP_SOURCE_REVISIONS","INVALID_WHATSAPP_EXPECTED_PRICE"].includes(error.code)) {
+    return ar ? "تعذر التحقق من أحد الأصناف. راجع السلة وخياراته ثم حاول مجددًا." : "One item could not be verified. Review the cart and its options, then retry.";
+  }
   if (error.status >= 500 || error.status === 429) {
     return ar ? "خدمة التحقق غير متاحة مؤقتًا. بقيت بيانات طلبك محفوظة؛ حاول مجددًا." : "Checkout verification is temporarily unavailable. Your order details are saved; retry.";
   }
@@ -71,7 +78,7 @@ export function buildTrustedCheckoutRequest(cart: readonly CartItem[], locale: L
     } : details.pickupTime.trim() ? { pickupTime: details.pickupTime.trim() } : {}),
     ...(details.orderNote.trim() ? { orderNote: details.orderNote.trim() } : {}),
     items: cart.map((item) => item.mode === "LEGACY" ? {
-      mode: "LEGACY" as const, lineId: item.lineId, productSlug: item.slug,
+      mode: "LEGACY" as const, lineId: item.lineId, productSlug: item.slug, productId: item.productId,
       quantity: item.quantity, ...(item.note?.trim() ? { note: item.note.trim() } : {}),
       expectedUnitPrice: item.priceText ?? String(item.price)
     } : {
@@ -277,7 +284,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
         return;
       }
       // The user's send click accepts only the total already visible in the original invoice.
-      const idempotencyKey = window.crypto.randomUUID();
+      const idempotencyKey = clientUuid();
       attemptRef.current = { requestJson, idempotencyKey, acceptanceToken: prepared.acceptanceToken };
       await confirmAndOpen(checkoutRequest, prepared.acceptanceToken, idempotencyKey, displayedTotal, version, tab);
     } catch (caught) {
@@ -304,7 +311,7 @@ export function useTrustedWhatsappCheckout({ cart, restaurantSlug, locale, detai
     try {
       // Confirm independently revalidates the draft and the HMAC-bound approval.
       const idempotencyKey = attemptRef.current?.requestJson === JSON.stringify(checkoutRequest)
-        ? attemptRef.current.idempotencyKey : window.crypto.randomUUID();
+        ? attemptRef.current.idempotencyKey : clientUuid();
       attemptRef.current = { requestJson: JSON.stringify(checkoutRequest), idempotencyKey, acceptanceToken };
       const result = await confirmPublicWhatsappCheckout(restaurantSlug, checkoutRequest, acceptanceToken, idempotencyKey);
       if (!result.whatsappUrl.startsWith("https://wa.me/")) throw new Error("Invalid WhatsApp destination");

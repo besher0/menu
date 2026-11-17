@@ -77,3 +77,10 @@ describe("checkout delivery fields and customer-safe errors", () => {
       .not.toContain("SQL");
   });
 });
+
+it("distinguishes a Preview gateway denial without leaking diagnostics or claiming an order was sent",()=>{
+ const details={customerName:"",customerPhone:"",fulfillmentType:"delivery" as const,deliveryArea:"حلب",deliveryNear:"معلم",pickupTime:"",orderNote:""};
+ const message=trustedCheckoutErrorMessage(new PublicWhatsappCheckoutError("PRIVATE",403,"WHATSAPP_CHECKOUT_FAILED"),"ar",details);
+ expect(message).toContain("إتمام الطلب غير متاح");expect(message).toContain("محفوظة");expect(message).not.toContain("PRIVATE");
+ expect(trustedCheckoutErrorMessage(new TypeError("offline"),"ar",details)).toContain("الاتصال");
+});

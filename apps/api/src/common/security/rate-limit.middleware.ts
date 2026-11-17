@@ -13,6 +13,7 @@ type RateLimitBucket = {
 };
 
 const buckets = new Map<string, RateLimitBucket>();
+const maxBuckets = readPositiveInt("RATE_LIMIT_MAX_BUCKETS", 50_000);
 let lastCleanupAt = Date.now();
 
 const globalPolicy: RateLimitPolicy = {
@@ -39,12 +40,28 @@ const uploadPolicy: RateLimitPolicy = {
   max: readPositiveInt("RATE_LIMIT_UPLOAD_MAX", 20)
 };
 
+const checkoutPolicy: RateLimitPolicy = {
+  name: "public-checkout",
+  windowMs: readPositiveInt("RATE_LIMIT_PUBLIC_CHECKOUT_WINDOW_MS", 60_000),
+  max: readPositiveInt("RATE_LIMIT_PUBLIC_CHECKOUT_MAX", 20)
+};
+const quotePolicy: RateLimitPolicy = {
+  name: "public-product-quote",
+  windowMs: readPositiveInt("RATE_LIMIT_PUBLIC_QUOTE_WINDOW_MS", 60_000),
+  max: readPositiveInt("RATE_LIMIT_PUBLIC_QUOTE_MAX", 30)
+};
+const analyticsPolicy: RateLimitPolicy = {
+  name: "analytics",
+  windowMs: readPositiveInt("RATE_LIMIT_ANALYTICS_WINDOW_MS", 60_000),
+  max: readPositiveInt("RATE_LIMIT_ANALYTICS_MAX", 60)
+};
+
 function requestIp(request: Request) {
   return request.ip || request.socket.remoteAddress || "unknown";
 }
 
 function policyFor(request: Request): RateLimitPolicy {
-  const path = request.path.toLowerCase();
+  const path = request.path.toLowerCase().replace(/\/+$/, "");
 
   if (path === "/health") {
     return {
@@ -60,6 +77,13 @@ function policyFor(request: Request): RateLimitPolicy {
 
   if (path === "/dashboard/media/upload") {
     return uploadPolicy;
+  }
+
+  if (request.method === "POST") {
+    if (/^\/public\/menus\/[^/]+\/feedback$/.test(path)) return writePolicy;
+    if (/^\/public\/menus\/[^/]+\/products\/[^/]+\/quote$/.test(path)) return quotePolicy;
+    if (/^\/public\/menus\/[^/]+\/track$/.test(path)) return analyticsPolicy;
+    if (/^\/public\/menus\/[^/]+\/(?:orders\/whatsapp|checkout\/whatsapp\/(?:prepare|confirm))$/.test(path)) return checkoutPolicy;
   }
 
   if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
@@ -90,6 +114,11 @@ export function rateLimitMiddleware(request: Request, response: Response, next: 
   const policy = policyFor(request);
   const key = `${policy.name}:${requestIp(request)}`;
   const current = buckets.get(key);
+  if (!current && buckets.size >= maxBuckets) {
+    response.setHeader("Retry-After", "60");
+    response.status(429).json({ statusCode: 429, message: "Request capacity reached" });
+    return;
+  }
   const bucket = current && current.resetAt > now
     ? current
     : { count: 0, resetAt: now + policy.windowMs };

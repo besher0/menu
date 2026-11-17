@@ -1,0 +1,26 @@
+.modal{width:min(1180px,97vw);max-width:97vw;max-height:92vh;padding:0;border:1px solid #e4e7e7;border-radius:15px;background:#fff;box-shadow:0 18px 50px #2e353a2e;overflow:hidden;color:#2e353a;font-size:15px;font-family:"Noto Sans Arabic UI","Noto Sans Arabic",Tahoma,Arial,sans-serif;line-height:1.55}
+.modal::backdrop{background:#2e353a57}
+.modal *{box-sizing:border-box}
+.form{display:flex;flex-direction:column;max-height:calc(92vh - 2px);margin:0;min-width:0}
+.header{min-height:60px;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #e4e7e7;flex:0 1 auto}
+.header h3{font-family:inherit;margin:0;font-size:18px;overflow-wrap:anywhere}
+.modal button,.modal input,.modal select,.modal textarea{font-family:inherit}
+.modal button{cursor:pointer}
+.modal button:disabled{opacity:.45;cursor:not-allowed}
+.modal :focus-visible{outline:2px solid #3d7a7c;outline-offset:2px}
+.close{width:36px;height:38px;display:grid;place-items:center;flex:none;padding:0;background:#fff;border:1px solid #d6dbdb;border-radius:9px;color:#2e353a}
+.body{padding:18px;overflow:auto;min-height:0;overscroll-behavior:contain;}
+.footer{min-height:60px;padding:10px 18px;display:flex;align-items:center;gap:8px;border-top:1px solid #e4e7e7;background:#fff;flex:none}
+.footer button{min-height:38px;padding:0 12px;border:1px solid #d6dbdb;border-radius:9px;background:#fff;color:#2e353a;font-weight:750;display:inline-flex;align-items:center;gap:5px}
+.footer .save{background:#3d7a7c;border-color:#3d7a7c;color:#fff;font-weight:850}
+.footer button:hover,.close:hover{filter:brightness(.97)}
+@media(max-width:620px){.modal{width:100vw;max-width:100vw}}
+
+.modelSection{border:1px solid #e4e7e7;border-radius:12px;padding:14px;background:#f2f4f4;margin-top:14px}
+.modelHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.modelHead h3{font-size:15px;margin:0}
+.modelActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.modelUpload{display:inline-flex;align-items:center;min-height:38px;padding:0 12px;border:1px solid #d6dbdb;border-radius:9px;background:#fff;font-size:15px;font-weight:750;cursor:pointer}
+.modelUpload input{position:absolute;width:1px;height:1px;opacity:0}
+.modelUpload:focus-within{outline:2px solid #3d7a7c;outline-offset:2px}
+.modelState{font-size:12px;color:#6d7478;overflow-wrap:anywhere}

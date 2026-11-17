@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createSelectionKey } from "@menu/shared";
+import { createSelectionKeyV2 as createSelectionKey } from "@menu/shared";
 import { draftNeedsFreshAcceptance, testOrderRequestFromCart, type TrustedTestDraft } from "./network-order-test-model";
 import { isNetworkOrderTestHostAllowed } from "@/lib/network-order-test-guard";
 import type { NetworkCartItem } from "./cart-model";
 
-const selection = { schemaVersion: 1 as const, productId: "pizza", configurationRevision: 2,
+const selection = { schemaVersion: 2 as const, productId: "pizza", configurationRevision: 2,
   groups: [{ type: "SIZE" as const, groupId: "sizes", sizeChoiceId: "large" }] };
 const item: NetworkCartItem = {
   mode: "NETWORK", lineId: "line-1", identity: "test", restaurantSlug: "demo", productId: "pizza", slug: "pizza",
   name: "Pizza", quantity: 2, currency: "EGP", selection, selectionKey: createSelectionKey(selection), configurationRevision: 2,
+  configurationSnapshot: {snapshotVersion:2,productId:"pizza",productName:"Pizza",currency:"EGP",configurationRevision:2,
+    selectionKey:createSelectionKey(selection),selection,total:"1.000001",baseIgnored:true,priceLines:[],createdAt:"2026-11-15T00:00:00Z"},
   runtimeContext: { scope: "RESTAURANT", outletDifferentialApplied: false, serviceModeApplied: false, productScheduleApplied: false },
   acceptedQuote: { total: "1.000001", priceBreakdown: [], linkedSourceRevisions: [] }, status: "CURRENT", issues: []
 };

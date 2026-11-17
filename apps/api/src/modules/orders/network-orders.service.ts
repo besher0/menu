@@ -1,14 +1,14 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
-  createConfigurationSnapshot,
+  createConfigurationSnapshotV2 as createConfigurationSnapshot,
   DEFAULT_ENGINE_LIMITS,
   multiplyMoney,
   sumMoney,
   validateMoneyString,
   type PriceLine,
-  type ProductConfigurationContext,
-  type ProductSelectionV1
+  type ProductConfigurationContextV2 as ProductConfigurationContext,
+  type ProductSelectionV2
 } from "@menu/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatNetworkOrderWhatsappMessage } from "./network-order-whatsapp-formatter";
@@ -34,7 +34,7 @@ type DraftLine = {
   note?: string;
   quantity: number;
   configurationRevision: number;
-  canonicalSelection: ProductSelectionV1;
+  canonicalSelection: ProductSelectionV2;
   selectionKey: string;
   linkedSourceRevisions: { sourceProductId: string; mode: "NETWORK" | "LEGACY"; configurationRevision: number }[];
   unitPrice: string;
@@ -173,7 +173,7 @@ export class NetworkOrdersService {
     const products = await transaction.product.findMany({
       where: { restaurantId },
       select: {
-        id: true, slug: true, name: true, basePrice: true, configurationTree: true,
+        id: true, restaurantId: true, currency: true, slug: true, name: true, basePrice: true, configurationTree: true,
         configurationVersion: true, isActive: true, isAvailable: true, deletedAt: true
       }
     });
@@ -206,9 +206,9 @@ export class NetworkOrdersService {
         throw new ConflictException({ error: "CONFIGURATION_NOT_ORDERABLE", lineIndex: index });
       }
       const context: ProductConfigurationContext = {
-        catalogId: restaurant.id,
+        catalogId: restaurant.id, currency: restaurant.currency,
         linkedProducts: new Map(resolved.linkedProducts.map((source) => [source.productId, {
-          productId: source.productId, catalogId: restaurant.id,
+          productId: source.productId, catalogId: restaurant.id, currency: restaurant.currency,
           configuration: source.configuration, available: source.available, orderable: source.orderable
         }]))
       };

@@ -52,19 +52,8 @@ function legacyProduct(overrides: Partial<LegacyProduct> = {}): LegacyProduct {
 }
 
 describe("legacy product configuration conversion", () => {
-  it("creates a validated revision-one configuration without changing price semantics", () => {
-    const result = convertLegacyProduct(legacyProduct());
-    expect(result.status).toBe("ELIGIBLE");
-    if (result.status !== "ELIGIBLE") return;
-    expect(result.configuration.basePrice).toBe("100.120000");
-    expect(result.configuration.groups[0]).toMatchObject({
-      type: "OPTIONS",
-      min: 1,
-      max: 1,
-      includedQuantity: 0,
-      options: [{ price: "10.250000", maxQuantity: 1 }]
-    });
-    expect(result.minimumPrice).toBe("110.37");
+  it("keeps the obsolete V1 backfill closed instead of silently converting ordinary products", () => {
+    expect(convertLegacyProduct(legacyProduct())).toEqual({status:"QUARANTINE",reasons:["$configuration: UNSUPPORTED_CONFIGURATION_V1"]});
   });
 
   it("quarantines an ambiguous legacy SINGLE max", () => {

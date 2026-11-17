@@ -1,362 +1,95 @@
 import { describe, expect, it } from "vitest";
-import type { OptionGroupSelection, ProductConfigurationV1 } from "@menu/shared";
-import type { PublicProductConfigurationResponse } from "@/lib/api";
-import { includedQuantityDemo, pizzaMargheritaDemo } from "../dashboard/product-configuration/demos";
-import {
-  buildInitialSelection,
-  buildOptionInstance,
-  canAddOptionInstance,
-  calculatePublicPreview,
-  changeSizeSelection,
-  LatestQuoteGate,
-  rebaseSelectionRevisions,
-  updateOptionGroup
-} from "./product-configurator-model";
-
-describe("canAddOptionInstance", () => {
-  it("allows replacing the selected value in a full single-choice group", () => {
-    expect(canAddOptionInstance({
-      available: true,
-      optionCount: 0,
-      optionMax: 1,
-      groupCount: 1,
-      groupMax: 1,
-      radioMode: true
-    })).toBe(true);
-
-    expect(canAddOptionInstance({
-      available: true,
-      optionCount: 0,
-      optionMax: 1,
-      groupCount: 1,
-      groupMax: 1,
-      radioMode: false
-    })).toBe(false);
-  });
-});
-
-describe("LatestQuoteGate", () => {
-  it("ignores an older Quote response after the selection changes or another request starts", async () => {
-    const gate = new LatestQuoteGate();
-    const applied: string[] = [];
-    let resolveOld!: (value: string) => void;
-    let resolveNew!: (value: string) => void;
-    const old = new Promise<string>((resolve) => { resolveOld = resolve; });
-    const newest = new Promise<string>((resolve) => { resolveNew = resolve; });
-    const oldToken = gate.next();
-    const oldWork = old.then((value) => { if (gate.isCurrent(oldToken)) applied.push(value); });
-    gate.invalidate();
-    const newToken = gate.next();
-    const newWork = newest.then((value) => { if (gate.isCurrent(newToken)) applied.push(value); });
-    resolveNew("latest");
-    resolveOld("stale");
-    await Promise.all([oldWork, newWork]);
-    expect(applied).toEqual(["latest"]);
-  });
-});
-
-function ids() {
-  let value = 0;
-  return (prefix: string) => `${prefix}-${++value}`;
-}
-
-function envelope(configuration: ProductConfigurationV1): PublicProductConfigurationResponse {
-  return {
-    schemaVersion: 1,
-    productId: configuration.productId,
-    productSlug: configuration.productId,
-    productName: configuration.productId,
-    configurationRevision: configuration.revision,
-    configuration,
-    linkedProducts: [],
-    orderable: true,
-    previewOnly: true,
-    orderAction: "STAGE_6_REQUIRED",
-    minimumPrice: null,
-    maximumRequiredPrice: null,
-    priceDisplay: "EXACT",
-    issues: [],
-    runtimeContext: {
-      scope: "RESTAURANT",
-      outletDifferentialApplied: false,
-      serviceModeApplied: false,
-      productScheduleApplied: false
-    }
-  };
-}
-
-describe("public product configurator model", () => {
-  it("rebases only revisions, preserving nested choices and IDs; rejects removed or unavailable choices", () => {
-    const configuration = pizzaMargheritaDemo("pizza", 1);
-    const createId = ids();
-    const original = buildInitialSelection(configuration, new Map(), createId);
-    const size = configuration.groups[0];
-    if (size.type !== "SIZE") throw new Error("Missing sizes");
-    const toppings = size.sizes[0].children?.[0];
-    if (toppings?.type !== "OPTIONS") throw new Error("Missing toppings");
-    const chosen = buildOptionInstance(toppings.options[0], new Map(), createId);
-    const selected = { ...original, groups: original.groups.map((group) => group.type === "SIZE"
-      ? { ...group, children: [{ type: "OPTIONS" as const, groupId: toppings.id, instances: [chosen] }] } : group) };
-    const current = pizzaMargheritaDemo("pizza", 2);
-    const rebased = rebaseSelectionRevisions(selected, current, new Map());
-    expect(rebased).toMatchObject({ configurationRevision: 2 });
-    expect(rebased?.groups).toEqual(selected.groups);
-    const currentSize = current.groups[0];
-    if (currentSize.type !== "SIZE") throw new Error("Missing current sizes");
-    const currentToppings = currentSize.sizes[0].children?.[0];
-    if (currentToppings?.type !== "OPTIONS") throw new Error("Missing current toppings");
-    currentToppings.options[0].available = false;
-    expect(rebaseSelectionRevisions(selected, current, new Map())).toBeNull();
-  });
-
-  it("recovers a removed size by explicit new-size selection while preserving compatible nested choices", () => {
-    const configuration = pizzaMargheritaDemo("pizza", 2);
-    const size = configuration.groups[0];
-    if (size.type !== "SIZE") throw new Error("Missing sizes");
-    const toppings = size.sizes[0].children?.[0];
-    if (toppings?.type !== "OPTIONS") throw new Error("Missing toppings");
-    const old = buildInitialSelection(configuration, new Map(), ids());
-    const selected = { ...old, groups: old.groups.map((group) => group.type === "SIZE"
-      ? { ...group, sizeChoiceId: "removed-size", children: [{ type: "OPTIONS" as const,
-        groupId: toppings.id, instances: [{ instanceId: "saved-cheese", optionId: toppings.options[0].id }] }] }
-      : group) };
-    const result = changeSizeSelection(selected, size, size.sizes[0].id, new Map(), ids());
-    expect(result.error).toBeUndefined();
-    expect(result.selection?.groups[0]).toMatchObject({ type: "SIZE", sizeChoiceId: size.sizes[0].id,
-      children: [{ instances: [{ instanceId: "saved-cheese", optionId: toppings.options[0].id }] }] });
-    expect(calculatePublicPreview(envelope(configuration), "restaurant", result.selection!)).toMatchObject({ valid: true });
-  });
-
-  it("rebases repeated ORIGINAL and CUSTOM linked instances independently", () => {
-    const source: ProductConfigurationV1 = { schemaVersion: 1, productId: "source", revision: 3,
-      basePrice: null, groups: [{ type: "SIZE", id: "source-size", label: "Size",
-        sizes: [{ id: "small", label: "Small", price: "10" }] }] };
-    const custom: ProductConfigurationV1 = { ...source, revision: 2 };
-    const combo: ProductConfigurationV1 = { schemaVersion: 1, productId: "combo", revision: 4,
-      basePrice: "0", groups: [{ type: "OPTIONS", id: "slots", label: "Pizzas", min: 0, max: 3,
-        includedQuantity: 0, options: [
-          { id: "original", label: "Original", price: "10", maxQuantity: 2,
-            linkedProduct: { sourceProductId: "source", mode: "ORIGINAL" } },
-          { id: "custom", label: "Custom", price: "10", maxQuantity: 1,
-            linkedProduct: { sourceProductId: "source", mode: "CUSTOM", customConfiguration: custom } }
-        ] }] };
-    const child = (instanceId: string) => ({ instanceId, optionId: "original",
-      linkedSelection: { schemaVersion: 1 as const, productId: "source", configurationRevision: 1,
-        groups: [{ type: "SIZE" as const, groupId: "source-size", sizeChoiceId: "small" }] } });
-    const selection = { schemaVersion: 1 as const, productId: "combo", configurationRevision: 1,
-      groups: [{ type: "OPTIONS" as const, groupId: "slots", instances: [child("first"), child("second"),
-        { ...child("third"), optionId: "custom" }] }] };
-    const sources = new Map([["source", { productId: "source", slug: "source", name: "Source",
-      mode: "NETWORK" as const, available: true, orderable: true, configuration: source }]]);
-    const result = rebaseSelectionRevisions(selection, combo, sources);
-    expect(result?.groups[0]).toMatchObject({ type: "OPTIONS", instances: [
-      { instanceId: "first", linkedSelection: { configurationRevision: 3 } },
-      { instanceId: "second", linkedSelection: { configurationRevision: 3 } },
-      { instanceId: "third", linkedSelection: { configurationRevision: 2 } }
-    ] });
-    expect((result?.groups[0] as { instances: { instanceId: string }[] }).instances.map((entry) => entry.instanceId))
-      .toEqual(["first", "second", "third"]);
-  });
-
-  it("keeps olives, cheese, nested choices and stable instances through Small → Large → Medium → Small", () => {
-    const configuration = pizzaMargheritaDemo("pizza", 4);
-    const sizeGroup = configuration.groups[0];
-    if (sizeGroup.type !== "SIZE") throw new Error("Missing size group");
-    const small = sizeGroup.sizes[0];
-    const toppings = small.children?.[0];
-    if (!toppings || toppings.type !== "OPTIONS") throw new Error("Missing toppings");
-    const cheese = toppings.options[0];
-    const olives = toppings.options[1];
-    const sources = new Map();
-    const createId = ids();
-    let selection = buildInitialSelection(configuration, sources, createId);
-    const cheeseInstance = buildOptionInstance(cheese, sources, createId);
-    const nested = cheese.children?.[0];
-    if (!nested || nested.type !== "OPTIONS") throw new Error("Missing nested group");
-    cheeseInstance.children = [{ type: "OPTIONS", groupId: nested.id,
-      instances: [buildOptionInstance(nested.options[0], sources, createId)] }];
-    const instances = [buildOptionInstance(olives, sources, createId), buildOptionInstance(olives, sources, createId), cheeseInstance];
-    selection = { ...selection, groups: selection.groups.map((group) => group.type === "SIZE"
-      ? { ...group, children: [{ type: "OPTIONS", groupId: toppings.id, instances }] } : group) };
-    for (const [sizeId, expectedTotal] of [
-      ["demo-size-large", "188.5"], ["demo-size-medium", "146"], ["demo-size-small", "111"]
-    ] as const) {
-      const changed = changeSizeSelection(selection, sizeGroup, sizeId, sources, createId);
-      expect(changed.error).toBeUndefined();
-      selection = changed.selection!;
-      const selectedSize = selection.groups[0];
-      if (selectedSize.type !== "SIZE") throw new Error("Missing selection");
-      const selectedToppings = selectedSize.children?.[0];
-      if (selectedToppings?.type !== "OPTIONS") throw new Error("Missing selected toppings");
-      expect(selectedToppings.instances.map((entry) => entry.instanceId)).toEqual(instances.map((entry) => entry.instanceId));
-      expect(selectedToppings.instances[2].children?.[0].type).toBe("OPTIONS");
-      expect(calculatePublicPreview(envelope(configuration), "restaurant", selection)).toMatchObject({ valid: true, total: expectedTotal });
-    }
-  });
-
-  it("blocks an incompatible size without silently discarding selected units", () => {
-    const configuration = pizzaMargheritaDemo("pizza", 1);
-    const sizeGroup = configuration.groups[0];
-    if (sizeGroup.type !== "SIZE") throw new Error("Missing size group");
-    const toppings = sizeGroup.sizes[0].children?.[0];
-    if (!toppings || toppings.type !== "OPTIONS") throw new Error("Missing toppings");
-    const sources = new Map();
-    const createId = ids();
-    const initial = buildInitialSelection(configuration, sources, createId);
-    const selection = { ...initial, groups: initial.groups.map((group) => group.type === "SIZE"
-      ? { ...group, children: [{ type: "OPTIONS" as const, groupId: toppings.id,
-        instances: [buildOptionInstance(toppings.options[1], sources, createId), buildOptionInstance(toppings.options[1], sources, createId)] }] }
-      : group) };
-    const large = sizeGroup.sizes[2];
-    const targetToppings = large.children?.[0];
-    if (!targetToppings || targetToppings.type !== "OPTIONS") throw new Error("Missing target toppings");
-    targetToppings.options[1].maxQuantity = 1;
-    expect(changeSizeSelection(selection, sizeGroup, large.id, sources, createId)).toEqual({ error: "زيتون" });
-    expect((selection.groups[0] as { sizeChoiceId: string }).sizeChoiceId).toBe("demo-size-small");
-    targetToppings.options[1].maxQuantity = 2;
-    targetToppings.options[1].available = false;
-    expect(changeSizeSelection(selection, sizeGroup, large.id, sources, createId)).toEqual({ error: "زيتون" });
-  });
-
-  it("keeps an independent linked selection inside a size-specific option branch", () => {
-    const source = pizzaMargheritaDemo("linked-pizza", 2);
-    const configuration: ProductConfigurationV1 = {
-      schemaVersion: 1, productId: "parent", revision: 1, basePrice: null,
-      groups: [{ type: "SIZE", id: "parent-size", label: "الوجبة", sizes: ["small", "large"].map((name) => ({
-        id: name, label: name, price: name === "small" ? "80" : "120", children: [{
-          type: "OPTIONS" as const, id: `linked-group-${name}`, label: "المكوّن", min: 1, max: 1, includedQuantity: 0,
-          options: [{ id: `linked-choice-${name}`, label: "بيتزا", price: "0", minQuantity: 1, maxQuantity: 1,
-            linkedProduct: { sourceProductId: "linked-pizza", mode: "ORIGINAL" as const } }]
-        }]
-      })) }]
-    };
-    const response = envelope(configuration);
-    response.linkedProducts = [{ productId: "linked-pizza", slug: "linked-pizza", name: "بيتزا",
-      mode: "NETWORK", available: true, orderable: true, configuration: source }];
-    const sources = new Map(response.linkedProducts.map((entry) => [entry.productId, entry]));
-    const createId = ids();
-    const selection = buildInitialSelection(configuration, sources, createId);
-    const group = configuration.groups[0];
-    if (group.type !== "SIZE") throw new Error("Missing parent size");
-    const old = selection.groups[0];
-    if (old.type !== "SIZE" || old.children?.[0].type !== "OPTIONS") throw new Error("Missing linked choice");
-    const originalInstance = old.children[0].instances[0];
-    const changed = changeSizeSelection(selection, group, "large", sources, createId);
-    const next = changed.selection?.groups[0];
-    if (next?.type !== "SIZE" || next.children?.[0].type !== "OPTIONS") throw new Error("Missing mapped choice");
-    expect(next.children[0].instances[0].instanceId).toBe(originalInstance.instanceId);
-    expect(next.children[0].instances[0].linkedSelection).toEqual(originalInstance.linkedSelection);
-    expect(calculatePublicPreview(response, "restaurant", changed.selection!)).toMatchObject({ valid: true, total: "120" });
-  });
-
-  it("uses full Size price and a Size-specific option override", () => {
-    const configuration = pizzaMargheritaDemo("pizza", 4);
-    const sourceMap = new Map();
-    const createId = ids();
-    let selection = buildInitialSelection(configuration, sourceMap, createId);
-    const sizeGroup = configuration.groups[0];
-    if (!sizeGroup || sizeGroup.type !== "SIZE") throw new Error("Missing sizes fixture");
-    const medium = sizeGroup.sizes.find((size) => size.id === "demo-size-medium")!;
-    const nested = buildInitialSelection({ ...configuration, groups: medium.children ?? [] }, sourceMap, createId);
-    selection = {
-      ...selection,
-      groups: selection.groups.map((group) => group.type === "SIZE"
-        ? { ...group, sizeChoiceId: medium.id, children: nested.groups }
-        : group)
-    };
-    const toppings = medium.children?.find((group) => group.id === "demo-pizza-toppings-medium");
-    if (!toppings || toppings.type !== "OPTIONS") throw new Error("Missing toppings fixture");
-    const cheese = toppings.options.find((option) => option.id === "demo-extra-cheese-medium")!;
-    selection = {
-      ...selection,
-      groups: selection.groups.map((group) => group.type === "SIZE"
-        ? { ...group, children: updateOptionGroup({ ...selection, groups: group.children ?? [] }, toppings.id, [buildOptionInstance(cheese, sourceMap, createId)]).groups }
-        : group)
-    };
-
-    const result = calculatePublicPreview(envelope(configuration), "restaurant", selection);
-    expect(result.valid).toBe(true);
-    expect(result.total).toBe("125");
-    expect(result.baseIgnored).toBe(true);
-  });
-
-  it("keeps child charges when the highest-priced parent units are included", () => {
-    const configuration = includedQuantityDemo("included", 1);
-    const sourceMap = new Map();
-    const createId = ids();
-    let selection = buildInitialSelection(configuration, sourceMap, createId);
-    const group = configuration.groups[0];
-    if (!group || group.type !== "OPTIONS") throw new Error("Missing Included Quantity fixture");
-    const instances = group.options.map((option) => buildOptionInstance(option, sourceMap, createId));
-    selection = updateOptionGroup(selection, group.id, instances);
-
-    const result = calculatePublicPreview(envelope(configuration), "restaurant", selection);
-    expect(result.valid).toBe(true);
-    expect(result.total).toBe("115");
-    expect(result.lines.filter((line) => line.included).map((line) => line.amount).sort()).toEqual(["30", "50"]);
-  });
-
-  it("creates stable independent instances for repeated linked products", () => {
-    const linked = pizzaMargheritaDemo("linked-pizza", 2);
-    const configuration: ProductConfigurationV1 = {
-      schemaVersion: 1,
-      productId: "combo",
-      revision: 1,
-      basePrice: "0",
-      groups: [{
-        type: "OPTIONS",
-        id: "combo-slots",
-        label: "اختيارات الكومبو",
-        min: 2,
-        max: 2,
-        includedQuantity: 0,
-        options: [{
-          id: "pizza-slot",
-          label: "بيتزا",
-          price: "50",
-          minQuantity: 2,
-          maxQuantity: 2,
-          linkedProduct: { sourceProductId: "linked-pizza", mode: "ORIGINAL" }
-        }]
-      }]
-    };
-    const response = envelope(configuration);
-    response.linkedProducts = [{
-      productId: "linked-pizza",
-      slug: "linked-pizza",
-      name: "بيتزا مرتبطة",
-      mode: "NETWORK",
-      available: true,
-      orderable: true,
-      configuration: linked
-    }];
-    const sources = new Map(response.linkedProducts.map((source) => [source.productId, source]));
-    const selection = buildInitialSelection(configuration, sources, ids());
-    const group = selection.groups[0] as OptionGroupSelection;
-
-    expect(group.instances).toHaveLength(2);
-    expect(group.instances[0].instanceId).not.toBe(group.instances[1].instanceId);
-    expect(group.instances[0].linkedSelection).not.toBe(group.instances[1].linkedSelection);
-    expect(calculatePublicPreview(response, "restaurant", selection)).toMatchObject({ valid: true, total: "100" });
-  });
-
-  it("does not produce a price when the server marks a required source unavailable", () => {
-    const configuration = pizzaMargheritaDemo("pizza", 1);
-    const response = envelope(configuration);
-    response.orderable = false;
-    response.issues = [{ code: "LINKED_PRODUCT_UNAVAILABLE", path: "$configuration", message: "Unavailable" }];
-    const selection = buildInitialSelection(configuration, new Map(), ids());
-    const result = calculatePublicPreview(response, "restaurant", selection);
-
-    expect(result.valid).toBe(false);
-    expect(result.total).toBeNull();
-    expect(result.issues[0].code).toBe("LINKED_PRODUCT_UNAVAILABLE");
-  });
-
-  it("keeps null Base distinct from explicit zero", () => {
-    const nullBase = pizzaMargheritaDemo("null-base", 1);
-    const zeroBase: ProductConfigurationV1 = { ...nullBase, productId: "zero-base", basePrice: "0" };
-    expect(nullBase.basePrice).toBeNull();
-    expect(zeroBase.basePrice).toBe("0");
-  });
+import { calculatePriceV2, validateSelectionV2, type ProductConfigurationV2, type ProductSelectionV2, type OptionGroupV2,
+  type OptionGroupSelectionV2, type OptionChoiceV2 } from "@menu/shared";
+import type { PublicLinkedConfigurationSource, PublicProductConfigurationResponse } from "@/lib/api";
+import { orderingFixturesV2 } from "../../../../api/src/modules/public-menu/testing/ordering-v2.fixtures";
+import { buildInitialSelection, buildOptionInstance, canAddOptionInstance, calculatePublicPreview, changeSizeSelection,
+  LatestQuoteGate, rebaseSelectionRevisions, updateOptionGroup, completeForcedSelection } from "./product-configurator-model";
+let nextId=0;const ids=()=>"unit-"+(++nextId);
+function sourceMap(){const {drink,custom}=orderingFixturesV2();return new Map<string,PublicLinkedConfigurationSource>([drink,custom].map(configuration=>[configuration.productId,{
+  productId:configuration.productId,slug:configuration.productId,name:configuration.productId,currency:"SYP",configurationRevision:configuration.revision,
+  mode:"NETWORK",available:true,orderable:true,configuration}]))}
+function envelope(configuration:ProductConfigurationV2):PublicProductConfigurationResponse{return {schemaVersion:2,currency:"SYP",productId:configuration.productId,
+  productSlug:configuration.productId,productName:"DEMO",configurationRevision:configuration.revision,configuration,linkedProducts:[...sourceMap().values()],orderable:true,
+  minimumPrice:null,maximumRequiredPrice:null,priceDisplay:"EXACT",issues:[],runtimeContext:{scope:"RESTAURANT",outletDifferentialApplied:false,serviceModeApplied:false,productScheduleApplied:false}}}
+function pizzaSelection(){const {pizza}=orderingFixturesV2(),sources=sourceMap();let selected=buildInitialSelection(pizza,sources,ids);
+ const extras=pizza.groups[1] as OptionGroupV2,cheese=buildOptionInstance(extras.options[0],sources,ids);
+ cheese.children=[{type:"OPTIONS",groupId:"cheese-finish",instances:[{instanceId:ids(),optionId:"garlic"}]}];
+ selected=updateOptionGroup(selected,extras.id,[cheese,buildOptionInstance(extras.options[1],sources,ids)]);return {pizza,selected,sources,cheese};}
+describe("V2 customer configurator state",()=>{
+ it("allows replacing a full radio group without exceeding a multi-unit group",()=>{
+  const input={available:true,optionCount:0,optionMax:1,groupCount:1,groupMax:1,radioMode:true};expect(canAddOptionInstance(input)).toBe(true);expect(canAddOptionInstance({...input,radioMode:false})).toBe(false);
+ });
+ it("discards older async Quote responses after selection or route changes",async()=>{
+  const gate=new LatestQuoteGate(),applied:string[]=[];let old!:(x:string)=>void,newer!:(x:string)=>void;
+  const first=new Promise<string>(r=>old=r),second=new Promise<string>(r=>newer=r);const a=gate.next();const work=first.then(x=>{if(gate.isCurrent(a))applied.push(x)});
+  gate.invalidate();const b=gate.next();const latest=second.then(x=>{if(gate.isCurrent(b))applied.push(x)});newer("latest");old("old");await Promise.all([work,latest]);expect(applied).toEqual(["latest"]);
+ });
+ it("does not guess between multiple required options",()=>{
+  const {pizza}=orderingFixturesV2(),selected=buildInitialSelection(pizza,sourceMap(),ids);expect(selected.groups.some(g=>g.groupId==="extras")).toBe(false);
+  expect(calculatePublicPreview(envelope(pizza),"restaurant",selected).issues.some(i=>i.code==="GROUP_MIN_NOT_MET")).toBe(true);
+ });
+ it("preserves exact units, shared and private branches across all size prices",()=>{
+  const {pizza,selected,sources}=pizzaSelection();const size=pizza.groups[0];if(size.type!=="SIZE")throw Error("fixture");let current=selected;
+  const old=JSON.stringify(selected.groups.find(g=>g.groupId==="extras"));
+  for(const [id,total] of [["pizza-medium","17000"],["pizza-large","21500"],["pizza-small","12500"]]){
+   const result=changeSizeSelection(current,size,id,sources,ids);expect(result.error).toBeUndefined();current=result.selection!;
+   expect(JSON.stringify(current.groups.find(g=>g.groupId==="extras"))).toBe(old);expect(calculatePublicPreview(envelope(pizza),"restaurant",current)).toMatchObject({valid:true,total,baseIgnored:true});
+  }
+ });
+ it("keeps highest-priced parent picks free while charging the selected child's price",()=>{
+  const {pizza,selected}=pizzaSelection(),result=calculatePublicPreview(envelope(pizza),"restaurant",selected);
+  expect(result.total).toBe("12500");expect(result.lines.find(l=>l.nodeId==="mushroom")).toMatchObject({included:true,chargedAmount:"0"});expect(result.lines.find(l=>l.nodeId==="garlic")?.chargedAmount).toBe("500");
+ });
+ it("rejects a newly unavailable size without dropping valid selections",()=>{
+  const {pizza,selected,sources}=pizzaSelection();const size=pizza.groups[0];if(size.type!=="SIZE")throw Error("fixture");size.sizes[1].available=false;
+  const before=JSON.stringify(selected);expect(changeSizeSelection(selected,size,size.sizes[1].id,sources,ids).selection).toBeUndefined();expect(JSON.stringify(selected)).toBe(before);
+ });
+ it("recovers a removed size by an explicit choice and preserves the shared branch",()=>{
+  const {pizza,selected,sources}=pizzaSelection();const size=pizza.groups[0];if(size.type!=="SIZE")throw Error("fixture");const prior=selected.groups[0];if(prior.type!=="SIZE")throw Error("fixture");
+  prior.sizeChoiceId="removed";prior.children=[{type:"OPTIONS",groupId:"bake",instances:[{instanceId:ids(),optionId:"extra-bake"}]}];
+  const result=changeSizeSelection(selected,size,"pizza-small",sources,ids);expect(result.selection?.groups[0]).toMatchObject({children:prior.children});expect(calculatePublicPreview(envelope(pizza),"r",result.selection!).total).toBe("12750");
+ });
+ it("rebases only revisions and refuses a removed or unavailable private choice",()=>{
+  const {pizza,selected,sources}=pizzaSelection(),current=structuredClone(pizza);current.revision=2;
+  const result=rebaseSelectionRevisions(selected,current,sources);expect(result?.configurationRevision).toBe(2);expect(result?.groups).toEqual(selected.groups);
+  (current.groups[1] as OptionGroupV2).options[0].available=false;expect(rebaseSelectionRevisions(selected,current,sources)).toBeNull();
+ });
+ it("rebases ORIGINAL live revisions and keeps CUSTOM snapshot revisions independently",()=>{
+  const {combo,drink}=orderingFixturesV2(),sources=sourceMap(),group=combo.groups[0] as OptionGroupV2;
+  const original=buildOptionInstance(group.options[0],sources,ids),custom=buildOptionInstance(group.options[1],sources,ids);
+  const selected=updateOptionGroup(buildInitialSelection(combo,sources,ids),group.id,[original,custom]);drink.revision=2;
+  const changedSources=new Map(sources);changedSources.set(drink.productId,{...sources.get(drink.productId)!,configuration:drink,configurationRevision:2});
+  const current={...combo,revision:2},rebased=rebaseSelectionRevisions(selected,current,changedSources)!;const values=(rebased.groups.find(g=>g.groupId===group.id) as OptionGroupSelectionV2).instances;
+  expect(values.map(x=>x.instanceId)).toEqual([original.instanceId,custom.instanceId]);expect(values.map(x=>x.linkedSelection?.configurationRevision)).toEqual([2,1]);
+ });
+ it("uses local ORIGINAL overlays, never the standalone source selling price",()=>{
+  const {combo}=orderingFixturesV2(),sources=sourceMap(),group=combo.groups[0] as OptionGroupV2;
+  const selected=updateOptionGroup(buildInitialSelection(combo,sources,ids),group.id,[buildOptionInstance(group.options[0],sources,ids)]);
+  expect(calculatePublicPreview(envelope(combo),"r",selected)).toMatchObject({valid:true,total:"4500"});
+ });
+ it("creates independent repeated CUSTOM selections and counts group children once",()=>{
+  const {combo}=orderingFixturesV2(),sources=sourceMap(),group=combo.groups[0] as OptionGroupV2;
+  const a=buildOptionInstance(group.options[1],sources,ids),b=buildOptionInstance(group.options[1],sources,ids);expect(a.instanceId).not.toBe(b.instanceId);expect(a.linkedSelection).not.toBe(b.linkedSelection);
+  const shared=[{type:"OPTIONS" as const,groupId:"shared-gift",instances:[{instanceId:ids(),optionId:"gift"},{instanceId:ids(),optionId:"gift"}]}];
+  const selected=updateOptionGroup(buildInitialSelection(combo,sources,ids),group.id,[a,b],shared);
+  const result=calculatePublicPreview(envelope(combo),"r",selected);expect(result.total).toBe("2300");expect(result.lines.filter(l=>l.nodeId==="gift")).toHaveLength(2);
+  const next=updateOptionGroup(selected,group.id,[a]);expect((next.groups.find(g=>g.groupId===group.id) as OptionGroupSelectionV2).children).toEqual(shared);
+ });
+ it("auto-selects the sole mandatory anonymous choice exactly once",()=>{
+  const {combo}=orderingFixturesV2(),sources=sourceMap(),initial=buildInitialSelection(combo,sources,ids);
+  const next=completeForcedSelection(combo,initial,sources,ids,"SYP");expect(next.groups.find(g=>g.groupId==="anonymous")).toMatchObject({instances:[{optionId:"wrap"}]});
+  expect(completeForcedSelection(combo,next,sources,ids,"SYP")).toEqual(next);
+ });
+ it("allows nullable merchant maxima while retaining the technical bound",()=>{
+  const option:OptionChoiceV2={id:"o",label:"o",price:"0",maxQuantity:null};const config:ProductConfigurationV2={schemaVersion:2,productId:"p",revision:1,basePrice:"100",groups:[{type:"OPTIONS",id:"g",label:"g",min:1,max:null,includedQuantity:0,options:[option]}]};
+  const selected=buildInitialSelection(config,new Map(),ids);expect((selected.groups[0] as OptionGroupSelectionV2).instances).toHaveLength(1);
+  expect(validateSelectionV2(config,selected,{catalogId:"c",currency:"SYP"})).toEqual([]);
+  expect(canAddOptionInstance({available:true,optionCount:100,optionMax:100,groupCount:100,groupMax:100,radioMode:false})).toBe(false);
+ });
+ it("does not invent a price for an unavailable product or a null Base",()=>{
+  const {pizza}=orderingFixturesV2(),response=envelope(pizza);response.orderable=false;response.issues=[{code:"PRODUCT_UNAVAILABLE",path:"$configuration",message:"Unavailable"}];
+  expect(calculatePublicPreview(response,"r",buildInitialSelection(pizza,sourceMap(),ids))).toMatchObject({valid:false,total:null});
+  const config:ProductConfigurationV2={schemaVersion:2,productId:"p",revision:1,basePrice:null,groups:[]};expect(calculatePriceV2(config,{schemaVersion:2,productId:"p",configurationRevision:1,groups:[]},{catalogId:"r",currency:"SYP"}).valid).toBe(false);
+ });
 });

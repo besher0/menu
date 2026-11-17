@@ -1,10 +1,2 @@
-import { AdminShell } from "@/components/admin/admin-shell";
 import { ProductForm } from "@/components/dashboard/product-form";
-
-export default function NewProductPage() {
-  return (
-    <AdminShell active="/dashboard/products">
-      <ProductForm />
-    </AdminShell>
-  );
-}
+export default function NewProductPage() { return <ProductForm />; }

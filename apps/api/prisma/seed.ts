@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { ABO_MALEK_RESTAURANT, PLAN_FEATURES } from "@menu/shared";
+import { randomBytes } from "crypto";
+import { disposableSeedDatabase } from "../src/common/security/disposable-seed";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -48,14 +50,16 @@ async function seedPlans() {
 }
 
 async function seedRestaurant() {
-  const passwordHash = await bcrypt.hash("password123", 10);
+  // An existing identity retains its password and authority. New demo accounts
+  // start with independent random passwords; provision access with the reset tool.
+  const demoPasswordHash = () => bcrypt.hash(randomBytes(32).toString("hex"), 12);
 
   const superAdmin = await prisma.user.upsert({
     where: { email: "admin@menu.test" },
-    update: { passwordHash, role: "SUPER_ADMIN", name: "محمد أحمد" },
+    update: {},
     create: {
       email: "admin@menu.test",
-      passwordHash,
+      passwordHash: await demoPasswordHash(),
       role: "SUPER_ADMIN",
       name: "محمد أحمد"
     }
@@ -63,10 +67,10 @@ async function seedRestaurant() {
 
   const owner = await prisma.user.upsert({
     where: { email: "owner@abomalek.test" },
-    update: { passwordHash, role: "USER", name: "مالك أبو مالك" },
+    update: {},
     create: {
       email: "owner@abomalek.test",
-      passwordHash,
+      passwordHash: await demoPasswordHash(),
       role: "USER",
       name: "مالك أبو مالك"
     }
@@ -319,9 +323,15 @@ async function seedRestaurant() {
 }
 
 async function main() {
+  const demoRequested = process.env.SEED_DEMO_RESTAURANT === "true" || process.argv.includes("--demo");
+  if (demoRequested) {
+    const expected = disposableSeedDatabase(process.env);
+    const [actual] = await prisma.$queryRaw<Array<{ database: string; address: string }>>`SELECT current_database() AS database, host(inet_server_addr()) AS address`;
+    if (actual?.database !== expected || actual.address !== "127.0.0.1") throw new Error("Disposable database identity mismatch");
+  }
   await seedPlans();
 
-  if (process.env.SEED_DEMO_RESTAURANT === "true" || process.argv.includes("--demo")) {
+  if (demoRequested) {
     await seedRestaurant();
   }
 }
@@ -351,7 +361,7 @@ main()
     await prisma.$disconnect();
   })
   .catch(async (error) => {
-    console.error(error);
+    console.error("Provisioning failed. Check the environment, database and provisioning inputs.");
     await prisma.$disconnect();
     process.exit(1);
   });

@@ -1,12 +1,17 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { feedbackMode, googleMapsShareUrl } from "@menu/shared";
+import { publicUploadUrl } from "../../common/public-upload-url";
+import { checkoutSigningKey } from "../../common/security/production-config";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
-import { currencyDisplayReconciliation, currencyDisplayScale, formatCurrencyAmount, formatDecimalForDisplay, multiplyMoney, sumMoney, validateCurrencyAmount } from "@menu/shared";
+import { currencyDisplayReconciliation, currencyDisplayScale, formatCurrencyAmount, formatDecimalForDisplay, indexPublicCatalog, DEFAULT_ENGINE_LIMITS, compareMoney, validateMoneyString, multiplyMoney, sumMoney, validateCurrencyAmount } from "@menu/shared";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateWhatsappOrderDto } from "./dto/create-whatsapp-order.dto";
 import { readDeliveryFee } from "./delivery-fee";
 import {
+  preparePublicConfigurationCatalog,
+  resolveProductFromCatalog,
   resolvePublicProductConfiguration,
   type PublicConfigurationProductRecord,
   type PublicProductConfigurationResponse
@@ -55,25 +60,19 @@ const PUBLIC_PRODUCT_CANDIDATE_FILTER = {
 
 @Injectable()
 export class PublicMenuService {
+  private readonly analyticsLogger = new Logger("PublicMenuAnalytics");
+  private pendingAnalytics = 0;
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FeatureFlagsService) private readonly featureFlags: FeatureFlagsService,
     @Inject(ConfigService) private readonly config: ConfigService
   ) {}
 
-  async menu(restaurantSlug: string, userAgent?: string | string[], trackView = true) {
+  async menu(restaurantSlug: string, _userAgent?: string | string[], _trackView = false) {
     const restaurant = await this.findPublicRestaurant(restaurantSlug);
 
-    if (trackView) {
-      await this.prisma.analyticsEvent.create({
-        data: {
-          restaurantId: restaurant.id,
-          type: "MENU_VIEWED",
-          path: `/m/${restaurant.slug}`,
-          userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
-        }
-      });
-    }
+    // Reads (including metadata/prefetch/legacy track=1) never record a view.
+    // The visible client sends an independently acknowledged, idempotent event.
 
     const [features, configurationCapabilityEnabled, menus] = await Promise.all([
       this.featureFlags.listFeatures(restaurant.id),
@@ -98,6 +97,7 @@ export class PublicMenuService {
     const products = await this.serializeProducts(
       restaurant.id,
       restaurant.products,
+      restaurant.categories,
       features,
       restaurant.currency,
       configurationCapabilityEnabled
@@ -124,7 +124,7 @@ export class PublicMenuService {
       })),
       products,
       networkWhatsappCheckoutEnabled: process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT === "1"
-        && /^[0-9a-fA-F]{64,}$/.test(process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY ?? ""),
+        && Boolean(checkoutSigningKey(process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY)),
       theme: this.serializePublicThemeSettings(restaurant.themeSettings?.settings, features),
       menus: this.serializeMenus(menus)
     };
@@ -161,6 +161,7 @@ export class PublicMenuService {
     return this.serializeProducts(
       restaurant.id,
       restaurant.products,
+      restaurant.categories,
       features,
       restaurant.currency,
       configurationCapabilityEnabled
@@ -258,28 +259,115 @@ export class PublicMenuService {
 
   async track(
     restaurantSlug: string,
-    body: { type?: string; path?: string; metadata?: Record<string, unknown> },
+    body: { type?: string; path?: string; metadata?: Record<string, unknown>; eventId?: string; clientId?: string },
     userAgent?: string | string[]
   ) {
-    const restaurant = await this.prisma.restaurant.findFirst({
-      where: { slug: restaurantSlug, isActive: true, deletedAt: null }
-    });
-
-    if (!restaurant) {
-      throw new NotFoundException("Restaurant not found");
+    const agent = Array.isArray(userAgent) ? userAgent[0] : userAgent;
+    if (/bot|crawler|spider|headless|preview|facebookexternalhit/i.test(agent ?? "")) return { ignored: true };
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+        (body.type !== undefined && (typeof body.type !== "string" || body.type.length > 64)) ||
+        (body.path !== undefined && typeof body.path !== "string") ||
+        (body.metadata !== undefined && (!body.metadata || typeof body.metadata !== "object" ||
+          Array.isArray(body.metadata) || Buffer.byteLength(JSON.stringify(body.metadata)) > 4096))) {
+      throw new BadRequestException("Invalid analytics event");
     }
+    // Only views are client-authored. Checkout records its own events atomically.
+    if (!body.type || !["MENU_VIEWED", "PRODUCT_VIEWED"].includes(body.type)) {
+      throw new BadRequestException("Unsupported public analytics event");
+    }
+    if ((body.type === "MENU_VIEWED" || body.type === "PRODUCT_VIEWED") && !body.eventId) {
+      throw new BadRequestException("View events require a retry-safe identifier");
+    }
+    if (body.eventId !== undefined && (typeof body.eventId !== "string" ||
+        !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(body.eventId))) {
+      throw new BadRequestException("Invalid analytics event identifier");
+    }
+    if (body.eventId && !["MENU_VIEWED", "PRODUCT_VIEWED"].includes(body.type ?? "")) {
+      throw new BadRequestException("Invalid view event type");
+    }
+    if (body.path && (body.path.length > 512 || !body.path.startsWith(`/m/${restaurantSlug}/`) && body.path !== `/m/${restaurantSlug}`)) {
+      throw new BadRequestException("Invalid analytics path");
+    }
+    if (body.type === "MENU_VIEWED" && (typeof body.clientId !== "string" ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(body.clientId))) {
+      throw new BadRequestException("Menu visits require a valid browser identifier");
+    }
+    if (this.pendingAnalytics >= 32) {
+      this.analyticsLogger.warn("Analytics backpressure: retryable rejection");
+      throw new ServiceUnavailableException("Analytics busy; retry later");
+    }
+    this.pendingAnalytics++;
+    try {
+      const restaurant = await this.prisma.restaurant.findFirst({
+        where: { slug: restaurantSlug, isActive: true, deletedAt: null }, select: { id: true }
+      });
 
-    const event = await this.prisma.analyticsEvent.create({
-      data: {
-        restaurantId: restaurant.id,
-        type: body.type ?? "PAGE_VIEWED",
-        path: body.path,
-        metadata: body.metadata as Prisma.InputJsonValue | undefined,
-        userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
+      if (!restaurant) {
+        throw new NotFoundException("Restaurant not found");
       }
-    });
 
-    return { id: event.id };
+      // Existing primary key provides persistent retry deduplication, even across
+      // API restarts/instances. Include tenant and event type in its namespace.
+      const id = body.eventId ? `view-${sha256(`${restaurant.id}:${body.type}:${body.eventId}`)}` : undefined;
+      try {
+        if (body.type === "MENU_VIEWED" && body.clientId && id) {
+          const browserKey = sha256(JSON.stringify([restaurant.id, body.clientId.toLowerCase()]));
+          return await this.prisma.$transaction(async tx => {
+            // Remember suppressed deliveries too: a late retry must never start a window.
+            const receipt = await tx.menuVisitReceipt.createMany({
+              data: [{ id, restaurantId: restaurant.id }], skipDuplicates: true
+            });
+            if (!receipt.count) return { id, duplicate: true };
+            const accepted = await tx.$queryRaw<{ lastAcceptedAt: Date }[]>`
+              INSERT INTO "MenuVisitWindow" ("restaurantId", "browserKey", "lastAcceptedAt")
+              VALUES (${restaurant.id}, ${browserKey}, clock_timestamp())
+              ON CONFLICT ("restaurantId", "browserKey") DO UPDATE
+                SET "lastAcceptedAt" = clock_timestamp()
+                WHERE "MenuVisitWindow"."lastAcceptedAt" <= clock_timestamp() - INTERVAL '30 minutes'
+              RETURNING "lastAcceptedAt"
+            `;
+            if (!accepted.length) return { id, suppressed: true };
+            await tx.analyticsEvent.create({ data: {
+              id, restaurantId: restaurant.id, type: "MENU_VIEWED", path: body.path,
+              userAgent: agent, createdAt: accepted[0].lastAcceptedAt
+            } });
+            return { id };
+          });
+        }
+        let metadata = body.metadata;
+        if (body.type === "PRODUCT_VIEWED") {
+          const prefix = `/m/${restaurantSlug}/product/`;
+          const slug = body.path?.startsWith(prefix) ? body.path.slice(prefix.length) : "";
+          if (!slug || slug.includes("/") || (metadata?.productSlug !== undefined && metadata.productSlug !== slug) ||
+              (metadata?.productId !== undefined && typeof metadata.productId !== "string")) {
+            throw new BadRequestException("Invalid product view");
+          }
+          const product = await this.prisma.product.findFirst({
+            where: { restaurantId: restaurant.id, slug, id: metadata?.productId as string | undefined, deletedAt: null, isActive: true },
+            select: { id: true, slug: true }
+          });
+          if (!product) throw new BadRequestException("Invalid product view");
+          metadata = { productId: product.id, productSlug: product.slug };
+        }
+        const event = await this.prisma.analyticsEvent.create({
+          data: {
+            ...(id ? { id } : {}),
+            restaurantId: restaurant.id,
+            type: body.type ?? "PAGE_VIEWED",
+            path: body.path,
+            metadata: metadata as Prisma.InputJsonValue | undefined,
+            userAgent: agent
+          }
+        });
+
+        return { id: event.id };
+      } catch (error) {
+        if (error instanceof BadRequestException) throw error;
+        if (id && (error as { code?: string }).code === "P2002") return { id, duplicate: true };
+        this.analyticsLogger.warn("Analytics persistence failed; event may be retried with the same identifier");
+        throw new ServiceUnavailableException("Analytics unavailable; retry later");
+      }
+    } finally { this.pendingAnalytics--; }
   }
 
   async createWhatsappOrder(restaurantSlug: string, dto: CreateWhatsappOrderDto) {
@@ -361,6 +449,9 @@ export class PublicMenuService {
       throw new BadRequestException("WhatsApp phone is not configured");
     }
 
+    if (dto.items.some(item => !item.productId || typeof item.expectedUnitPrice !== "string" || validateMoneyString(item.expectedUnitPrice, "$item.expectedUnitPrice", DEFAULT_ENGINE_LIMITS).length)) {
+      throw new BadRequestException({ error: "WHATSAPP_CART_IDENTITY_REQUIRED", message: "Remove historical items and add them again." });
+    }
     const productSlugs = dto.items.map((item) => item.productSlug);
     await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "restaurantId" = ${restaurant.id} ORDER BY "id" FOR SHARE`;
     const products = await tx.product.findMany({
@@ -382,7 +473,11 @@ export class PublicMenuService {
     }
 
     const items = dto.items.map((item) => {
-      const product = products.find((candidate) => candidate.slug === item.productSlug)!;
+      const product = products.find((candidate) => candidate.id === item.productId && candidate.slug === item.productSlug);
+      if (!product) throw new ConflictException({ error: "WHATSAPP_PRODUCT_UNAVAILABLE" });
+      if (compareMoney(item.expectedUnitPrice, product.basePrice!.toString()) !== 0) {
+        throw new ConflictException({ error: "WHATSAPP_CART_REVIEW_REQUIRED", message: "The product price changed; review and accept the current price." });
+      }
       const unitPrice = product.basePrice!.toString();
       const totalPrice = multiplyMoney(unitPrice, item.quantity);
 
@@ -490,18 +585,7 @@ export class PublicMenuService {
   }
 
   private async findPublicRestaurant(restaurantSlug: string) {
-    const existing = await this.prisma.restaurant.findFirst({
-      where: { slug: restaurantSlug, isActive: true, deletedAt: null },
-      select: { id: true }
-    });
-
-    if (!existing) {
-      throw new NotFoundException("Restaurant not found");
-    }
-
-    await this.ensureAllCategory(existing.id);
-
-    const restaurant = await this.prisma.restaurant.findFirst({
+    const read = () => this.prisma.restaurant.findFirst({
       where: { slug: restaurantSlug, isActive: true, deletedAt: null },
       include: {
         branches: {
@@ -511,14 +595,18 @@ export class PublicMenuService {
         },
         categories: {
           where: { isActive: true, deletedAt: null },
-          include: { _count: { select: { products: true } } },
-          orderBy: { sortOrder: "asc" }
+          include: { _count: { select: { products: { where: { restaurant: { slug: restaurantSlug } } } } } },
+          orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
         },
         products: {
           where: PUBLIC_PRODUCT_CANDIDATE_FILTER,
           include: {
             category: true,
-            images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
+            images: {
+              where: { isActive: true },
+              orderBy: { sortOrder: "asc" },
+              include: { media: { select: { restaurantId: true, url: true, width: true, height: true, type: true } } }
+            },
             media3d: true,
             vrMedia: true,
             options: {
@@ -531,16 +619,34 @@ export class PublicMenuService {
               }
             }
           },
-          orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }]
+          orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }, { id: "asc" }]
         },
         themeSettings: true
       }
     });
 
+    let restaurant = await read();
+    // Existing catalogues normally already have a healthy system category.
+    // Keep legacy first-read repair and its uniqueness/race behavior for old data.
+    if (restaurant && !restaurant.categories.some(row => row.slug === "all" && row.name === "الكل" && row.sortOrder === 0)) {
+      await this.ensureAllCategory(restaurant.id);
+      restaurant = await read();
+    }
     if (!restaurant) {
       throw new NotFoundException("Restaurant not found");
     }
 
+    const models = restaurant.products.filter(p => p.media3d?.isActive);
+    if (models.length) {
+      const assets = await this.prisma.mediaAsset.findMany({ where: { restaurantId:restaurant.id, type:"MODEL_3D",
+        provider:"CLOUDINARY", url:{ in:models.map(p=>p.media3d!.url) }, validatedFormat:{ in:["GLB","GLTF"] } }, select:{url:true,validatedFormat:true} });
+      const verified = new Map(assets.map(a=>[a.url,a.validatedFormat]));
+      for (const product of models) {
+        const format = verified.get(product.media3d!.url);
+        if (!format) product.media3d = null;
+        else product.media3d!.format = format;
+      }
+    }
     return restaurant;
   }
 
@@ -568,6 +674,8 @@ export class PublicMenuService {
       facebookUrl: dashboardSettings.facebookUrl ?? null,
       tiktokUrl: dashboardSettings.tiktokUrl ?? null,
       whatsappUrl: dashboardSettings.whatsappUrl ?? null,
+      feedbackMode: feedbackMode(dashboardSettings.feedbackMode),
+      googleMapsUrl: googleMapsShareUrl(dashboardSettings.googleMapsUrl),
       showPrices: dashboardSettings.showPrices ?? true,
       deliveryFee: readDeliveryFee(dashboardSettings, restaurant.currency),
       productOpenMode: dashboardSettings.productOpenMode === "PAGE" ? "PAGE" : "MODAL",
@@ -583,6 +691,8 @@ export class PublicMenuService {
         slug: branch.slug,
         name: branch.name,
         address: branch.address,
+        latitude: branch.latitude ?? null,
+        longitude: branch.longitude ?? null,
         city: branch.city,
         whatsappPhone: branch.whatsappPhone,
         openingHours: branch.openingHours?.map((hour: any) => ({
@@ -616,7 +726,7 @@ export class PublicMenuService {
       moodKeys,
       ingredients: this.serializePublicIngredients(product.ingredients),
       nutrition: this.serializeNutrition(product.nutrition),
-      category: product.category
+      category: product.category && product.category.restaurantId === product.restaurantId
         ? {
             id: product.category.id,
             slug: product.category.slug,
@@ -624,10 +734,15 @@ export class PublicMenuService {
           }
         : null,
       imageUrl: this.publicAssetUrl(product.images[0]?.url),
-      images: product.images.map((image: any) => ({
-        ...image,
-        url: this.publicAssetUrl(image.url)
-      })),
+      images: product.images.map(({ media, ...image }: any) => {
+        const hasDimensions = media?.restaurantId === product.restaurantId && media?.url === image.url
+          && media?.type === "IMAGE" && Number.isInteger(media.width) && media.width > 0
+          && Number.isInteger(media.height) && media.height > 0;
+        return {
+          ...image, url: this.publicAssetUrl(image.url),
+          ...(hasDimensions ? { width: media.width, height: media.height } : {})
+        };
+      }),
       options: product.options,
       media: {
         model3dUrl: canUse3d && product.media3d?.isActive ? this.publicAssetUrl(product.media3d.url) : null,
@@ -640,6 +755,7 @@ export class PublicMenuService {
   private async serializeProducts(
     restaurantId: string,
     products: any[],
+    categories: readonly { slug: string }[],
     features: Array<{ key: string; enabled: boolean }>,
     currency: string,
     capabilityEnabled: boolean
@@ -647,27 +763,23 @@ export class PublicMenuService {
     const hasNetworkCandidates = products.some(
       (product) => product.configurationVersion > 0 && product.configurationTree !== null
     );
-    const catalogProducts = capabilityEnabled && hasNetworkCandidates
-      ? await this.configurationCatalogProducts(restaurantId)
-      : [];
+    const catalog = capabilityEnabled && hasNetworkCandidates
+      ? preparePublicConfigurationCatalog({
+          restaurantId, currency, capabilityEnabled,
+          catalogProducts: await this.configurationCatalogProducts(restaurantId)
+        })
+      : null;
 
-    return products.flatMap((product) => {
+    const visible = products.flatMap((product) => {
       const legacy = product.configurationVersion === 0 && product.configurationTree === null;
       if (legacy) {
         if (product.basePrice === null || validateCurrencyAmount(product.basePrice.toString(), currency, "$product.basePrice").length) return [];
         return [this.serializeProduct(product, features, currency)];
       }
-      if (!capabilityEnabled) return [];
-
-      const owner = catalogProducts.find((candidate) => candidate.id === product.id);
+      if (!catalog) return [];
+      const owner = catalog.products.get(product.id);
       if (!owner) return [];
-      const configuration = resolvePublicProductConfiguration({
-        restaurantId,
-        owner,
-        catalogProducts,
-        capabilityEnabled,
-        currency
-      });
+      const configuration = resolveProductFromCatalog(owner, catalog);
       if (!configuration) return [];
 
       return [{
@@ -677,6 +789,7 @@ export class PublicMenuService {
         productConfiguration: this.configurationSummary(configuration)
       }];
     });
+    return indexPublicCatalog(visible, categories).ordered;
   }
 
   private configurationSummary(configuration: PublicProductConfigurationResponse) {
@@ -684,7 +797,6 @@ export class PublicMenuService {
       mode: "NETWORK" as const,
       configurationRevision: configuration.configurationRevision,
       orderable: configuration.orderable,
-      previewOnly: true as const,
       minimumPrice: configuration.minimumPrice,
       priceDisplay: configuration.priceDisplay,
       issueCodes: configuration.issues.map((issue) => issue.code)
@@ -696,6 +808,8 @@ export class PublicMenuService {
       where: { restaurantId },
       select: {
         id: true,
+        restaurantId: true,
+        currency: true,
         slug: true,
         name: true,
         basePrice: true,
@@ -931,26 +1045,8 @@ export class PublicMenuService {
   }
 
   private publicAssetUrl(url?: string | null) {
-    if (!url) {
-      return null;
-    }
-
-    if (!url.includes("/uploads/")) {
-      return url;
-    }
-
     const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5000}`;
-
-    if (url.startsWith("/uploads/")) {
-      return `${apiOrigin}${url}`;
-    }
-
-    try {
-      const parsedUrl = new URL(url);
-      return `${apiOrigin}${parsedUrl.pathname}${parsedUrl.search}`;
-    } catch {
-      return url;
-    }
+    return publicUploadUrl(url, apiOrigin);
   }
 
   private buildWhatsappMessage(input: {
@@ -983,7 +1079,7 @@ export class PublicMenuService {
       ? currencyDisplayReconciliation(input.items.map((item) => item.totalPrice), input.itemsSubtotal, input.currency)
       : null;
     const displayAmount = (value: string) => currencyDisplayScale(input.currency) === null
-      ? `${formatDecimalForDisplay(value, 2)} ${input.currency}` : formatCurrencyAmount(value, input.currency);
+      ? `${formatDecimalForDisplay(value, 2)} ${input.currency}` : formatCurrencyAmount(value, input.currency, "ar");
     const lines: (string | null)[] = [
       `🧾 طلب جديد رقم ${input.orderNumber} — OrderSawa`,
       `المطعم: ${isolateWhatsappText(input.restaurantName)}`,
@@ -1003,7 +1099,7 @@ export class PublicMenuService {
       displayDifference ? `فرق عرض التقريب: ${displayDifference}` : null,
       input.showPrices ? `مجموع الأصناف: ${displayAmount(input.itemsSubtotal)}` : null,
       input.showPrices ? `رسوم التوصيل: ${input.fulfillmentType !== "delivery" ? "لا تُضاف للاستلام"
-        : input.deliveryFee === null ? "تُحدّد حسب المنطقة" : input.deliveryFee === "0" ? "مجاني" : formatCurrencyAmount(input.deliveryFee, input.currency)}` : null,
+        : input.deliveryFee === null ? "تُحدّد حسب المنطقة" : input.deliveryFee === "0" ? "مجاني" : formatCurrencyAmount(input.deliveryFee, input.currency, "ar")}` : null,
       input.showPrices ? `الإجمالي: ${input.fulfillmentType === "delivery" && input.deliveryFee === null
         ? "يُحدّد بعد رسوم التوصيل" : displayAmount(input.totalAmount)}` : null,
       "",

@@ -39,6 +39,9 @@ model Restaurant {
   updatedAt              DateTime                 @updatedAt
   deletedAt              DateTime?
   analyticsEvents        AnalyticsEvent[]
+  feedback               RestaurantFeedback[]
+  menuVisitWindows       MenuVisitWindow[]
+  menuVisitReceipts      MenuVisitReceipt[]
   auditLogs              AuditLog[]
   branches               Branch[]
   categories             Category[]
@@ -210,6 +213,7 @@ model Product {
   basePrice                 Decimal?                         @db.Decimal(24, 6)
   configurationTree         Json?
   configurationVersion      Int                              @default(0)
+  editVersion               Int                              @default(0)
   currency                  String                           @default("ل.س")
   isActive                  Boolean                          @default(true)
   isAvailable               Boolean                          @default(true)
@@ -338,6 +342,7 @@ model MealDetailLibraryItem {
   adminNameNormalized String   @unique
   displayName         String
   value               String?
+  valueType           String   @default("VALUE")
   icon                String   @default("utensils")
   iconUrl             String?
   isActive            Boolean  @default(true)
@@ -351,6 +356,7 @@ model MediaAsset {
   id               String         @id @default(cuid())
   restaurantId     String
   filename         String?
+  validatedFormat  String?
   originalFilename String?
   mimeType         String?
   url              String
@@ -514,6 +520,23 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+}
+
+model MenuVisitWindow {
+  restaurantId String
+  browserKey String
+  lastAcceptedAt DateTime @db.Timestamptz(3)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@id([restaurantId, browserKey])
+}
+
+model MenuVisitReceipt {
+  id String @id
+  restaurantId String
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
 }
 
 model AnalyticsEvent {
@@ -713,4 +736,30 @@ enum SyncStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+model RestaurantFeedback {
+  id            String     @id @default(cuid())
+  restaurantId  String
+  stars         Int
+  comment       String?    @db.VarChar(2000)
+  customerName  String?    @db.VarChar(100)
+  customerPhone String?    @db.VarChar(32)
+  requestId     String     @db.Uuid
+  dedupeKey     String     @db.Char(64)
+  createdAt     DateTime   @default(now())
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+
+  @@unique([restaurantId, requestId])
+  @@unique([restaurantId, dedupeKey])
+  @@index([restaurantId, createdAt, id])
+}
+
+// Expiring keyed hashes only. No raw IP, visitor identifier, restaurant/contact payload.
+model FeedbackQuotaEvent {
+  id        String   @id @default(cuid())
+  key       String   @db.Char(64)
+  expiresAt DateTime
+  @@index([key, expiresAt])
+  @@index([expiresAt])
 }

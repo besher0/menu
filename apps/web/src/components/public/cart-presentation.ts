@@ -6,7 +6,8 @@ export type CartChoiceLabel = { label: string; nested: boolean };
 export function networkCartHeading(item: { name: string; acceptedQuote: { priceBreakdown: readonly PriceLine[] } }): string {
   const topSizes = item.acceptedQuote.priceBreakdown.filter((line) => line.kind === "SIZE"
     && !line.path.includes(".linked") && !line.path.includes(".children"));
-  return `${item.name}${topSizes.length === 1 ? ` — ${topSizes[0].label}` : ""}`;
+  const suffix = topSizes.length === 1 ? ` — ${topSizes[0].label}` : "";
+  return item.name.endsWith(suffix) ? item.name : item.name + suffix;
 }
 
 /** Compact presentation of the accepted, per-unit breakdown; amounts remain in the trusted quote. */

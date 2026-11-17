@@ -1,4 +1,5 @@
 "use client";
+import { googleMapsShareUrl } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 
 import { ChangeEvent, Fragment, FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -14,12 +15,13 @@ import {
   Save,
   Trash2,
   Upload,
-  WalletCards
 } from "lucide-react";
+import { MerchantHome } from "./merchant-home";
+import { ProductManagement } from "./product-management";
 import { API_URL, apiFetch } from "@/lib/client-api";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { SkeletonTable } from "@/components/ui/skeleton";
-import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
+import { canReorderCatalog, authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
 
 type LoadState = "loading" | "ready" | "saving" | "error";
 type BackgroundType = "COLOR" | "IMAGE" | "TEXTURE" | "PATTERN" | "GRADIENT";
@@ -28,28 +30,9 @@ type Meta = { page: number; limit: number; total: number; pages: number };
 type PageResult<T> = { data: T[]; meta: Meta };
 
 type RestaurantOption = { id: string; name: string; slug: string };
-type ProductSummary = { id: string; name: string; categoryName?: string; imageUrl?: string | null; views?: number };
-
-type Overview = {
-  cards: {
-    todayViews?: number;
-    menuViews?: number;
-    whatsappClicks: number;
-    productsCount?: number;
-    todayVisits?: number;
-    visits?: number;
-    products?: number;
-  };
-  lists: {
-    topViewedProducts?: ProductSummary[];
-    topViewed?: ProductSummary[];
-    newProducts: ProductSummary[];
-    unavailableProducts: ProductSummary[];
-  };
-};
-
 type Product = {
   id: string;
+  editVersion: number;
   name: string;
   basePrice: number | null;
   configurationMode?: "LEGACY" | "NETWORK";
@@ -58,7 +41,7 @@ type Product = {
   isNew: boolean;
   sortOrder: number;
   views?: number;
-  category?: { name: string } | null;
+  category?: { id: string; name: string } | null;
   images?: Array<{ url: string }>;
 };
 
@@ -109,6 +92,10 @@ type DashboardSettings = {
     city?: string | null;
     country?: string | null;
     address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    feedbackMode?: "DASHBOARD" | "WHATSAPP";
+    googleMapsUrl?: string;
     whatsappPhone?: string | null;
     phone?: string | null;
     email?: string | null;
@@ -138,6 +125,7 @@ const defaultSplashScreenSettings: SplashScreenSettings = {
 };
 const texturedBackground =
   "radial-gradient(circle at 18% 20%, rgba(255,255,255,.18), transparent 18%), linear-gradient(135deg, #b91c12, #e53322 58%, #7f120b)";
+const reorderHint = "لإعادة الترتيب، ألغِ البحث والفلاتر وحمّل القائمة كاملة. / Clear search and filters and load all items to reorder.";
 const pageIncrement = 10;
 
 type ProductGroup = {
@@ -256,50 +244,7 @@ function RestaurantPicker({ restaurants, targetPath }: { restaurants: Restaurant
 }
 
 export function RestaurantDashboardHomeClient() {
-  return withRestaurantGate(<DashboardHome />, "/dashboard");
-}
-
-function DashboardHome() {
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [status, setStatus] = useState<LoadState>("loading");
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    void load();
-
-    async function load() {
-      try {
-        setOverview(await apiFetch<Overview>("/dashboard/overview"));
-        setStatus("ready");
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "تعذر تحميل بيانات الداشبورد.");
-        setStatus("error");
-      }
-    }
-  }, []);
-
-  if (status === "loading") return <LoadingState label="يتم تحميل لوحة المطعم" />;
-  if (status === "error") return <EmptyState title="تعذر تحميل الداشبورد" text={message} />;
-
-  const cards = overview?.cards;
-  const lists = overview?.lists;
-
-  return (
-    <div className="restaurant-dashboard-page">
-      <section className="restaurant-stats">
-        <StatCard label="مشاهدات اليوم" value={cards?.todayViews ?? cards?.todayVisits ?? 0} delta="+8 %" />
-        <StatCard label="مشاهدات المنيو" value={cards?.menuViews ?? cards?.visits ?? 0} delta="خلال 7 أيام" />
-        <StatCard label="ضغطات الواتس" value={cards?.whatsappClicks ?? 0} delta="+8 %" />
-        <StatCard label="عدد الأصناف" value={cards?.productsCount ?? cards?.products ?? 0} delta="+8 %" />
-      </section>
-
-      <section className="dashboard-rail">
-        <DashboardList title="أكثر الاصناف مشاهدة" href="/dashboard/analytics" items={lists?.topViewedProducts ?? lists?.topViewed ?? []} mode="views" />
-        <DashboardList title="الاصناف الجديدة" href="/dashboard/products" items={lists?.newProducts ?? []} mode="new" />
-        <DashboardList title="الاصناف الغير متوفرة" href="/dashboard/products" items={lists?.unavailableProducts ?? []} mode="unavailable" />
-      </section>
-    </div>
-  );
+  return withRestaurantGate(<MerchantHome />, "/dashboard");
 }
 
 export function RestaurantProductsClient() {
@@ -307,298 +252,7 @@ export function RestaurantProductsClient() {
 }
 
 function ProductsTable() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [meta, setMeta] = useState<Meta>({ page: 1, limit: 10, total: 0, pages: 1 });
-  const [visibleLimit, setVisibleLimit] = useState(pageIncrement);
-  const [status, setStatus] = useState<LoadState>("loading");
-  const [message, setMessage] = useState("");
-  const [search, setSearch] = useState("");
-  const [availability, setAvailability] = useState<"all" | "available" | "unavailable">("all");
-  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
-  const [priceDraft, setPriceDraft] = useState("");
-  const [dragProduct, setDragProduct] = useState<{ id: string; categoryKey: string } | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const cancelledPriceEditRef = useRef<string | null>(null);
-
-  const load = useCallback(async (limit = visibleLimit, nextSearch = search) => {
-    try {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: String(limit),
-        sort: "sortOrder",
-        availability,
-        ...(nextSearch ? { search: nextSearch } : {})
-      });
-      const result = await apiFetch<PageResult<Product>>(`/dashboard/products?${params.toString()}`);
-      setProducts(result.data);
-      setMeta(result.meta);
-      setStatus("ready");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "تعذر تحميل المنيو.");
-      setStatus("error");
-    }
-  }, [availability, search, visibleLimit]);
-
-  useEffect(() => {
-    setVisibleLimit(pageIncrement);
-    void load(pageIncrement, search);
-  }, [availability]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setVisibleLimit(pageIncrement);
-      void load(pageIncrement, search);
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [search]);
-
-  useEffect(() => {
-    setIsSuperAdmin(getBrowserSession()?.user.role === "SUPER_ADMIN");
-  }, []);
-
-  useEffect(() => {
-    function handleGlobalSearch(event: Event) {
-      setSearch(String((event as CustomEvent<string>).detail ?? ""));
-    }
-
-    window.addEventListener("admin:global-search", handleGlobalSearch);
-    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
-  }, []);
-
-  async function toggle(product: Product) {
-    setStatus("saving");
-    try {
-      const updated = await apiFetch<Product>(`/dashboard/products/${product.id}/toggle-availability`, { method: "PATCH" });
-      setProducts((current) => current.map((item) => (item.id === product.id ? updated : item)));
-      setStatus("ready");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "تعذر تحديث حالة الصنف.");
-      setStatus("error");
-    }
-  }
-
-  async function saveOrder(next: Product[]) {
-    setProducts(next);
-    await apiFetch<PageResult<Product>>("/dashboard/products/reorder", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: next.map((product, itemIndex) => ({ id: product.id, sortOrder: itemIndex })) })
-    });
-    void load(visibleLimit);
-  }
-
-  async function dropProduct(targetProduct: Product) {
-    if (!dragProduct || dragProduct.id === targetProduct.id) return;
-    if (dragProduct.categoryKey !== productCategoryKey(targetProduct)) return;
-
-    const fromIndex = products.findIndex((product) => product.id === dragProduct.id);
-    const toIndex = products.findIndex((product) => product.id === targetProduct.id);
-    if (fromIndex < 0 || toIndex < 0) return;
-
-    const next = [...products];
-    const [moved] = next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, moved);
-    setDragProduct(null);
-    await saveOrder(next);
-  }
-
-  function startPriceEdit(product: Product) {
-    if (product.configurationMode === "NETWORK") return;
-    setEditingPriceId(product.id);
-    setPriceDraft(product.basePrice === null ? "" : String(product.basePrice));
-  }
-
-  function cancelPriceEdit() {
-    cancelledPriceEditRef.current = editingPriceId;
-    setEditingPriceId(null);
-    setPriceDraft("");
-  }
-
-  async function savePrice(product: Product) {
-    if (cancelledPriceEditRef.current === product.id) {
-      cancelledPriceEditRef.current = null;
-      return;
-    }
-    if (editingPriceId !== product.id) return;
-    const nextPrice = Number(priceDraft);
-    if (!Number.isFinite(nextPrice) || nextPrice < 0) {
-      setMessage("السعر يجب أن يكون رقماً أكبر أو يساوي صفر.");
-      setStatus("error");
-      return;
-    }
-
-    setEditingPriceId(null);
-    setStatus("saving");
-    try {
-      const updated = await apiFetch<Product>(`/dashboard/products/${product.id}/price`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ basePrice: nextPrice })
-      });
-      setProducts((current) => current.map((item) => (item.id === product.id ? updated : item)));
-      setPriceDraft("");
-      setStatus("ready");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "تعذر تحديث السعر.");
-      setStatus("error");
-    }
-  }
-
-  async function remove(product: Product) {
-    setStatus("saving");
-    try {
-      await apiFetch<{ deleted: boolean }>(`/dashboard/products/${product.id}`, { method: "DELETE" });
-      void load(visibleLimit);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "تعذر حذف الصنف.");
-      setStatus("error");
-    }
-  }
-
-  function loadMore() {
-    const nextLimit = visibleLimit + pageIncrement;
-    setVisibleLimit(nextLimit);
-    void load(nextLimit);
-  }
-
-  async function exportProducts() {
-    const response = await fetch(`${API_URL}/dashboard/products/export`, {
-      headers: authHeaders(),
-      cache: "no-store"
-    });
-    if (!response.ok) {
-      setStatus("error");
-      setMessage("تعذر تصدير ملف Excel.");
-      return;
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "products-export.xlsx";
-    anchor.click();
-    window.URL.revokeObjectURL(url);
-  }
-
-  const productGroups = groupProducts(products);
-
-  return (
-    <div className="restaurant-dashboard-page">
-      <DashboardToolbar
-        addHref="/dashboard/products/new"
-        onExport={isSuperAdmin ? () => void exportProducts() : undefined}
-        actions={isSuperAdmin ? (
-          <button className="secondary-action" type="button" onClick={() => setImportOpen(true)}>
-            <FileSpreadsheet size={20} />
-            استيراد من Excel
-          </button>
-        ) : null}
-      >
-        <select value={availability} onChange={(event) => setAvailability(event.target.value as typeof availability)}>
-          <option value="all">كل الحالات</option>
-          <option value="available">متوفر</option>
-          <option value="unavailable">غير متوفر</option>
-        </select>
-      </DashboardToolbar>
-      <DataPanel meta={meta} shown={products.length} onLoadMore={loadMore} loadingMore={status === "saving"}>
-        {status === "loading" ? <LoadingState label="يتم تحميل المنيو" /> : null}
-        {status === "error" ? <EmptyState title="حدث خطأ" text={message} /> : null}
-        {status !== "loading" && products.length === 0 ? <EmptyState title="لا توجد أصناف" text="أضف الأصناف من زر إضافة لتظهر في صفحة المستخدم." /> : null}
-        {products.length > 0 ? (
-          <table className="restaurant-table">
-            <thead>
-              <tr>
-                <th>الصنف</th>
-                <th>القسم</th>
-                <th>السعر</th>
-                <th>الحالة</th>
-                <th>النوع</th>
-                <th>المشاهدات</th>
-                <th>الترتيب</th>
-                <th>الإجراء</th>
-              </tr>
-            </thead>
-            <tbody>
-              {productGroups.map((group) => (
-                <Fragment key={group.key}>
-                  <tr className="table-group-row">
-                    <td colSpan={8}>{group.name}</td>
-                  </tr>
-                  {group.items.map((product) => (
-                    <tr
-                      key={product.id}
-                      className={dragProduct?.id === product.id ? "dragging-row" : undefined}
-                      onDragOver={(event) => {
-                        if (dragProduct?.categoryKey === productCategoryKey(product)) event.preventDefault();
-                      }}
-                      onDrop={() => void dropProduct(product)}
-                    >
-                      <td><NameCell title={product.name} imageUrl={product.images?.[0]?.url} /></td>
-                      <td>{product.category?.name ?? "-"}</td>
-                      <td className="editable-price-cell">
-                        {editingPriceId === product.id ? (
-                          <input
-                            autoFocus
-                            className="inline-price-input"
-                            min="0"
-                            step="0.000001"
-                            type="number"
-                            value={priceDraft}
-                            onBlur={() => void savePrice(product)}
-                            onChange={(event) => setPriceDraft(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") event.currentTarget.blur();
-                              if (event.key === "Escape") cancelPriceEdit();
-                            }}
-                          />
-                        ) : (
-                          <button className="inline-price" type="button" onDoubleClick={() => startPriceEdit(product)} title={product.configurationMode === "NETWORK" ? "يُدار السعر من محرر الشبكة" : undefined}>
-                            {product.configurationMode === "NETWORK" ? "شبكة التكوين" : product.basePrice === null ? "بلا سعر" : displayCurrencyAmount(product.basePrice, product.currency)}
-                          </button>
-                        )}
-                      </td>
-                      <td><button className="bare" type="button" onClick={() => void toggle(product)}><StatusPill active={product.isAvailable} /></button></td>
-                      <td><span className="soft-pill purple">{product.isNew ? "جديد" : "عادي"}</span></td>
-                      <td>{product.views ?? 0}</td>
-                      <td>
-                        <DragHandle
-                          disabled={false}
-                          onDragEnd={() => setDragProduct(null)}
-                          onDragStart={() => setDragProduct({ id: product.id, categoryKey: productCategoryKey(product) })}
-                        />
-                      </td>
-                      <td>
-                        <RowActions
-                          editHref={`/dashboard/products/${product.id}/edit`}
-                          deleteMessage={`سيتم حذف المنتج "${product.name}" بعد التأكيد. لا يتم تنفيذ الحذف قبل الضغط على زر التأكيد.`}
-                          deleteTitle="تأكيد حذف المنتج"
-                          onDelete={() => remove(product)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        ) : null}
-      </DataPanel>
-      {isSuperAdmin && importOpen ? (
-        <ProductImportModal
-          onClose={() => setImportOpen(false)}
-          onImported={(count) => {
-            setImportOpen(false);
-            setMessage(`تم استيراد ${count} منتج بنجاح`);
-            setStatus("ready");
-            void load(visibleLimit);
-          }}
-        />
-      ) : null}
-    </div>
-  );
+  return <ProductManagement renderImport={props => <ProductImportModal {...props} />} />;
 }
 
 function ProductImportModal({ onClose, onImported }: { onClose: () => void; onImported: (count: number) => void }) {
@@ -834,13 +488,16 @@ function CategoriesTable() {
   const [visibleLimit, setVisibleLimit] = useState(pageIncrement);
   const [status, setStatus] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
-  const [search, setSearch] = useState("");
   const [dragCategoryId, setDragCategoryId] = useState<string | null>(null);
 
-  const load = useCallback(async (limit = visibleLimit, nextSearch = search) => {
+  const requestNumber = useRef(0);
+  const canOrder = canReorderCatalog() && status === "ready" && categories.length === meta.total;
+  const load = useCallback(async (limit = visibleLimit) => {
+    const number = ++requestNumber.current;
     try {
-      const params = new URLSearchParams({ page: "1", limit: String(limit), sort: "sortOrder", ...(nextSearch ? { search: nextSearch } : {}) });
+      const params = new URLSearchParams({ page: "1", limit: String(limit), sort: "sortOrder" });
       const result = await apiFetch<PageResult<Category>>(`/dashboard/categories?${params.toString()}`);
+      if (number !== requestNumber.current) return;
       setCategories(result.data);
       setMeta(result.meta);
       setStatus("ready");
@@ -848,25 +505,17 @@ function CategoriesTable() {
       setMessage(error instanceof Error ? error.message : "تعذر تحميل الأقسام.");
       setStatus("error");
     }
-  }, [search, visibleLimit]);
+  }, [visibleLimit]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setVisibleLimit(pageIncrement);
-      void load(pageIncrement, search);
+      void load(pageIncrement);
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [search]);
-
-  useEffect(() => {
-    function handleGlobalSearch(event: Event) {
-      setSearch(String((event as CustomEvent<string>).detail ?? ""));
-    }
-
-    window.addEventListener("admin:global-search", handleGlobalSearch);
-    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
   }, []);
+
 
   async function addCategory() {
     setStatus("saving");
@@ -901,17 +550,23 @@ function CategoriesTable() {
   }
 
   async function saveCategoryOrder(next: Category[]) {
-    setCategories(next);
-    await apiFetch<PageResult<Category>>("/dashboard/categories/reorder", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: next.map((category, itemIndex) => ({ id: category.id, sortOrder: itemIndex })) })
-    });
-    void load(visibleLimit);
+    if (!canOrder) return;
+    setStatus("saving");
+    try {
+      await apiFetch<PageResult<Category>>("/dashboard/categories/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: next.map((category, itemIndex) => ({ id: category.id, sortOrder: itemIndex })) })
+      });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Reorder failed");
+    } finally {
+      await load(visibleLimit);
+    }
   }
 
   async function dropCategory(targetCategory: Category) {
-    if (!dragCategoryId || dragCategoryId === targetCategory.id || targetCategory.slug === "all") return;
+    if (!canOrder || !dragCategoryId || dragCategoryId === targetCategory.id || targetCategory.slug === "all") return;
     const fromIndex = categories.findIndex((category) => category.id === dragCategoryId);
     const toIndex = categories.findIndex((category) => category.id === targetCategory.id);
     if (fromIndex < 0 || toIndex < 0 || categories[fromIndex]?.slug === "all") return;
@@ -957,9 +612,27 @@ function CategoriesTable() {
     ]);
   }
 
+  if (!canReorderCatalog()) return <p>لا تملك صلاحية ترتيب الأقسام.</p>;
+  if (getBrowserSession()?.user.role !== "SUPER_ADMIN") return (
+    <div className="restaurant-dashboard-page">
+      {!canOrder && status === "ready" && <p role="status">{reorderHint}</p>}
+      <DataPanel meta={meta} shown={categories.length} onLoadMore={loadMore} loadingMore={status === "saving"}>
+        {status === "error" && <p role="alert">{message}</p>}
+        <table className="restaurant-table"><thead><tr><th>الترتيب</th><th>القسم</th></tr></thead>
+          <tbody>{categories.map(category => <tr key={category.id}
+            onDragOver={event => { if (canOrder && dragCategoryId && category.slug !== "all") event.preventDefault(); }}
+            onDrop={() => void dropCategory(category)}>
+            <td><DragHandle disabled={!canOrder || category.slug === "all"} onDragStart={() => setDragCategoryId(category.id)} onDragEnd={() => setDragCategoryId(null)} /></td>
+            <td>{category.name}</td>
+          </tr>)}</tbody>
+        </table>
+      </DataPanel>
+    </div>
+  );
   return (
     <div className="restaurant-dashboard-page">
       <DashboardToolbar addHref="/dashboard/categories/new" onExport={exportCategories} />
+      {!canOrder && canReorderCatalog() && status === "ready" ? <p role="status">{reorderHint}</p> : null}
       <DataPanel meta={meta} shown={categories.length} onLoadMore={loadMore} loadingMore={status === "saving"}>
         {status === "loading" ? <LoadingState label="يتم تحميل الأقسام" /> : null}
         {status === "error" ? <EmptyState title="حدث خطأ" text={message} /> : null}
@@ -1017,7 +690,7 @@ function CategoriesTable() {
                   <td><input checked={category.visualScrollEnabled} type="checkbox" onChange={(event) => void update(category, { visualScrollEnabled: event.target.checked })} /></td>
                     <td>
                       <DragHandle
-                        disabled={isAllCategory}
+                        disabled={!canOrder || isAllCategory}
                         onDragEnd={() => setDragCategoryId(null)}
                         onDragStart={() => setDragCategoryId(category.id)}
                       />
@@ -1284,9 +957,12 @@ function SettingsForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!settings) return;
+    if (settings.restaurant.googleMapsUrl?.trim() && !googleMapsShareUrl(settings.restaurant.googleMapsUrl)) {
+      setMessage("أدخل رابط HTTPS صحيحًا من خرائط Google.");setStatus("error");return;
+    }
     setStatus("saving");
     try {
-      const { splashScreen: _splashScreen, productOpenMode: _productOpenMode, ...restaurantSettings } = settings.restaurant;
+      const { splashScreen: _splashScreen, productOpenMode: _productOpenMode, currency: _marketCurrency, latitude: _latitude, longitude: _longitude, whatsappUrl: _legacyWhatsappUrl, ...restaurantSettings } = settings.restaurant;
       const settingsPayload = isSuperAdmin
         ? { ...restaurantSettings, splashScreen: settings.restaurant.splashScreen }
         : restaurantSettings;
@@ -1345,6 +1021,7 @@ function SettingsForm() {
             <Field label="المدينة" value={form.city ?? ""} onChange={(value) => updateField("city", value)} />
           </div>
           <Field label="نبذة عن المطعم" value={form.description ?? ""} textarea onChange={(value) => updateField("description", value)} />
+          <Field label="رابط الموقع على خرائط Google" value={form.googleMapsUrl ?? ""} onChange={value=>updateField("googleMapsUrl",value)} />
         </article>
       </section>
       {isSuperAdmin ? <section className="settings-card splash-settings-card">
@@ -1409,18 +1086,22 @@ function SettingsForm() {
           <Field label="رابط إنستغرام" value={form.instagramUrl ?? ""} onChange={(value) => updateField("instagramUrl", value)} />
           <Field label="رابط فيسبوك" value={form.facebookUrl ?? ""} onChange={(value) => updateField("facebookUrl", value)} />
           <Field label="رابط تيك توك" value={form.tiktokUrl ?? ""} onChange={(value) => updateField("tiktokUrl", value)} />
-          <Field label="رابط واتساب" value={form.whatsappUrl ?? ""} onChange={(value) => updateField("whatsappUrl", value)} />
         </div>
+      </section>
+      <section className="settings-card">
+        <h2>التقييم والشكاوي</h2>
+        <label className="field"><span id="feedback-delivery-label">طريقة الاستقبال</span><select aria-labelledby="feedback-delivery-label" value={form.feedbackMode ?? "DASHBOARD"} onChange={event=>updateField("feedbackMode",event.target.value as "DASHBOARD" | "WHATSAPP")}>
+          <option value="DASHBOARD">داخل Dashboard</option><option value="WHATSAPP">عبر WhatsApp</option>
+        </select></label>
       </section>
       <section className="settings-card">
         <h2>العملة والاسعار</h2>
         <button className="bare price-switch" type="button" onClick={() => updateField("showPrices", !form.showPrices)}>
           <StatusPill active={form.showPrices} label="اظهار الاسعار" />
         </button>
-        <Field label="العملة" value={form.currency} onChange={(value) => updateField("currency", value)} />
-        <label className="field">
+        <label className="field delivery-fee-field">
           <span>رسوم التوصيل الثابتة</span>
-          <input inputMode="decimal" dir="ltr" value={form.deliveryFee ?? ""}
+          <input inputMode="decimal" dir="rtl" value={form.deliveryFee ?? ""}
             onChange={(event) => updateField("deliveryFee", event.target.value || null)}
             placeholder="فارغ: تُحدّد حسب المنطقة، 0: مجاني" />
           <small>اتركها فارغة إذا كانت رسوم التوصيل تُحدّد حسب المنطقة. لا تُضاف رسوم للاستلام من المطعم.</small>
@@ -1511,29 +1192,8 @@ function DataPanel({
   );
 }
 
-function StatCard({ label, value, delta }: { label: string; value: number; delta: string }) {
-  return <article className="restaurant-stat"><div><span>{label}</span><strong>{value}</strong><em>{delta}</em></div><i><WalletCards size={24} /></i></article>;
-}
-
-function DashboardList({ title, href, items, mode }: { title: string; href: string; items: ProductSummary[]; mode: "views" | "new" | "unavailable" }) {
-  return (
-    <article className="dashboard-list">
-      <header><h2>{title}</h2><Link href={href}>عرض الكل</Link></header>
-      {items.length ? items.slice(0, 8).map((item) => (
-        <div className="dashboard-list-row" key={item.id}>
-          <div><strong>{item.name}</strong><small>{item.categoryName || "-"}</small></div>
-          <span className="item-avatar">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : null}</span>
-          {mode === "views" ? <span className="list-meta">{item.views ?? 0} مشاهدة</span> : null}
-          {mode === "new" ? <span className="soft-pill green">جديد</span> : null}
-          {mode === "unavailable" ? <span className="soft-pill red">غير متوفر</span> : null}
-        </div>
-      )) : <EmptyState title="لا توجد بيانات" text="ستظهر البيانات بعد زيارات المستخدمين أو إضافة الأصناف." />}
-    </article>
-  );
-}
-
 function productCategoryKey(product: Product) {
-  return product.category?.name?.trim() || "بدون قسم";
+  return product.category?.id ?? "";
 }
 
 function groupProducts(products: Product[]): ProductGroup[] {
@@ -1541,7 +1201,7 @@ function groupProducts(products: Product[]): ProductGroup[] {
 
   products.forEach((product) => {
     const key = productCategoryKey(product);
-    const group = groups.get(key) ?? { key, name: key, items: [] };
+    const group = groups.get(key) ?? { key, name: product.category?.name || "بدون قسم", items: [] };
     group.items.push(product);
     groups.set(key, group);
   });

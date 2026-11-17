@@ -66,6 +66,7 @@ type NormalizedMoodOption = {
 
 export async function parseProductImportWorkbook(buffer: Buffer, fallbackMoodOptions: ProductImportMoodOption[] = []): Promise<ProductImportParseResult> {
   const globalErrors: string[] = [];
+  await checkWorkbookBudget(buffer);
   const workbook = new ExcelJS.Workbook();
 
   try {
@@ -259,6 +260,32 @@ function uniqueStrings(values: string[]) {
     seen.add(key);
     return true;
   });
+}
+
+// ExcelJS and the compatibility repair both expand entries in memory. Check actual
+// decompressed bytes in a bounded stream before passing this buffer to either.
+export async function checkWorkbookBudget(buffer: Buffer, maxBytes = 64 * 1024 * 1024) {
+  if (buffer.length > PRODUCT_IMPORT_LIMITS.maxFileBytes) throw new Error("Workbook exceeds upload limit");
+  const zip = await JSZip.loadAsync(buffer).catch(() => { throw new Error("ملف Excel غير صالح أو تالف"); });
+  const entries = Object.values(zip.files);
+  if (entries.length > 4096) throw new Error("Workbook contains too many entries");
+  let total = 0;
+  for (const entry of entries) {
+    if (entry.dir) continue;
+    await new Promise<void>((resolve, reject) => {
+      const stream = entry.nodeStream();
+      stream.on("data", (chunk: Uint8Array) => {
+        total += chunk.byteLength;
+        if (total > maxBytes) {
+          stream.pause();
+          reject(new Error("Workbook exceeds expansion limit"));
+        }
+      });
+      stream.on("end", resolve);
+      stream.on("error", reject);
+      stream.resume();
+    });
+  }
 }
 
 async function repairNamespacedXlsx(buffer: Buffer) {

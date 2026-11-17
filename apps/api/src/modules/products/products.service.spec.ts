@@ -18,7 +18,7 @@ describe("ProductsService product-configuration compatibility", () => {
     const prisma = { restaurant: { findUnique: vi.fn().mockResolvedValue({ currency: "SYP" }) },
       product: { findFirst: vi.fn().mockResolvedValue({ id: "legacy", configurationTree: null, configurationVersion: 0 }),
         update: vi.fn() } };
-    await expect(createService(prisma).updatePrice("restaurant-1", "legacy", 12500.5)).rejects.toMatchObject({
+    await expect(createService(prisma).updatePrice("restaurant-1", "legacy", 12500.5, 0)).rejects.toMatchObject({
       response: expect.objectContaining({ error: "SYP_FRACTIONAL_PRICE" })
     });
     expect(prisma.product.update).not.toHaveBeenCalled();
@@ -60,7 +60,7 @@ describe("ProductsService product-configuration compatibility", () => {
     };
     const service = createService(prisma);
 
-    await expect(service.updatePrice("restaurant-1", "configured", 0)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.updatePrice("restaurant-1", "configured", 0, 0)).rejects.toBeInstanceOf(ConflictException);
     await service.toggleAvailability("restaurant-1", "configured");
     expect(prisma.product.update).toHaveBeenCalledWith({
       where: { id: "configured" },
@@ -73,6 +73,8 @@ describe("ProductsService product-configuration compatibility", () => {
       product: {
         findFirst: vi.fn()
           .mockResolvedValueOnce({ id: "legacy", configurationTree: null, configurationVersion: 0 })
+          .mockResolvedValueOnce({ id: "legacy", name: "Legacy", slug: "legacy", basePrice: new Prisma.Decimal("9.5"),
+            configurationTree: null, configurationVersion: 0, editVersion: 1, images: [], options: [] })
           .mockResolvedValueOnce({
             id: "network",
             slug: "network",
@@ -83,6 +85,7 @@ describe("ProductsService product-configuration compatibility", () => {
             images: [],
             options: []
           }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         update: vi.fn().mockResolvedValue({
           id: "legacy",
           slug: "legacy",
@@ -97,7 +100,7 @@ describe("ProductsService product-configuration compatibility", () => {
     };
     const service = createService(prisma);
 
-    await expect(service.updatePrice("restaurant-1", "legacy", 9.5)).resolves.toMatchObject({
+    await expect(service.updatePrice("restaurant-1", "legacy", 9.5, 0)).resolves.toMatchObject({
       basePrice: 9.5,
       configurationMode: "LEGACY"
     });
@@ -108,7 +111,7 @@ describe("ProductsService product-configuration compatibility", () => {
     });
   });
 
-  it("prevents generic product updates from changing network-managed pricing", async () => {
+  it("requires an expected version before any generic metadata or network-price write", async () => {
     const configured = {
       id: "configured",
       restaurantId: "restaurant-1",
@@ -131,7 +134,7 @@ describe("ProductsService product-configuration compatibility", () => {
     await expect(createService(prisma).update("restaurant-1", "configured", {
       name: "Configured",
       basePrice: 11
-    })).rejects.toBeInstanceOf(ConflictException);
+    })).rejects.toMatchObject({ status: 400 });
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
 });

@@ -1,17 +1,17 @@
 import { ForbiddenException } from "@nestjs/common";
-import { ProductConfigurationV1 } from "@menu/shared";
+import { ProductConfigurationV2 } from "@menu/shared";
 import { describe, expect, it, vi } from "vitest";
 import { ProductsController } from "./products.controller";
 
 const dto = {
   expectedVersion: 0,
   configuration: {
-    schemaVersion: 1,
+    schemaVersion: 2,
     productId: "product-1",
     revision: 1,
     basePrice: "0",
     groups: []
-  } as ProductConfigurationV1
+  } as ProductConfigurationV2
 };
 
 function request(role: "OWNER" | "MANAGER" | "EDITOR" | "EMPLOYEE") {

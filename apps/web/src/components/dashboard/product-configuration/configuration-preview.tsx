@@ -1,4 +1,5 @@
 "use client";
+// Historical V1 helpers retained only for the editor-model regression suite; production V62 imports v62-preview directly.
 import { displayCurrencyAmount, displayRoundingDifference } from "@/lib/currency-display";
 
 import { useEffect, useMemo, useState } from "react";

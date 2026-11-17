@@ -1,5 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { ProductConfigurationV1 } from "@menu/shared";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ProductConfigurationV2 } from "@menu/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,9 +9,9 @@ function configuration(
   productId = "product-1",
   revision = 1,
   basePrice: string | null = "12.345678"
-): ProductConfigurationV1 {
+): ProductConfigurationV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     productId,
     revision,
     basePrice,
@@ -109,131 +109,31 @@ describe("ProductConfigurationService", () => {
     await expect(service.get("restaurant-other", "product-1")).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("saves a valid six-decimal configuration with the atomic persistence helper", async () => {
-    const { service, prisma, transaction } = createHarness();
-    prisma.product.findFirst
-      .mockResolvedValueOnce({ id: "product-1" })
-      .mockResolvedValueOnce({
-        id: "product-1",
-        basePrice: new Prisma.Decimal("12.345678"),
-        configurationTree: configuration(),
-        configurationVersion: 1,
-        isAvailable: false
-      });
-    await expect(service.save("restaurant-1", "product-1", {
-      expectedVersion: 0,
-      configuration: configuration()
-    })).resolves.toMatchObject({ mode: "NETWORK", configurationVersion: 1, basePrice: "12.345678" });
-
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(transaction.product.updateMany.mock.calls[0][0].data).not.toHaveProperty("isAvailable");
-  });
-
-  it("rejects malformed, self-linked, mismatched, and skipped-revision requests before persistence", async () => {
-    const { service } = createHarness();
-    const selfLinked = configuration();
-    selfLinked.groups = [{
-      type: "OPTIONS",
-      id: "links",
-      label: "Links",
-      min: 0,
-      max: 1,
-      includedQuantity: 0,
-      options: [{
-        id: "self",
-        label: "Self",
-        price: "0",
-        maxQuantity: 1,
-        linkedProduct: { sourceProductId: "product-1", mode: "ORIGINAL" }
-      }]
-    }];
-
-    const cases = [
-      { expectedVersion: 0, configuration: [] as any },
-      { expectedVersion: 0, configuration: selfLinked },
-      { expectedVersion: 0, configuration: configuration("other-product") },
-      { expectedVersion: 0, configuration: configuration("product-1", 2) }
-    ];
-
-    for (const dto of cases) {
-      try {
-        await service.save("restaurant-1", "product-1", dto);
-        throw new Error("Expected validation failure");
-      } catch (error) {
-        expect(error).toBeInstanceOf(BadRequestException);
-        expect((error as BadRequestException).getResponse()).toMatchObject({
-          error: "PRODUCT_CONFIGURATION_VALIDATION_FAILED"
-        });
-      }
+  // Old standalone-save success/retry cases are retired: transaction/CAS behavior is now
+  // exercised by product-editor.integration.spec.ts and v2-customer-ordering.integration.spec.ts.
+  it("directs both contracts to Unified Editor without opening a transaction", async () => {
+    const { service, prisma } = createHarness();prisma.product.findFirst.mockResolvedValue({id:"product-1"});
+    for (const schemaVersion of [1,2]) {
+      await expect(service.save("restaurant-1","product-1",{expectedVersion:0,configuration:{...configuration(),schemaVersion} as never}))
+        .rejects.toMatchObject({status:410,response:{error:"UNIFIED_PRODUCT_EDITOR_REQUIRED"}});
     }
-    expect((service as any).prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.product.findFirst).toHaveBeenCalledWith({where:{id:"product-1",restaurantId:"restaurant-1",deletedAt:null},select:{id:true}});
   });
-
-  it("denies writes when the package capability is absent", async () => {
-    const { service, featureFlags } = createHarness();
-    featureFlags.assertAssignedFeature.mockRejectedValue(new ForbiddenException("locked"));
-    await expect(service.save("restaurant-1", "product-1", {
-      expectedVersion: 0,
-      configuration: configuration()
-    })).rejects.toBeInstanceOf(ForbiddenException);
-    expect((service as any).prisma.$transaction).not.toHaveBeenCalled();
+  it("checks capability before disclosing the retirement or looking up a product", async () => {
+    const {service,prisma,featureFlags}=createHarness();featureFlags.assertAssignedFeature.mockRejectedValue(new ForbiddenException());
+    await expect(service.save("restaurant-1","product-1",{expectedVersion:0,configuration:configuration()})).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.product.findFirst).not.toHaveBeenCalled();expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-
-  it("rechecks capability assignment inside the atomic transaction", async () => {
-    const { service, prisma, transaction } = createHarness();
-    prisma.product.findFirst.mockResolvedValue({ id: "product-1" });
-    transaction.restaurantSubscription.findUnique.mockResolvedValue({
-      plan: { features: [{ key: "PRODUCT_CONFIGURATION", enabled: false }] }
-    });
-
-    await expect(service.save("restaurant-1", "product-1", {
-      expectedVersion: 0,
-      configuration: configuration()
-    })).rejects.toBeInstanceOf(ForbiddenException);
-    expect(transaction.product.updateMany).not.toHaveBeenCalled();
+  it("keeps another tenant's missing owner indistinguishable on retired writes", async () => {
+    const {service,prisma}=createHarness();prisma.product.findFirst.mockResolvedValue(null);
+    await expect(service.save("other","product-1",{expectedVersion:0,configuration:configuration()})).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
-
-  it("maps optimistic revision and dependency conflicts to HTTP 409", async () => {
-    const { service, prisma, transaction } = createHarness();
-    prisma.product.findFirst.mockResolvedValue({ id: "product-1" });
-    transaction.product.findFirst.mockResolvedValue({ configurationVersion: 2 });
-
-    try {
-      await service.save("restaurant-1", "product-1", {
-        expectedVersion: 0,
-        configuration: configuration()
-      });
-      throw new Error("Expected conflict");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ConflictException);
-      expect((error as ConflictException).getStatus()).toBe(409);
-    }
-  });
-
-  it("retries serializable transaction conflicts and then succeeds", async () => {
-    const { service, prisma } = createHarness();
-    prisma.product.findFirst
-      .mockResolvedValueOnce({ id: "product-1" })
-      .mockResolvedValueOnce({
-        id: "product-1",
-        basePrice: new Prisma.Decimal("12.345678"),
-        configurationTree: configuration(),
-        configurationVersion: 1,
-        isAvailable: false
-      });
-    const serializableError = new Prisma.PrismaClientKnownRequestError("write conflict", {
-      code: "P2034",
-      clientVersion: "5.22.0"
-    });
-    const transactionImplementation = prisma.$transaction.getMockImplementation()!;
-    prisma.$transaction
-      .mockRejectedValueOnce(serializableError)
-      .mockImplementation(transactionImplementation);
-
-    await service.save("restaurant-1", "product-1", {
-      expectedVersion: 0,
-      configuration: configuration()
-    });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  it("exposes V2 configured and unpriced setup states without a pending-integration state", async () => {
+    const {service,prisma}=createHarness();prisma.product.findFirst.mockResolvedValue({id:"product-1",basePrice:null,configurationVersion:1,configurationTree:configuration(),isAvailable:true});
+    expect((await service.get("restaurant-1","product-1")).orderabilityState).toBe("CONFIGURED_V2");
+    prisma.product.findFirst.mockResolvedValue({id:"product-1",basePrice:null,configurationVersion:1,configurationTree:{schemaVersion:2,productId:"product-1",revision:1,basePrice:null,groups:[]},isAvailable:false});
+    expect((await service.get("restaurant-1","product-1")).orderabilityState).toBe("SETUP_INCOMPLETE");
   });
 });

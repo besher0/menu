@@ -1,6 +1,8 @@
-import { IsOptional, IsString, IsUrl } from "class-validator";
+import { IsOptional, IsInt, Min, IsString, IsUrl } from "class-validator";
 
 export class AttachProductImageDto {
+  @IsInt() @Min(0)
+  expectedProductVersion: number;
   @IsOptional()
   @IsString()
   mediaId?: string;
@@ -14,6 +16,8 @@ export class AttachProductImageDto {
 }
 
 export class AttachProduct3dDto {
+  @IsInt() @Min(0)
+  expectedProductVersion: number;
   @IsUrl({ require_tld: false })
   url!: string;
 
@@ -23,6 +27,8 @@ export class AttachProduct3dDto {
 }
 
 export class AttachProductVrDto {
+  @IsInt() @Min(0)
+  expectedProductVersion: number;
   @IsUrl({ require_tld: false })
   panoramaUrl!: string;
 

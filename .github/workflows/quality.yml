@@ -1,0 +1,56 @@
+name: Unified candidate verification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_URL: /api
+      PG_BIN: /usr/lib/postgresql/16/bin
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.19.0
+      - run: echo "QA_OUTPUT=$RUNNER_TEMP/ordersawa-qa" >> "$GITHUB_ENV"
+      - name: Identify the local QA fixture build
+        run: echo "ORDERSAWA_RELEASE_ID=20000101T000000Z-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
+      - name: Check tracked source for private files and credential literals
+        run: |
+          python scripts/test-credential-scan.py
+          python scripts/scan-source.py
+      - name: Install immutable lock and generate Prisma
+        run: |
+          npm install --global npm@11.17.0 --no-audit --no-fund
+          npm ci --no-audit --no-fund
+          npm ls --all > "$RUNNER_TEMP/ordersawa-tree.txt"
+          npm run prisma:generate
+      - name: Compile and typecheck application and API tests
+        run: |
+          python scripts/build-with-credential-check.py
+          npm run typecheck
+          npx --no-install tsc -p apps/api/tsconfig.json --noEmit
+      - name: Install isolated QA browser (not an application dependency)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ordersawa-browser" --no-package-lock --no-audit --no-fund playwright@1.62.1
+          node "$RUNNER_TEMP/ordersawa-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/ordersawa-browser/node_modules/playwright" >> "$GITHUB_ENV"
+          node -e 'console.log("V62_BROWSER_EXECUTABLE="+require(process.env.RUNNER_TEMP+"/ordersawa-browser/node_modules/playwright").chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Verify V2 isolated migrations, real HTTP, production browser and all current suites
+        run: |
+          test -x "$PG_BIN/initdb"
+          python scripts/test-release-v2.py
+          python scripts/test-staging.py
+      - name: Smoke test the production build in Chrome
+        run: python scripts/browser-smoke.py
+      - name: Check lockfile against public advisory database locally
+        run: |
+          curl --fail --location --retry 2 https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip -o "$RUNNER_TEMP/npm-osv.zip"
+          python scripts/check-advisories.py "$RUNNER_TEMP/npm-osv.zip" "$QA_OUTPUT"
+          node scripts/check-advisories.cjs "$QA_OUTPUT"

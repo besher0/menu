@@ -1,31 +1,33 @@
+import { validateConfiguration, validateGroupLevels } from "./validation";
 import {
   ConfigurationGroup,
   ConfigurationIssue,
   LinkedProductDefinition,
   ProductConfigurationContext,
-  ProductConfigurationV1
-} from "./types";
+  ProductConfigurationV2, LocalPrice
+} from "./v2-types";
 
 export type ResolvedLinkedProduct = {
   path: string;
   sourceProductId: string;
   mode: "ORIGINAL" | "CUSTOM";
-  configuration: ProductConfigurationV1;
-  originalPriceOverrides: Readonly<Record<string, string>>;
+  configuration: ProductConfigurationV2;
+  originalPriceOverrides: Readonly<Record<string, LocalPrice>>;
 };
 
 export type ResolvedConfigurationContext = {
-  configuration: ProductConfigurationV1;
+  configuration: ProductConfigurationV2;
   linkedConfigurations: ReadonlyMap<string, ResolvedLinkedProduct>;
   issues: ConfigurationIssue[];
 };
 
 function collectPriceNodeIds(groups: readonly ConfigurationGroup[], result = new Set<string>()) {
   for (const group of groups) {
+    collectPriceNodeIds(group.children ?? [], result);
     if (group.type === "SIZE") {
       for (const size of group.sizes) {
         result.add(size.id);
-        collectPriceNodeIds(size.children ?? [], result);
+
       }
       continue;
     }
@@ -55,18 +57,21 @@ export function resolveLinkedConfiguration(
   if (source.available === false || source.orderable === false) {
     issues.push({ code: "LINKED_PRODUCT_UNAVAILABLE", path, message: "Linked source product is not currently orderable." });
   }
-  if (source.configuration.productId !== source.productId) {
+  if (!source.configuration || source.configuration.productId !== source.productId) {
     issues.push({ code: "LINK_SOURCE_CONFIGURATION_MISMATCH", path, message: "Linked source configuration belongs to another product." });
+    return {issues};
   }
   if (productStack.includes(source.productId)) {
     issues.push({ code: "LINK_CYCLE", path, message: `Linked runtime cycle detected: ${[...productStack, source.productId].join(" -> ")}.` });
   }
 
-  const configuration = linked.mode === "CUSTOM" ? linked.customConfiguration : source.configuration;
+  let configuration = linked.mode === "CUSTOM" ? linked.customConfiguration : source.configuration;
   if (!configuration) {
     issues.push({ code: "MISSING_LINKED_CONFIGURATION", path, message: "Linked product configuration could not be resolved." });
     return { issues };
   }
+  const validationIssues = validateConfiguration(configuration, context.limits);
+  if (validationIssues.length) return { issues: [...issues, ...validationIssues] };
   if (linked.mode === "ORIGINAL") {
     const priceNodeIds = collectPriceNodeIds(source.configuration.groups);
     for (const nodeId of Object.keys(linked.originalPriceOverrides ?? {})) {
@@ -76,6 +81,22 @@ export function resolveLinkedConfiguration(
     }
   }
 
+  if (linked.mode === "ORIGINAL" && !issues.length) {
+    const prices = linked.originalPriceOverrides ?? {};
+    const overlay = (groups: readonly ConfigurationGroup[]): ConfigurationGroup[] => groups.map(group => {
+      const children = overlay(group.children ?? []);
+      if (group.type === "SIZE") return { ...group, children, sizes: group.sizes.map(size => {
+        if (prices[size.id]?.priceBySize) issues.push({code:"INVALID_SIZE_PRICING",path,message:"A size cannot have size-dependent pricing."});
+        return { ...size, price: prices[size.id]?.price ?? "0" };
+      }) };
+      return { ...group, children, options: group.options.map(option => ({
+        ...option, price: prices[option.id]?.price ?? "0", priceBySize: prices[option.id]?.priceBySize,
+        children: overlay(option.children ?? [])
+      })) };
+    });
+    configuration = { ...configuration, basePrice: "0", groups: overlay(configuration.groups) };
+    issues.push(...validateConfiguration(configuration, context.limits));
+  }
   return {
     resolved: {
       path,
@@ -89,19 +110,19 @@ export function resolveLinkedConfiguration(
 }
 
 export function resolveConfigurationContext(
-  configuration: ProductConfigurationV1,
+  configuration: ProductConfigurationV2,
   context: ProductConfigurationContext
 ): ResolvedConfigurationContext {
   const linkedConfigurations = new Map<string, ResolvedLinkedProduct>();
-  const issues: ConfigurationIssue[] = [];
+  const issues = validateConfiguration(configuration, context.limits);
+  if (!issues.length) issues.push(...validateGroupLevels(configuration,id=>context.linkedProducts?.get(id)?.configuration));
+  if (issues.length) return {configuration,linkedConfigurations,issues};
 
   function visit(groups: readonly ConfigurationGroup[], path: string, stack: readonly string[]) {
     groups.forEach((group, groupIndex) => {
       const groupPath = `${path}.groups[${groupIndex}]`;
-      if (group.type === "SIZE") {
-        group.sizes.forEach((size, sizeIndex) => visit(size.children ?? [], `${groupPath}.sizes[${sizeIndex}]`, stack));
-        return;
-      }
+      visit(group.children ?? [], groupPath + ".children", stack);
+      if (group.type === "SIZE") return;
       group.options.forEach((option, optionIndex) => {
         const optionPath = `${groupPath}.options[${optionIndex}]`;
         if (option.linkedProduct) {

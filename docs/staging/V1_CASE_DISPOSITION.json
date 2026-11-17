@@ -1,0 +1,847 @@
+{
+  "baselineCommit": "8977e7f3a10e324cfa1513752a19c500c78044f1",
+  "files": [
+    {
+      "original": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "archive": "tests/archive/configuration-v1/network-order-prepare-conflict.integration.spec.ts.txt",
+      "sha256": "ee9cf30079b245bf5e3583e69d0b46e00e304dd9fe73f68c14913ad69d472cf7",
+      "cases": 9
+    },
+    {
+      "original": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "archive": "tests/archive/configuration-v1/network-orders-atomic.integration.spec.ts.txt",
+      "sha256": "c74bc3325c69cad6dde3d36f4cbe8448b3de184a4aa406c33588730438da9d29",
+      "cases": 28
+    },
+    {
+      "original": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "archive": "tests/archive/configuration-v1/network-orders.integration.spec.ts.txt",
+      "sha256": "ebdb6c773bc004954d60de156de507eeb1311880ce8777a8e2edd25b2b8afdd7",
+      "cases": 20
+    },
+    {
+      "original": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "archive": "tests/archive/configuration-v1/product-configuration.integration.spec.ts.txt",
+      "sha256": "5d91504c464c84a8be55636a8e708561477f5b843733f7caefacd073e0210bbd",
+      "cases": 29
+    },
+    {
+      "original": "apps/api/src/modules/public-menu/network-readiness.audit.integration.spec.ts",
+      "archive": "tests/archive/configuration-v1/network-readiness.audit.integration.spec.ts.txt",
+      "sha256": "ac2a3363e3dd255bd2a7765230d972e995ce20e5e6d344ce8a54aaaf5c16faf0",
+      "cases": 4
+    }
+  ],
+  "cases": [
+    {
+      "id": "network-order-prepare-conflict-01",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "prepares a trusted draft without a conflict or an Order write",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "prepares a trusted mixed",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-order-prepare-conflict-02",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "retries a transient P2034 once and returns a successful trusted draft",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "V1 test-only Prepare retried automatically; current V2 contract intentionally returns one safe conflict for explicit retry, covered in V2."
+    },
+    {
+      "id": "network-order-prepare-conflict-03",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "returns a safe structured 409 after three P2034 conflicts",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "returns safe Prepare conflict",
+      "reason": "Retain structured conflict/no partial writes; V2 intentionally returns the first conflict for explicit retry, not the retired V1 three-attempt policy."
+    },
+    {
+      "id": "network-order-prepare-conflict-04",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "returns a safe structured 409 after three P2010 / 40001 conflicts",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "returns safe Prepare conflict",
+      "reason": "Retain structured conflict/no partial writes; V2 intentionally returns the first conflict for explicit retry, not the retired V1 three-attempt policy."
+    },
+    {
+      "id": "network-order-prepare-conflict-05",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "returns a safe structured 409 after three P2010 / 40P01 conflicts",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "returns safe Prepare conflict",
+      "reason": "Retain structured conflict/no partial writes; V2 intentionally returns the first conflict for explicit retry, not the retired V1 three-attempt policy."
+    },
+    {
+      "id": "network-order-prepare-conflict-06",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "does not map an unrelated database error to HTTP 409 or retry it",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "does not retry or mislabel",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-order-prepare-conflict-07",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "keeps Create's existing conflict mapping and transaction rollback",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "fails closed on Confirm",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-order-prepare-conflict-08",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "keeps Create's acceptance token and idempotent replay unchanged",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "requires the exact accepted token",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-order-prepare-conflict-09",
+      "originalFile": "apps/api/src/modules/orders/network-order-prepare-conflict.integration.spec.ts",
+      "originalTitle": "rejects test-only Prepare when the disposable-order flag is absent",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Obsolete loopback-only V1 flag; no production V2 reliance on this test writer."
+    },
+    {
+      "id": "network-orders-atomic-01",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "rejects missing and same-name fake completeness guards before any write",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-02",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for missing_item",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-03",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for missing_snapshot",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-04",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for missing_seal",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-05",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for total_mismatch",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-06",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for options_mismatch",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-07",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for skip_immediate",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-08",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for finalization_failure",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Exclusive SQL completeness seal/fingerprint and fault injection of the retired V1 test-only writer; not a V2 persistence contract. Current transactional item/analytics rollback, immutable Snapshot2 and exact money are exercised in V2."
+    },
+    {
+      "id": "network-orders-atomic-09",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "fails closed and rolls back for rollback_before_commit",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rolls back the whole real order",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-10",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "replays a committed order after its response is lost",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "recovers committed order",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-11",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "never returns 201 if independent post-commit confirmation cannot read",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "recovers committed order",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-12",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "maps serialization without leaking database internals",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "fails closed on Confirm",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-13",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "maps serialization_wrapped without leaking database internals",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "fails closed on Confirm",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-14",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "maps deadlock without leaking database internals",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "fails closed on Confirm",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-15",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "maps unique_unrelated without leaking database internals",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "fails closed on Confirm",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-16",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "maps unrelated without leaking database internals",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "fails closed on Confirm",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-17",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "rejects bad acceptance and duplicate token while preserving exact-key replay",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "requires the exact accepted token",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-18",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "keeps 1 distinct same-tenant HTTP Creates atomic",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "keeps %i distinct confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-19",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "keeps 5 distinct same-tenant HTTP Creates atomic",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "keeps %i distinct confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-20",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "keeps 10 distinct same-tenant HTTP Creates atomic",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "keeps %i distinct confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-21",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "keeps 25 distinct same-tenant HTTP Creates atomic",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "keeps %i distinct confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-22",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "isolates 5 distinct Creates across two restaurants",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "isolates %i concurrent confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-23",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "isolates 10 distinct Creates across two restaurants",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "isolates %i concurrent confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-24",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "isolates 25 distinct Creates across two restaurants",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "isolates %i concurrent confirmations",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-25",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "prevents duplicates for 5 same-key and same-token submissions",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "prevents duplicates for %i",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-26",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "prevents duplicates for 10 same-key and same-token submissions",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "prevents duplicates for %i",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-27",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "prevents duplicates for 25 same-key and same-token submissions",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "prevents duplicates for %i",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-atomic-28",
+      "originalFile": "apps/api/src/modules/orders/network-orders-atomic.integration.spec.ts",
+      "originalTitle": "rejects 10 concurrent changed payloads for one idempotency key",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects ten concurrent changed",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-01",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "creates a decimal-safe Pizza order with nested, included, quantity, and immutable snapshot",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "quotes Pizza size",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-02",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "stores repeated ORIGINAL instances and CUSTOM snapshot independently",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "formats repeated ORIGINAL and CUSTOM",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-03",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "persists two differently configured lines for one Product ID without slug deduplication",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "prepares and confirms a six-line",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-04",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "persists and seals 10 independently validated Network lines",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "persists %i independent",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-05",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "persists and seals 50 independently validated Network lines",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "persists %i independent",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-06",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "persists fictitious customer, delivery, address and notes in the sealed snapshot and previews the saved Pizza",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "binds delivery and customer",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-07",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "persists pickup details for an independently selected repeated Combo",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "prepares and confirms a six-line",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-08",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "binds customer details to explicit acceptance and rejects malformed address input before persistence",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "binds delivery and customer",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-09",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "rejects client monetary fields and cross-restaurant or Legacy products",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "rejects direct HTTP price injection",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-10",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "rejects missing and cross-restaurant linked sources without creating an order",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects cross-restaurant ORIGINAL/CUSTOM",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-11",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "requires exact signed acceptance and reports a new quote after a price change",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects old price/config acceptance",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-12",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "returns conflicts for revision, availability, source changes, capability loss and unsatisfiable requirements",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "fails closed when revision",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-13",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "replays the same idempotency key after timeout or capability loss and rejects changed payloads",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "replays one numbered Network",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-14",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "handles two concurrent submissions and prevents reusing an acceptance token with a new key",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "serializes concurrent confirms",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-15",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "does not save an order when an ordinary Product update wins the row lock race",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rechecks the %s writer",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-16",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "does not save a Combo when a linked source changes concurrently",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rechecks the %s writer",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-17",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "does not save an order when Product availability or package capability changes concurrently",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rechecks the %s writer",
+      "reason": "Real PostgreSQL row-lock race now includes both product availability and subscription capability writers; Confirm must refuse after the winning write commits."
+    },
+    {
+      "id": "network-orders-18",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "rolls the entire order back if an OrderItem insert fails",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rolls back the whole real order",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-orders-19",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "is disabled without the explicit test flag and never returns a WhatsApp action",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "Disposable V1-only flag and no-WhatsApp-action contract are not the supported public V2 checkout. V2 public feature gate remains covered."
+    },
+    {
+      "id": "network-orders-20",
+      "originalFile": "apps/api/src/modules/orders/network-orders.integration.spec.ts",
+      "originalTitle": "preserves the separate Legacy WhatsApp path and rejects Network products there",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "preserves the separate Legacy WhatsApp endpoint",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-01",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "keeps tenant scopes separate when identities and membership change",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rechecks current membership",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-02",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "validates authenticated multipart SVG and stores its provenance on the owning tenant",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "validates SVG upload",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-03",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "authorizes media by membership and accepts only this restaurant's validated model",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "allows only tenant-owned validated",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-04",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "authenticates against PostgreSQL, prevents response caching and revokes the previous password session",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "authenticates against the real password",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-05",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "keeps the last branch through concurrent removals",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "retains the last branch",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-06",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "creates a hidden Network setup through the real Dashboard API, then saves and reloads its tree",
+      "disposition": "REPLACED_BY_V1_REJECTION",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects unsupported V1 through",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-07",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "keeps Network identity during a configuration-save/availability race",
+      "disposition": "REPLACED_BY_V1_REJECTION",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "returns 410 for standalone configuration writes",
+      "reason": "The former configuration-save/availability race used the retired standalone writer. V2 rejects that writer with 410 and unchanged versions; atomic unified editor races remain separately covered."
+    },
+    {
+      "id": "product-configuration-08",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "atomically creates and updates a network tree and dependency index",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "updates product and Network price atomically",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-09",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "persists CUSTOM snapshots while retaining a live source dependency",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "creates V2 and dependency edges",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-10",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "rejects cross-restaurant, missing, self, and unconfigured ORIGINAL sources without partial writes",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "rejects missing and foreign linked sources",
+      "reason": "V2 validates missing/foreign identities and graph cycles transactionally. V1 requirement that ORIGINAL sources already have a V1 network is obsolete; V2 supports ordinary linked products under its own contract. No new pricing/source rule is imposed."
+    },
+    {
+      "id": "product-configuration-11",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "detects a deep dependency cycle against existing edges",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "rejects linked dependency cycles",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-12",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "allows only one of two concurrent optimistic updates",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "serializes concurrent edits",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-13",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "preserves stored data after capability loss and denies further writes",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "preserves V2 data and denies",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-14",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "protects linked sources from service soft-delete and database hard-delete",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "protects V2 linked sources",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-15",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "protects a category containing a linked source product",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "protects V2 linked sources",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-16",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "publishes network products as preview-only while keeping legacy ordering blocked",
+      "disposition": "ARCHIVED",
+      "targetFile": null,
+      "targetTest": null,
+      "reason": "V1 preview-only publication is retired; V2 public ordering is approved, tested through the live prepare/confirm contract."
+    },
+    {
+      "id": "product-configuration-17",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "serves the public configuration over HTTP without cross-tenant fallback",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "serves real public menu",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-18",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "enforces authentication and configuration authorization over real HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "checks HTTP authentication",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-19",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "enforces tenant isolation over real HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects cross-tenant product/linked",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-20",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "returns structured validation errors over real HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects invalid selection:",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-21",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "returns an optimistic revision conflict over real HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "rejects stale product and configuration",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-22",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "preserves legacy zero pricing and tenant isolation",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "preserves zero ordinary",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-23",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "quotes a current size, nested sauce, and highest-unit inclusion through real HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "prices size %s",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-24",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "rejects client totals at any depth, invalid quantities, and stale revisions over HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects client-owned",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-25",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "quotes repeated ORIGINAL and CUSTOM linked instances without inheriting standalone sale prices",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-whatsapp-checkout.integration.spec.ts",
+      "targetTest": "formats repeated ORIGINAL and CUSTOM",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-26",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "enforces capability, owner availability, legacy exclusion, and tenant scoping over HTTP",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "refuses an unavailable owner",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-27",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "detects unsatisfiable required groups and hides cross-restaurant linked sources",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects invalid selection:",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-28",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "reloads current stored prices and revision instead of accepting an old displayed total",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "rejects old price/config acceptance",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "product-configuration-29",
+      "originalFile": "apps/api/src/modules/products/product-configuration.integration.spec.ts",
+      "originalTitle": "rejects direct fractional SYP create, quick-price and Network writes while preserving null Base",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/products/product-editor.integration.spec.ts",
+      "targetTest": "rejects invalid price precision",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-readiness.audit-01",
+      "originalFile": "apps/api/src/modules/public-menu/network-readiness.audit.integration.spec.ts",
+      "originalTitle": "keeps both concurrent first-read all-category requests successful after the fix",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-menu-race.integration.spec.ts",
+      "targetTest": "serves both simultaneous first",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-readiness.audit-02",
+      "originalFile": "apps/api/src/modules/public-menu/network-readiness.audit.integration.spec.ts",
+      "originalTitle": "restores a soft-deleted all category without allocating another ID",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/public-menu-race.integration.spec.ts",
+      "targetTest": "restores a soft-deleted all row",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-readiness.audit-03",
+      "originalFile": "apps/api/src/modules/public-menu/network-readiness.audit.integration.spec.ts",
+      "originalTitle": "maps exhausted Serializable retries in Prepare to a structured conflict",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "returns safe Prepare conflict",
+      "reason": "Supported invariant runs against current V2 fixtures / ordinary products on isolated PostgreSQL; retired V1 endpoint shape is not preserved."
+    },
+    {
+      "id": "network-readiness.audit-04",
+      "originalFile": "apps/api/src/modules/public-menu/network-readiness.audit.integration.spec.ts",
+      "originalTitle": "measures full-catalog Quote and Serializable Prepare at 10, 100, and 1000 products",
+      "disposition": "PORTED_TO_V2_OR_RETAINED_BUSINESS",
+      "targetFile": "apps/api/src/modules/public-menu/v2-customer-ordering.integration.spec.ts",
+      "targetTest": "measures V2 Quote and Prepare",
+      "reason": "Ported to the live V2 endpoints with 10/100/1000 additional synthetic catalog rows, exact quote assertions and zero order writes. Counts exclude the fixed V2 fixture catalog; timing is observational, not a historical performance equivalence claim."
+    }
+  ]
+}

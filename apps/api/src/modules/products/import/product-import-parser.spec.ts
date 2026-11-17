@@ -20,7 +20,7 @@ async function workbookBuffer(rows: unknown[][], images: Array<{ row: number; co
   products.addRow([...PRODUCT_IMPORT_COLUMNS]);
   rows.forEach((row) => products.addRow(row));
 
-  const imageId = workbook.addImage({ buffer: tinyPng, extension: "png" });
+  const imageId = workbook.addImage({ base64: tinyPng.toString("base64"), extension: "png" });
   images.forEach((image) => {
     products.addImage(imageId, {
       tl: { col: image.col ?? 0, row: image.row - 1 },

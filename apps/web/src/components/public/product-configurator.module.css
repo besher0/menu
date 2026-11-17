@@ -62,11 +62,6 @@
 
 .group {
   min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 18px);
-  background: var(--color-surface);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
 }
 
 .groupHeader {
@@ -161,8 +156,7 @@
   font-weight: 900;
 }
 
-.sizeGrid button.selected,
-.optionSelected {
+.sizeGrid button.selected {
   border-color: var(--pc-accent);
   box-shadow: inset 0 0 0 1px var(--pc-accent);
   background: color-mix(in srgb, var(--color-surface) 92%, var(--pc-accent));
@@ -180,11 +174,7 @@
 }
 
 .option {
-  overflow: hidden;
   min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-button, 14px);
-  background: var(--color-surface);
 }
 
 .optionRow {
@@ -238,7 +228,7 @@
 
 .optionLabel b {
   color: var(--color-text-first);
-  font-weight: 800;
+  font-weight: 400;
 }
 
 .optionLabel small {
@@ -297,27 +287,19 @@
 .nested,
 .linkedSelection {
   min-width: 0;
-  padding: 11px;
-  border-inline-start: 2px solid var(--color-secondary);
-  border-radius: var(--radius-button, 12px);
-  background: var(--color-surface);
-}
-
-.nested .group,
-.linkedSelection .group {
-  box-shadow: none;
-}
-
-.linkedSelection {
-  margin-block-start: 9px;
-  border-inline-start-color: var(--color-primary);
 }
 
 .summary {
+  --color-text-first: #252933;
+  --color-text: #252933;
+  --color-text-secondary: #626974;
+  --color-border: #e6e8ec;
   padding: 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid #e6e8ec;
   border-radius: var(--radius-card, 18px);
-  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-secondary));
+  background: #f6f7f9;
+  color: var(--color-text);
+  box-shadow: none;
 }
 
 .summaryTitle > span {
@@ -496,11 +478,6 @@
     font-size: 12px;
   }
 
-  .group {
-    padding: 12px;
-    border-radius: 15px;
-  }
-
   .groupHeader {
     align-items: flex-start;
     flex-direction: column;
@@ -528,12 +505,92 @@
     gap: 7px;
   }
 
-  .nested,
-  .linkedSelection {
-    padding: 8px;
-  }
 
   .summary li {
     align-items: flex-start;
   }
 }
+
+/* Only internal Network groups. The summary, hero, navigation and action bar use the original CSS. */
+.groups { gap: 18px; }
+.groups [data-framed] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card, 18px);
+  background: var(--color-surface);
+}
+.groups [data-framed] > .groupHeader {
+  background: color-mix(in srgb, var(--color-background) 65%, var(--color-surface));
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
+}
+.groupHeader { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items:center; gap:4px 8px; margin:0; padding:13px 14px 11px;  }
+.groupHeader > div {gap:6px}
+.groupHeader b {font-size:15px}
+.groupHeader small {grid-column:1/-1;color:var(--color-text-secondary)}
+.required,.optional {font-size:11px;padding:2px 6px}
+.required {color:color-mix(in srgb,var(--pc-accent) 68%,var(--color-text))}
+.tally {color:var(--color-text-secondary);font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sizeGrid {padding:10px;gap:6px}
+.sizeGrid button {min-height:58px;border-radius:var(--radius-button);gap:4px}
+.sizeGrid button span {display:flex;align-items:center;justify-content:center;gap:4px;font-size:14px;font-weight:800}
+.sizeGrid button strong,.optionLabel small {font-size:12px;color:var(--color-text-secondary);font-weight:700}
+.sizeGrid button.selected {border-color:var(--pc-accent);background:color-mix(in srgb,var(--pc-accent) 7%,var(--color-surface)); color:color-mix(in srgb,var(--pc-accent) 65%,var(--color-text))}
+.options {gap:0}
+.option + .option:not([data-framed]) {border-block-start:1px solid var(--color-border)}
+.optionRow {min-height:55px;gap:6px;padding:3px 12px}
+.optionLabel {min-height:46px;gap:9px}
+.optionLabel span {gap:2px}
+.optionLabel b {line-height:1.45;font-size:14px}
+.optionLabel i {border-color:var(--color-muted);width:19px;height:19px;flex-basis:19px}
+.optionLabel[role=radio] i {border-radius:50%}
+.optionLabel:disabled {opacity:1}
+.optionLabel:disabled small {color:var(--color-text-secondary)}
+.unavailableOption {
+ display:grid; align-content:center; gap:2px; min-height:55px; padding:3px 12px;
+ border-block-start:1px solid var(--color-border); color:var(--color-text-secondary);
+}
+.unavailableOption b {font-weight:400;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.unavailableOption small {font-size:12px}
+.quantity {grid-template-columns:44px 18px 44px;align-items:center}
+.quantity button {position:relative;border:0;border-radius:0;width:44px;height:44px;background:transparent;color:var(--color-text-first)}
+.quantity button::before {content:"";position:absolute;inset:7px;border-radius:50%;border:1px solid var(--color-border)}
+.quantity strong {font-variant-numeric:tabular-nums}
+.quantity button:disabled {opacity:.4}
+.instance {margin:0 10px 8px}
+.instanceName {display:block;padding:6px 8px;font-weight:700;color:var(--color-text-secondary)}
+.nested .groupHeader,.linkedSelection .groupHeader {padding:8px 6px 3px}
+.nested .optionRow,.linkedSelection .optionRow {padding-inline:5px}
+.groups[data-depth]:not([data-depth="0"]) {gap:6px}
+.linkedMeta {margin:0;padding:0 13px 5px}
+.group[data-components]:not([data-framed]) > .groupHeader {padding-inline:0}
+.group[data-components] > .options {gap:26px}
+.option[data-component] + .option[data-component]:not([data-framed]) {border-block-start:1px solid var(--color-border);padding-block-start:12px}
+.componentHeading {
+ display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+ padding:8px 10px 4px;
+}
+.componentNames {display:flex;align-items:baseline;flex-wrap:wrap;gap:0 9px;min-width:0}
+.componentNames span {font-size:13px;color:var(--color-text-secondary);overflow-wrap:anywhere}
+.componentHeading h3 {margin:0;font-size:17px;line-height:1.45;overflow-wrap:anywhere;min-width:0}
+.componentHeading small {color:var(--color-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
+.option[data-component] > .instance {margin:0}
+.linkedSelection > .groups {gap:10px}
+.linkedSelection > .groups > .group:not([data-framed]):not(:last-child) {border-block-end:1px solid var(--color-border)}
+.linkedSelection > .groups > .group > .groupHeader {padding:12px 10px 5px}
+.groups button:focus-visible {outline-offset:-2px}
+
+.summary [data-summary-part] {min-width:0}
+/* A parent whose charge is displayed with its chosen child is a section heading. */
+.summary [data-summary-title][data-summary-heading] {display:block}
+.summary [data-summary-part] > section {margin-inline-start:12px}
+.summary [data-summary-title], .summary [data-summary-detail] {display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-block:4px; font-size:14px}
+.summary [data-summary-mode] span, .summary [data-summary-mode] strong {overflow-wrap:anywhere;min-width:0}
+.summary [data-summary-mode] span {font-weight:400}
+.summary [data-charge] {white-space:nowrap;font-variant-numeric:tabular-nums}
+@media (max-width:390px){.groups[data-depth]:not([data-depth="0"]) .instance {margin-inline:3px}.optionRow {padding-inline:9px}}
+
+.incomplete {display:grid;gap:7px;color:var(--color-text-secondary);font-size:13px;line-height:1.6;}
+.incomplete b {font-weight:700;color:var(--color-text-first);}
+.incomplete button {justify-self:start;padding:4px 0;border:0;background:transparent;color:var(--color-text-first);font:inherit;text-decoration:underline;cursor:pointer;min-height:44px;}
+.group[data-validation-highlight="true"] {outline:1px solid #b96b6b;outline-offset:3px;scroll-margin-block:100px;}
+.group:focus:not([data-validation-highlight="true"]) {outline:none;}

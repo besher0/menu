@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { FEATURE_KEYS } from "@menu/shared";
 import { Check, Download, Edit3, Loader2, Plus, Save, X } from "lucide-react";
 import { SkeletonTable } from "@/components/ui/skeleton";
@@ -68,7 +68,6 @@ export function SubscriptionsClient() {
   const [status, setStatus] = useState<"loading" | "ready" | "saving" | "error">("loading");
   const [message, setMessage] = useState("");
   const [draft, setDraft] = useState<DraftPlan | null>(null);
-  const [search, setSearch] = useState("");
 
   async function load() {
     try {
@@ -85,28 +84,7 @@ export function SubscriptionsClient() {
     void load();
   }, []);
 
-  useEffect(() => {
-    function handleGlobalSearch(event: Event) {
-      setSearch(String((event as CustomEvent<string>).detail ?? ""));
-    }
 
-    window.addEventListener("admin:global-search", handleGlobalSearch);
-    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
-  }, []);
-
-  const filteredPlans = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return plans;
-
-    return plans.filter((plan) =>
-      [
-        plan.name,
-        plan.key,
-        plan.isActive ? "active فعال" : "inactive موقوف",
-        ...plan.features.filter((feature) => feature.enabled).map((feature) => featureLabels[feature.key] ?? feature.key)
-      ].some((value) => String(value).toLowerCase().includes(term))
-    );
-  }, [plans, search]);
 
   function planToDraft(plan: Plan): DraftPlan {
     return {
@@ -204,7 +182,7 @@ export function SubscriptionsClient() {
   function exportPlans() {
     downloadCsv("subscriptions.csv", [
       ["Name", "Key", "Monthly", "Yearly", "Active", "Restaurants", "Enabled features"],
-      ...filteredPlans.map((plan) => [
+      ...plans.map((plan) => [
         plan.name,
         plan.key,
         plan.priceMonthly,
@@ -320,7 +298,7 @@ export function SubscriptionsClient() {
                 </tr>
               </thead>
               <tbody>
-                {filteredPlans.map((plan) => (
+                {plans.map((plan) => (
                   <tr key={plan.id}>
                     <td><input type="checkbox" aria-label={`اختر ${plan.name}`} /></td>
                     <td><span className="plan-pill">{plan.name}</span></td>

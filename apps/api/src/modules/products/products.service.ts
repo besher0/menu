@@ -1,10 +1,15 @@
+import { publicUploadUrl } from "../../common/public-upload-url";
+import { nextProductSortOrder, productOrderTransaction } from "./product-sort-order";
+import { preparePublicConfigurationCatalog, resolveProductFromCatalog, type PublicProductConfigurationResponse } from "../public-menu/public-product-configuration";
+import { ProductEditorService } from "./product-editor.service";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
-import { validateCurrencyAmount } from "@menu/shared";
+import { validateCurrencyAmount, calculateMinimumPriceV2 } from "@menu/shared";
 import { slugify } from "../../common/slugify";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
+import { approvedModelFormat, allowedImageReference } from "../media/asset-reference";
 import { ProductLibraryService } from "../media/product-library.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProductDto } from "./dto/create-product.dto";
@@ -64,8 +69,33 @@ export class ProductsService {
       products.map((product) => ({ id: product.id, slug: product.slug }))
     );
 
+    // Dashboard presentation only: reuse the public resolver and Shared minimum
+    // calculator. Never invent a Base price for Network or return another tenant.
+    const configurationBaseEditable = new Map<string,boolean>();
+    const configurationPrices = new Map<string, Pick<PublicProductConfigurationResponse,"minimumPrice"|"priceDisplay">>();
+    if (products.some(p => p.configurationTree !== null && p.configurationVersion > 0)) {
+      const [catalogProducts, currency, capabilityEnabled] = await Promise.all([
+        this.prisma.product.findMany({ where: { restaurantId, deletedAt: null }, select: {
+          id:true,restaurantId:true,currency:true,slug:true,name:true,basePrice:true,
+          configurationTree:true,configurationVersion:true,isActive:true,isAvailable:true,deletedAt:true
+        } }), this.restaurantCurrency(restaurantId), this.featureFlags.canUseAssignedFeature(restaurantId,"PRODUCT_CONFIGURATION")
+      ]);
+      const catalog = preparePublicConfigurationCatalog({restaurantId,currency,capabilityEnabled,catalogProducts});
+      for (const product of products) {
+        const record = catalog.products.get(product.id);
+        const result = record ? resolveProductFromCatalog(record,catalog) : null;
+        if (result) {
+          configurationPrices.set(product.id,{minimumPrice:result.minimumPrice,priceDisplay:result.priceDisplay});
+          // Reuse the engine's Base decision, including ORIGINAL/CUSTOM resolved sizes.
+          const minimum=catalog.minimums.get(product.id)??calculateMinimumPriceV2(result.configuration,catalog.context);
+          configurationBaseEditable.set(product.id,result.configuration.basePrice!==null && product.basePrice!==null && minimum.orderable && !minimum.baseIgnored);
+        }
+      }
+    }
     return {
-      data: products.map((product) => this.serializeProduct(product, views.get(product.id) ?? 0)),
+      data: products.map((product) => ({...this.serializeProduct(product, views.get(product.id) ?? 0),
+        ...(configurationBaseEditable.has(product.id)?{basePriceEditable:configurationBaseEditable.get(product.id)}:{}),
+        ...(configurationPrices.has(product.id)?{configurationPrice:configurationPrices.get(product.id)}:{})})),
       meta: {
         page,
         limit: limit ?? total,
@@ -76,6 +106,10 @@ export class ProductsService {
   }
 
   async create(restaurantId: string, dto: CreateProductDto, allowAdvancedMedia = false) {
+    await this.assertCategory(restaurantId, dto.categoryId);
+    for (const image of this.productImageInputs(dto)) await allowedImageReference(this.prisma,restaurantId,image.url);
+    if (allowAdvancedMedia && dto.vrUrl) await allowedImageReference(this.prisma,restaurantId,dto.vrUrl);
+    if (allowAdvancedMedia && dto.model3dUrl) dto.model3dFormat = await approvedModelFormat(this.prisma,restaurantId,dto.model3dUrl);
     if (dto.basePrice !== undefined) {
       const currency = await this.restaurantCurrency(restaurantId);
       this.assertCurrencyPrice(dto.basePrice, currency);
@@ -108,10 +142,11 @@ export class ProductsService {
     const setupProductId = networkSetup ? randomUUID() : undefined;
     const setupConfiguration = setupProductId ? initialNetworkSetupConfiguration(setupProductId) : undefined;
 
-    const product = await this.prisma.product.create({
+    const product = await productOrderTransaction(this.prisma,async tx=>tx.product.create({
       data: {
         ...(setupProductId ? { id: setupProductId } : {}),
         restaurantId,
+        sortOrder:await nextProductSortOrder(tx,restaurantId,dto.categoryId??null),
         categoryId: dto.categoryId,
         name: dto.name,
         slug: productSlug,
@@ -164,7 +199,7 @@ export class ProductsService {
         vrMedia: true,
         options: { include: { options: true } }
       }
-    });
+    }));
 
     return this.serializeProduct(product);
   }
@@ -290,6 +325,7 @@ export class ProductsService {
       displayName: item.displayName,
       label: item.displayName,
       value: item.value ?? "",
+      valueType: item.valueType,
       icon: item.icon,
       iconUrl: this.publicAssetUrl(item.iconUrl) ?? "",
       isActive: item.isActive,
@@ -332,6 +368,7 @@ export class ProductsService {
     return tx.product.create({
       data: {
         restaurantId,
+        editVersion: 1,
         categoryId: input.categoryId,
         name: input.name,
         slug,
@@ -360,70 +397,32 @@ export class ProductsService {
   }
 
   async update(restaurantId: string, id: string, dto: CreateProductDto, allowAdvancedMedia = false) {
-    if (dto.configurationIntent !== undefined) {
-      throw new BadRequestException("configurationIntent is only accepted when creating a product");
-    }
-    const existing = await this.prisma.product.findFirst({
-      where: { id, restaurantId, deletedAt: null },
-      include: {
-        images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } }
-      }
-    });
-
-    if (!existing) {
-      throw new NotFoundException("Product not found");
-    }
-    if (dto.basePrice !== undefined) {
-      this.assertCurrencyPrice(dto.basePrice, await this.restaurantCurrency(restaurantId));
-    }
-
-    const isConfigured = existing.configurationTree !== null && existing.configurationVersion > 0;
-    if (isConfigured && dto.basePrice !== undefined) {
-      const submittedPrice = new Prisma.Decimal(dto.basePrice.toString());
-      if (existing.basePrice === null || !existing.basePrice.equals(submittedPrice)) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: "PRODUCT_CONFIGURATION_PRICE_MANAGED",
-          message: "Use the product configuration endpoint to change pricing for a network product."
-        });
-      }
-    }
-
-    const productSlug = dto.slug ? await this.uniqueProductSlug(restaurantId, dto.slug, id) : existing.slug;
-
-    const product = await this.prisma.product.update({
-      where: { id },
-      data: {
-        categoryId: dto.categoryId || null,
-        name: dto.name,
-        slug: productSlug,
-        description: dto.description,
-        basePrice: isConfigured ? undefined : dto.basePrice,
-        currency: dto.currency ?? existing.currency,
-        moodKey: this.serializeMoodKeyValue(this.normalizeMoodKeysInput(dto)),
-        ingredients: dto.ingredients as Prisma.InputJsonValue | undefined,
-        nutrition: dto.nutrition as Prisma.InputJsonValue | undefined,
-        isFeatured: dto.isFeatured ?? dto.isNew ?? existing.isFeatured,
-        isNew: dto.isNew ?? dto.isFeatured ?? existing.isNew,
-        isPopular: dto.isPopular ?? existing.isPopular
+    if (!Number.isSafeInteger(dto.expectedProductVersion)) throw new BadRequestException("expectedProductVersion is required");
+    if (dto.configurationIntent !== undefined) throw new BadRequestException("Use the unified editor to configure a product");
+    const editor = new ProductEditorService(this.prisma);
+    const current = await editor.read(restaurantId, id);
+    await editor.save(restaurantId, id, {
+      create: false, expectedProductVersion: dto.expectedProductVersion!,
+      expectedConfigurationVersion: current.configurationVersion,
+      product: {
+        ...current.product, name: dto.name,
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId || null } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.basePrice !== undefined ? { basePrice: String(dto.basePrice) } : {}),
+        ...(dto.moodKeys !== undefined || dto.moodKey !== undefined ? { moodKeys: this.normalizeMoodKeysInput(dto) } : {}),
+        ...(dto.images !== undefined || dto.imageUrl !== undefined ? { images: this.productImageInputs(dto) } : {}),
+        ...(dto.ingredients !== undefined ? { ingredients: dto.ingredients.map(x => typeof x === "string" ? { name: x } : x) as typeof current.product.ingredients } : {}),
+        ...(dto.nutrition !== undefined ? { mealDetails: (dto.nutrition as { details: typeof current.product.mealDetails }).details ?? current.product.mealDetails } : {}),
+        isNew: dto.isNew ?? dto.isFeatured ?? current.product.isNew,
+        isFeatured: dto.isFeatured ?? dto.isNew ?? current.product.isFeatured,
+        isPopular: dto.isPopular ?? current.product.isPopular
       },
-      include: {
-        category: true,
-        images: true,
-        media3d: true,
-        vrMedia: true,
-        options: { include: { options: true } }
-      }
-    });
-
-    if (dto.images !== undefined || dto.imageUrl !== undefined) {
-      await this.syncProductImages(id, dto);
-    }
-
-    if (allowAdvancedMedia) {
-      await this.sync3dMedia(id, dto);
-    }
-
+      ...(dto.model3dUrl !== undefined || dto.vrUrl !== undefined ? { advancedMedia: {
+        ...current.advancedMedia,
+        ...(dto.model3dUrl !== undefined ? { model3dUrl: dto.model3dUrl } : {}),
+        ...(dto.vrUrl !== undefined ? { vrUrl: dto.vrUrl } : {})
+      } } : {})
+    }, allowAdvancedMedia);
     return this.findOne(restaurantId, id);
   }
 
@@ -475,7 +474,8 @@ export class ProductsService {
     return this.serializeProduct(updated);
   }
 
-  async updatePrice(restaurantId: string, id: string, basePrice: number) {
+  async updatePrice(restaurantId: string, id: string, basePrice: number, expectedProductVersion?: number) {
+    if (!Number.isSafeInteger(expectedProductVersion)) throw new BadRequestException("expectedProductVersion is required");
     const product = await this.prisma.product.findFirst({
       where: { id, restaurantId, deletedAt: null }
     });
@@ -493,19 +493,18 @@ export class ProductsService {
       });
     }
 
-    const updated = await this.prisma.product.update({
-      where: { id },
-      data: { basePrice },
-      include: {
-        category: true,
-        images: true,
-        media3d: true,
-        vrMedia: true,
-        options: { include: { options: true } }
-      }
+    const updated = await this.prisma.product.updateMany({
+      where: { id, restaurantId, deletedAt: null, configurationVersion: 0, editVersion: expectedProductVersion },
+      data: { basePrice, editVersion: { increment: 1 } }
     });
+    if (updated.count !== 1) throw new ConflictException({ error: "PRODUCT_EDIT_VERSION_CONFLICT", message: "Reload the product before changing its price." });
+    return this.findOne(restaurantId, id);
+  }
 
-    return this.serializeProduct(updated);
+  private async assertCategory(restaurantId: string, id?: string | null) {
+    if (!id) return;
+    const category = await this.prisma.category.findFirst({ where: { id, restaurantId, deletedAt: null }, select: { id: true } });
+    if (!category) throw new BadRequestException("Category unavailable");
   }
 
   private async restaurantCurrency(restaurantId: string): Promise<string> {
@@ -526,24 +525,25 @@ export class ProductsService {
   }
 
   async reorder(restaurantId: string, items: Array<{ id: string; sortOrder: number }>) {
-    const products = await this.prisma.product.findMany({
-      where: { restaurantId, id: { in: items.map((item) => item.id) }, deletedAt: null },
-      select: { id: true }
-    });
-    const ownedIds = new Set(products.map((product) => product.id));
-
-    if (ownedIds.size !== items.length) {
-      throw new NotFoundException("One or more products were not found");
-    }
-
-    await this.prisma.$transaction(
-      items.map((item) =>
-        this.prisma.product.update({
-          where: { id: item.id },
-          data: { sortOrder: item.sortOrder }
-        })
-      )
-    );
+    await this.prisma.$transaction(async tx => {
+      const catalog = await tx.product.findMany({
+        where: { restaurantId, deletedAt: null }, select: { id: true, categoryId: true }
+      });
+      const ranks = new Map(items.map(item => [item.id, item.sortOrder]));
+      const selected = catalog.filter(row => ranks.has(row.id));
+      if (!items.length || selected.length !== items.length) throw new BadRequestException("Invalid reorder scope");
+      if (new Set(ranks.values()).size !== items.length) throw new BadRequestException("Duplicate ranks");
+      if (selected.length !== catalog.length) {
+        const category = selected[0].categoryId;
+        if (selected.some(row => row.categoryId !== category) ||
+            catalog.some(row => row.categoryId === category && !ranks.has(row.id))) {
+          throw new BadRequestException("Submit the complete catalog or one complete category");
+        }
+      }
+      for (const item of items) {
+        await tx.product.update({ where: { id: item.id, restaurantId }, data: { sortOrder: item.sortOrder } });
+      }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return this.list(restaurantId, { page: 1, limit: Math.max(items.length, 20), sort: "sortOrder" });
   }
@@ -608,8 +608,10 @@ export class ProductsService {
 
   private serializeProduct(product: any, views = 0) {
     const moodKeys = this.parseStoredMoodKeys(product.moodKey);
+    const basePriceEditable = product.configurationTree == null && !product.configurationVersion;
 
     return {
+      basePriceEditable,
       id: product.id,
       slug: product.slug,
       name: product.name,
@@ -618,6 +620,7 @@ export class ProductsService {
       configurationMode:
         product.configurationTree !== null && product.configurationVersion > 0 ? "NETWORK" : "LEGACY",
       configurationVersion: product.configurationVersion ?? 0,
+      editVersion: product.editVersion,
       currency: product.currency,
       isActive: product.isActive,
       isAvailable: product.isAvailable,
@@ -630,7 +633,7 @@ export class ProductsService {
       views,
       ingredients: this.serializeIngredients(product.ingredients),
       nutrition: this.serializeNutrition(product.nutrition),
-      category: product.category
+      category: product.category && product.category.restaurantId === product.restaurantId
         ? {
             id: product.category.id,
             slug: product.category.slug,
@@ -741,25 +744,6 @@ export class ProductsService {
     }
 
     return candidate;
-  }
-
-  private async syncProductImages(productId: string, dto: CreateProductDto) {
-    const images = this.productImageInputs(dto);
-
-    await this.prisma.productImage.deleteMany({ where: { productId } });
-
-    if (!images.length) {
-      return;
-    }
-
-    await this.prisma.productImage.createMany({
-      data: images.map((image, index) => ({
-        productId,
-        url: image.url,
-        altText: image.altText,
-        sortOrder: index
-      }))
-    });
   }
 
   private normalizeIngredientItem(item: Prisma.JsonValue) {
@@ -892,26 +876,8 @@ export class ProductsService {
   }
 
   private publicAssetUrl(url?: string | null) {
-    if (!url) {
-      return null;
-    }
-
-    if (!url.includes("/uploads/")) {
-      return url;
-    }
-
     const apiOrigin = this.config.get<string>("API_ORIGIN") ?? `http://localhost:${this.config.get<string>("PORT") ?? 5000}`;
-
-    if (url.startsWith("/uploads/")) {
-      return `${apiOrigin}${url}`;
-    }
-
-    try {
-      const parsedUrl = new URL(url);
-      return `${apiOrigin}${parsedUrl.pathname}${parsedUrl.search}`;
-    } catch {
-      return url;
-    }
+    return publicUploadUrl(url, apiOrigin);
   }
 
   private infer3dFormat(url: string) {

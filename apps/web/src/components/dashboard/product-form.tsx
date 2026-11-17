@@ -1,7 +1,7 @@
 "use client";
-import { displayCurrencyAmount } from "@/lib/currency-display";
+import { productMoodOptions } from "./product-editor-fields-model";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Beef,
@@ -9,26 +9,35 @@ import {
   Drumstick,
   Flame,
   Heart,
-  ImagePlus,
-  Plus,
   Save,
   Scale,
   Sparkles,
   Star,
-  Trash2,
   Utensils,
   Wheat,
-  ArrowRight,
+  X,
   Loader2,
   type LucideIcon
 } from "lucide-react";
-import Link from "next/link";
+import popup from "./product-editor-popup.module.css";
 import { authHeaders, getBrowserSession, resolveStoredRestaurant, setStoredRestaurant } from "@/lib/session";
+import { useProductEditorDraft } from "./use-product-editor-draft";
+import { saveProductEditor, ProductEditorSaveError } from "./product-editor-save";
+import { productEditorFingerprint, type ProductEditorAggregate, type ProductConfigurationV2, type SaveProductEditor, type ConfigurationIssue, validateConfigurationV2, validateConfigurationCurrencyV2, validateGroupLevelsV2, roleHasPermission } from "@menu/shared";
+
 import { ProductConfigurationEditor } from "./product-configuration/product-configuration-editor";
+import { hasSizes, type SourceMap } from "./product-configuration/v62-model";
+import { safeProductSaveMessage } from "./product-configuration/configuration-editor-errors";
+import { cssVars } from "@/lib/api";
+import type { ThemeSettings } from "@menu/shared";
+import { ProductEditorFields } from "./product-editor-fields";
+import { appendImage, validatedModelUpload, MAX_PRODUCT_IMAGES } from "./product-editor-fields-model";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
-type FormState = {
+export type FormState = {
+  configuration: ProductConfigurationV2 | null;
+  configurationMode: "LEGACY" | "NETWORK";
   name: string;
   categoryId: string;
   description: string;
@@ -36,6 +45,7 @@ type FormState = {
   currency: string;
   imageUrl: string;
   imageUrls: string[];
+  imageReferences: ProductEditorAggregate["product"]["images"];
   moodKeys: string[];
   ingredients: IngredientFormItem[];
   mealDetails: MealDetailFormItem[];
@@ -43,6 +53,7 @@ type FormState = {
   model3dFormat: string;
   vrUrl: string;
   isNew: boolean;
+  isFeatured: boolean;
   isPopular: boolean;
 };
 
@@ -62,6 +73,7 @@ type IngredientSuggestion = IngredientFormItem & {
 };
 
 type MealDetailFormItem = {
+  valueType?: "VALUE" | "PRESENCE";
   id?: string;
   libraryId?: string;
   adminName?: string;
@@ -108,141 +120,26 @@ const DETAIL_ICON_OPTIONS: Array<{ key: string; label: string; icon: LucideIcon 
   { key: "sparkles", label: "خاص", icon: Sparkles }
 ];
 
-const DEFAULT_MEAL_DETAILS: MealDetailFormItem[] = [
-  { label: "الوزن التقريبي", value: "", icon: "scale" },
-  { label: "نوع البروتين", value: "", icon: "drumstick" },
-  { label: "نوع الخبز", value: "", icon: "wheat" },
-  { label: "مستوى الحدة", value: "", icon: "flame" }
-];
-
-type ProductDetails = {
-  id: string;
-  name: string;
-  description?: string | null;
-  basePrice: number | null;
-  configurationMode?: "LEGACY" | "NETWORK";
-  configurationVersion?: number;
-  currency: string;
-  isNew?: boolean;
-  isFeatured?: boolean;
-  isPopular?: boolean;
-  moodKey?: string | null;
-  moodKeys?: string[];
-  ingredients?: Array<string | { libraryId?: string; adminName?: string; displayName?: string; name?: string; imageUrl?: string | null }>;
-  nutrition?: {
-    details?: MealDetailFormItem[];
-    weight?: string;
-    protein?: string;
-    breadType?: string;
-    spice?: string;
-  } | null;
-  media?: {
-    model3dUrl?: string | null;
-    model3dFormat?: string | null;
-    vrUrl?: string | null;
-  };
-  category?: { id: string; name: string } | null;
-  images?: Array<{ id?: string; url: string; altText?: string | null }>;
-};
-
-function normalizeIngredients(items?: ProductDetails["ingredients"]): IngredientFormItem[] {
-  return (items ?? [])
-    .map((item) =>
-      typeof item === "string"
-        ? { name: item.trim(), imageUrl: "" }
-        : {
-            libraryId: item.libraryId,
-            adminName: item.adminName?.trim(),
-            displayName: item.displayName?.trim(),
-            name: (item.displayName || item.name)?.trim() ?? "",
-            imageUrl: item.imageUrl ?? ""
-          }
-    )
-    .filter((item) => item.name || item.imageUrl);
-}
-
-function normalizeMealDetails(nutrition?: ProductDetails["nutrition"]): MealDetailFormItem[] {
-  if (Array.isArray(nutrition?.details)) {
-    const details = nutrition.details
-      .map((item) => ({
-        libraryId: item.libraryId,
-        adminName: item.adminName?.trim(),
-        displayName: item.displayName?.trim(),
-        label: (item.displayName || item.label)?.trim() ?? "",
-        value: item.value?.trim() ?? "",
-        icon: DETAIL_ICON_OPTIONS.some((option) => option.key === item.icon) ? item.icon : "utensils",
-        iconUrl: item.iconUrl?.trim() ?? ""
-      }))
-      .filter((item) => item.label || item.value);
-
-    return details.length ? details : [];
-  }
-
-  const legacyDetails = [
-    { ...DEFAULT_MEAL_DETAILS[0], value: nutrition?.weight ?? "" },
-    { ...DEFAULT_MEAL_DETAILS[1], value: nutrition?.protein ?? "" },
-    { ...DEFAULT_MEAL_DETAILS[2], value: nutrition?.breadType ?? "" },
-    { ...DEFAULT_MEAL_DETAILS[3], value: nutrition?.spice ?? "" }
-  ];
-
-  return legacyDetails;
-}
-
-function detailIconComponent(iconKey: string) {
-  return DETAIL_ICON_OPTIONS.find((option) => option.key === iconKey)?.icon ?? Utensils;
-}
-
-function normalizeMoodKeys(items?: string[] | string | null): string[] {
-  const source = Array.isArray(items) ? items : items ? parseStoredMoodKeys(items) : [];
-  const seen = new Set<string>();
-
-  return source
-    .map((item) => item.trim())
-    .filter((item) => {
-      const key = item.toLocaleLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function parseStoredMoodKeys(value: string) {
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((item): item is string => typeof item === "string");
-    }
-  } catch {
-    return [value];
-  }
-
-  return [value];
-}
-
-function ingredientKey(value: string) {
-  return value.trim().toLocaleLowerCase();
-}
-
-function mealDetailKey(detail: Pick<MealDetailFormItem, "label" | "value" | "icon" | "iconUrl">) {
-  return `${detail.label.trim().toLocaleLowerCase()}|${detail.value.trim().toLocaleLowerCase()}|${detail.icon}|${detail.iconUrl?.trim().toLocaleLowerCase() ?? ""}`;
-}
-
 function emptyProductForm(): FormState {
   return {
+    configuration: null,
+    configurationMode: "LEGACY",
     name: "",
     categoryId: "",
     description: "",
     basePrice: "",
-    currency: "ل.س",
+    currency: "",
     imageUrl: "",
     imageUrls: [],
+    imageReferences: [],
     moodKeys: [],
     ingredients: [],
-    mealDetails: DEFAULT_MEAL_DETAILS.map((detail) => ({ ...detail })),
+    mealDetails: [],
     model3dUrl: "",
     model3dFormat: "GLB",
     vrUrl: "",
     isNew: false,
+    isFeatured: false,
     isPopular: false
   };
 }
@@ -253,6 +150,18 @@ function normalizedProductImageUrls(urls: string[]) {
 
 export function ProductForm({ productId }: { productId?: string }) {
   const router = useRouter();
+  const popupRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = popupRef.current!;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.showModal();
+    return () => {
+      dialog.close(); document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
   const [status, setStatus] = useState<"idle" | "saving" | "error" | "success">("idle");
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
   const [modelUploadStatus, setModelUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
@@ -262,183 +171,100 @@ export function ProductForm({ productId }: { productId?: string }) {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [selectedRestaurantName, setSelectedRestaurantName] = useState("");
   const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [previewStyle,setPreviewStyle]=useState<React.CSSProperties>();
   const [moodOptions, setMoodOptions] = useState<MoodOption[]>([]);
   const [ingredientSuggestions, setIngredientSuggestions] = useState<IngredientSuggestion[]>([]);
-  const [ingredientSearch, setIngredientSearch] = useState("");
   const [ingredientLibraryStatus, setIngredientLibraryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [mealDetailSuggestions, setMealDetailSuggestions] = useState<MealDetailSuggestion[]>([]);
-  const [mealDetailSearch, setMealDetailSearch] = useState("");
   const [mealDetailLibraryStatus, setMealDetailLibraryStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [detailIconSearch, setDetailIconSearch] = useState("");
-  const [configurationMode, setConfigurationMode] = useState<"LEGACY" | "NETWORK">("LEGACY");
-  const [configurationDirty, setConfigurationDirty] = useState(false);
-  const [form, setForm] = useState<FormState>(() => emptyProductForm());
+  const editor = useProductEditorDraft<FormState>(emptyProductForm);
+  const form = editor.draft;
+  const setForm = editor.setDraft;
+  const setConfigurationMode = (mode: "LEGACY" | "NETWORK") => setForm(s => ({ ...s, configurationMode: mode }));
+  const [stableId] = useState(() => productId ?? crypto.randomUUID());
+  const versions = useRef({ product: 0, configuration: 0, create: !productId });
+  const mediaBaseline = useRef({ model3dUrl: "", model3dFormat: "GLB", vrUrl: "" });
+  const saveLock = useRef(false);
+  const [hydrated, setHydrated] = useState(!productId);
+  const [currencyReady, setCurrencyReady] = useState(!!productId);
+  const [configurationSources, setConfigurationSources] = useState<SourceMap>(new Map());
+  const [configurationLoading, setConfigurationLoading] = useState(false);
+  const [configurationAssigned, setConfigurationAssigned] = useState(false);
+  const [validationAttempt, setValidationAttempt] = useState(0);
+  const sourcesChanged = useCallback((value: SourceMap) => setConfigurationSources(value), []);
+  const validityChanged = useCallback((issues: ConfigurationIssue[], loading: boolean) => {
+    setConfigurationLoading(loading);
+  }, []);
+  const session = getBrowserSession();
+  const memberRole = session?.memberships.find(x => x.restaurant.id === selectedRestaurantId)?.role;
+  const canManageConfiguration = session?.user.role === "SUPER_ADMIN" ||
+    !!memberRole && roleHasPermission(memberRole as Parameters<typeof roleHasPermission>[0], "product.configuration.manage");
+  useEffect(()=>{
+    setPreviewStyle(undefined);const restaurant=resolveStoredRestaurant(); if(!restaurant?.slug)return;const controller=new AbortController();
+    void fetch(API_URL+"/public/menus/"+encodeURIComponent(restaurant.slug)+"?track=0",{signal:controller.signal,cache:"no-store"})
+      .then(async response=>{if(!response.ok)return;const value=await response.json();const theme=(value.data??value).theme as ThemeSettings|undefined;if(theme&&!controller.signal.aborted)setPreviewStyle(cssVars(theme))}).catch(()=>{});
+    return()=>controller.abort();
+  },[selectedRestaurantId]);
+  useEffect(()=>{editor.setState(s=>s.issues.length?{...s,issues:[]}:s)},[form]);
+  const sizesControlBase = !!form.configuration && hasSizes(form.configuration, configurationSources);
+  useEffect(() => {
+    if (!selectedRestaurantId) return;
+    let cancelled = false;
+    setConfigurationAssigned(false);
+    if (!productId) setCurrencyReady(false);
+    void fetch(API_URL + "/dashboard/restaurants/current", { headers: selectedRestaurantHeaders(), cache: "no-store" })
+      .then(async response => { if (!response.ok) throw new Error("Capability unavailable"); return response.json(); })
+      .then(payload => {
+        if (cancelled) return;
+        const restaurant = payload.data ?? payload;
+        setConfigurationAssigned(!!restaurant.subscription?.features?.some((x: { key: string; enabled: boolean }) => x.key === "PRODUCT_CONFIGURATION" && x.enabled));
+        if (!productId) {
+          if (typeof restaurant.currency !== "string" || !restaurant.currency.trim()) throw new Error("Currency unavailable");
+          editor.setState(s => ({ ...s, draft: { ...s.draft, currency: restaurant.currency }, saved: { ...s.saved, currency: restaurant.currency } }));
+          setCurrencyReady(true);
+        }
+      }).catch(() => { if (!cancelled) {
+        setConfigurationAssigned(false);
+        if (!productId) { setStatus("error"); setMessage("تعذر تحميل عملة المطعم. أعد تحميل الصفحة قبل الحفظ."); }
+      } });
+    return () => { cancelled = true; };
+  }, [selectedRestaurantId, productId]);
+  const latestDraft = useRef(form);
+  latestDraft.current = form;
+
+  useEffect(() => {
+    if (!editor.dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [editor.dirty]);
+
+  // Native traversal cancellation keeps the current editor/history entry intact on
+  // browsers with Navigation API support. Document exits still use beforeunload.
+  useEffect(() => {
+    const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+    if (!navigation) return;
+    const onNavigate = (event: Event) => {
+      const traversal = event as Event & { navigationType?: string };
+      if (traversal.navigationType !== "traverse" || !event.cancelable) return;
+      if (status === "saving" || (editor.dirty && !window.confirm("لديك تغييرات غير محفوظة. هل تريد إغلاق المحرر دون حفظها؟"))) event.preventDefault();
+    };
+    navigation.addEventListener("navigate", onNavigate);
+    return () => navigation.removeEventListener("navigate", onNavigate);
+  }, [editor.dirty, status]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  function setProductImages(urls: string[]) {
-    const uniqueUrls = normalizedProductImageUrls(urls);
-    setForm((current) => ({
-      ...current,
-      imageUrl: uniqueUrls[0] ?? "",
-      imageUrls: uniqueUrls
+    setForm((current) => ({ ...current, [key]: value,
+      ...(key === "basePrice" && current.configuration ? { configuration: { ...current.configuration, basePrice: String(value).trim() || null } } : {})
     }));
   }
 
-  function setPrimaryImage(url: string) {
-    setForm((current) => {
-      const nextUrl = url.trim();
-      const rest = current.imageUrls.filter((item, index) => index > 0 && item !== nextUrl);
-      const imageUrls = nextUrl ? [nextUrl, ...rest] : rest;
-      return { ...current, imageUrl: nextUrl, imageUrls };
-    });
-  }
-
-  function addProductImageUrl(url = "") {
-    setForm((current) => ({ ...current, imageUrls: [...current.imageUrls, url] }));
-  }
-
-  function updateProductImageUrl(index: number, url: string) {
-    setForm((current) => {
-      const imageUrls = current.imageUrls.map((item, itemIndex) => (itemIndex === index ? url : item));
-      return {
-        ...current,
-        imageUrl: imageUrls[0]?.trim() ?? "",
-        imageUrls
-      };
-    });
-  }
-
-  function removeProductImage(index: number) {
-    setForm((current) => {
-      const imageUrls = current.imageUrls.filter((_, itemIndex) => itemIndex !== index);
-      return {
-        ...current,
-        imageUrl: imageUrls[0]?.trim() ?? "",
-        imageUrls
-      };
-    });
-  }
-
-  function moveProductImage(index: number, direction: -1 | 1) {
-    setForm((current) => {
-      const target = index + direction;
-      if (target < 0 || target >= current.imageUrls.length) return current;
-      const imageUrls = [...current.imageUrls];
-      [imageUrls[index], imageUrls[target]] = [imageUrls[target], imageUrls[index]];
-      return {
-        ...current,
-        imageUrl: imageUrls[0]?.trim() ?? "",
-        imageUrls
-      };
-    });
-  }
-
-  function addIngredient(ingredient: IngredientFormItem = { name: "", imageUrl: "" }) {
-    setForm((current) => ({
-      ...current,
-      ingredients: [...current.ingredients, ingredient]
+  function patchFields(patch: Partial<FormState>) {
+    setForm(current => ({ ...current, ...patch,
+      ...(patch.imageUrls ? { imageUrl: patch.imageUrls[0] ?? "" } : {}),
+      ...(patch.basePrice !== undefined && current.configuration
+        ? { configuration: { ...current.configuration, basePrice: patch.basePrice.trim() || null } } : {})
     }));
-  }
-
-  function addExistingIngredient(ingredient: IngredientFormItem) {
-    setForm((current) => {
-      const nextKey = ingredientKey(ingredient.name);
-      if (nextKey && current.ingredients.some((item) => ingredientKey(item.name) === nextKey)) {
-        return current;
-      }
-
-      return {
-        ...current,
-        ingredients: [...current.ingredients, {
-          libraryId: ingredient.libraryId ?? ingredient.id,
-          adminName: ingredient.adminName,
-          displayName: ingredient.displayName ?? ingredient.name,
-          name: ingredient.displayName ?? ingredient.name,
-          imageUrl: ingredient.imageUrl
-        }]
-      };
-    });
-    setIngredientSearch("");
-  }
-
-  function updateIngredient(index: number, patch: Partial<IngredientFormItem>) {
-    setForm((current) => ({
-      ...current,
-      ingredients: current.ingredients.map((ingredient, itemIndex) =>
-        itemIndex === index ? { ...ingredient, ...patch } : ingredient
-      )
-    }));
-  }
-
-  function removeIngredient(index: number) {
-    setForm((current) => ({
-      ...current,
-      ingredients: current.ingredients.filter((_, itemIndex) => itemIndex !== index)
-    }));
-  }
-
-  function addMealDetail() {
-    setForm((current) => ({
-      ...current,
-      mealDetails: [...current.mealDetails, { label: "", value: "", icon: "utensils", iconUrl: "" }]
-    }));
-  }
-
-  function addExistingMealDetail(detail: MealDetailFormItem) {
-    setForm((current) => {
-      const nextKey = mealDetailKey(detail);
-      if (current.mealDetails.some((item) => mealDetailKey(item) === nextKey)) {
-        return current;
-      }
-
-      return {
-        ...current,
-        mealDetails: [...current.mealDetails, {
-          libraryId: detail.libraryId ?? detail.id,
-          adminName: detail.adminName,
-          displayName: detail.displayName ?? detail.label,
-          label: detail.displayName ?? detail.label,
-          value: detail.value,
-          icon: detail.icon,
-          iconUrl: detail.iconUrl ?? ""
-        }]
-      };
-    });
-    setMealDetailSearch("");
-  }
-
-  function updateMealDetail(index: number, patch: Partial<MealDetailFormItem>) {
-    setForm((current) => ({
-      ...current,
-      mealDetails: current.mealDetails.map((detail, itemIndex) =>
-        itemIndex === index ? { ...detail, ...patch } : detail
-      )
-    }));
-  }
-
-  function removeMealDetail(index: number) {
-    setForm((current) => ({
-      ...current,
-      mealDetails: current.mealDetails.filter((_, itemIndex) => itemIndex !== index)
-    }));
-  }
-
-  function toggleMoodKey(key: string) {
-    setForm((current) => {
-      const exists = current.moodKeys.includes(key);
-      return {
-        ...current,
-        moodKeys: exists ? current.moodKeys.filter((item) => item !== key) : [...current.moodKeys, key]
-      };
-    });
-  }
-
-  function inferModelFormat(filename: string) {
-    const extension = filename.split("?")[0].split(".").pop()?.toUpperCase();
-    return extension && ["GLB", "GLTF", "USDZ"].includes(extension) ? extension : "GLB";
   }
 
   function selectedRestaurantHeaders() {
@@ -505,22 +331,23 @@ export function ProductForm({ productId }: { productId?: string }) {
       return;
     }
 
+    let cancelled = false;
     async function loadCategories() {
       try {
-        const response = await fetch(`${API_URL}/dashboard/categories`, {
-          headers: selectedRestaurantHeaders(),
-          cache: "no-store"
-        });
-        const payload = await response.json().catch(() => null);
-        const body = payload?.data ?? [];
-        const nextCategories = (Array.isArray(body) ? body : body.data ?? []) as CategoryOption[];
-        setCategories(nextCategories.filter((category) => category.slug !== "all"));
-      } catch {
-        setCategories([]);
-      }
+        const next: CategoryOption[] = [];
+        for (let page = 1; ; page++) {
+          const response = await fetch(`${API_URL}/dashboard/categories?limit=100&page=${page}`, { headers: selectedRestaurantHeaders(), cache: "no-store" });
+          if (!response.ok) throw new Error("Unable to load categories");
+          const payload = await response.json(), body = payload?.data ?? [];
+          next.push(...(Array.isArray(body) ? body : body.data ?? []));
+          if (cancelled) return;
+          if (page >= (body.meta?.pages ?? 1)) break;
+        }
+        if (!cancelled) setCategories(next.filter(x => x.slug !== "all"));
+      } catch { if (!cancelled) setCategories([]); }
     }
-
     void loadCategories();
+    return () => { cancelled = true; };
   }, [selectedRestaurantId, restaurants]);
 
   useEffect(() => {
@@ -537,13 +364,7 @@ export function ProductForm({ productId }: { productId?: string }) {
         });
         const payload = await response.json().catch(() => null);
         const pages = payload?.data?.pages ?? payload?.pages ?? [];
-        const sections = pages.flatMap((page: { sections?: Array<{ type: string; isActive?: boolean; settings?: { moodItems?: Array<{ label?: string }> } }> }) => page.sections ?? []);
-        const moodSection = sections.find((section: { type: string; isActive?: boolean }) => section.type === "MOOD_STRIP" && section.isActive !== false);
-        const moodItems = moodSection?.settings?.moodItems ?? [];
-        const nextOptions = moodItems
-          .map((item: { label?: string }) => item.label?.trim())
-          .filter((label: string | undefined): label is string => Boolean(label))
-          .map((label: string) => ({ key: label, label }));
+        const nextOptions = productMoodOptions(pages);
 
         setMoodOptions(nextOptions);
       } catch {
@@ -644,6 +465,7 @@ export function ProductForm({ productId }: { productId?: string }) {
                 displayName: item.displayName?.trim(),
                 label: (item.displayName || item.label)?.trim() ?? "",
                 value: item.value?.trim() ?? "",
+                valueType: item.valueType,
                 icon: DETAIL_ICON_OPTIONS.some((option) => option.key === item.icon) ? item.icon : "utensils",
                 iconUrl: item.iconUrl?.trim() ?? "",
                 isActive: item.isActive ?? true,
@@ -673,7 +495,7 @@ export function ProductForm({ productId }: { productId?: string }) {
       return;
     }
 
-    setForm(emptyProductForm());
+    editor.hydrate(emptyProductForm());
     setStatus("idle");
     setUploadStatus("idle");
     setModelUploadStatus("idle");
@@ -686,277 +508,145 @@ export function ProductForm({ productId }: { productId?: string }) {
       return;
     }
 
+    let cancelled = false;
+    const controller = new AbortController();
+    setHydrated(false);
     async function loadProduct() {
       try {
-        const response = await fetch(`${API_URL}/dashboard/products/${productId}`, {
-          headers: selectedRestaurantHeaders(),
-          cache: "no-store"
+        const response = await fetch(API_URL + "/dashboard/products/" + productId + "/editor", {
+          headers: selectedRestaurantHeaders(), cache: "no-store", signal: controller.signal
         });
-        const payload = await response.json().catch(() => null);
-
-        if (!response.ok) {
-          throw new Error(payload?.message ?? "تعذر تحميل المنتج.");
-        }
-
-        const product = payload?.data as ProductDetails;
-        const imageUrls = product.images?.map((image) => image.url).filter(Boolean) ?? [];
-        setForm({
-          name: product.name ?? "",
-          categoryId: product.category?.id ?? "",
-          description: product.description ?? "",
-          basePrice: String(product.basePrice ?? ""),
-          currency: product.currency ?? "ل.س",
-          imageUrl: imageUrls[0] ?? "",
-          imageUrls,
-          moodKeys: normalizeMoodKeys(product.moodKeys?.length ? product.moodKeys : product.moodKey),
-          ingredients: normalizeIngredients(product.ingredients),
-          mealDetails: normalizeMealDetails(product.nutrition),
-          model3dUrl: product.media?.model3dUrl ?? "",
-          model3dFormat: product.media?.model3dFormat ?? "GLB",
-          vrUrl: product.media?.vrUrl ?? "",
-          isNew: product.isNew ?? product.isFeatured ?? false,
-          isPopular: product.isPopular ?? false
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.message ?? "تعذر تحميل المنتج.");
+        if (cancelled) return;
+        const aggregate = (payload.data ?? payload) as ProductEditorAggregate;
+        const product = aggregate.product;
+        versions.current = { product: aggregate.editVersion, configuration: aggregate.configurationVersion, create: false };
+        mediaBaseline.current = aggregate.advancedMedia;
+        const imageUrls = product.images.map(image => image.url);
+        editor.hydrate({
+          ...emptyProductForm(),
+          ...product,
+          configuration: aggregate.configuration,
+          configurationMode: aggregate.configuration ? "NETWORK" : "LEGACY",
+          categoryId: product.categoryId ?? "",
+          basePrice: product.basePrice ?? "",
+          currency: aggregate.currency,
+          imageUrl: imageUrls[0] ?? "", imageUrls,
+          imageReferences: product.images,
+          ingredients: product.ingredients.map(x => ({ ...x, imageUrl: x.imageUrl ?? "" })),
+          mealDetails: product.mealDetails.map(x => ({ ...x })),
+          ...aggregate.advancedMedia
         });
-        setConfigurationMode(product.configurationMode ?? "LEGACY");
+        setHydrated(true);
       } catch (error) {
+        if (cancelled) return;
         setStatus("error");
         setMessage(error instanceof Error ? error.message : "تعذر تحميل المنتج.");
       }
     }
 
     void loadProduct();
-  }, [productId, selectedRestaurantId, restaurants]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [productId, selectedRestaurantId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("saving");
-    setMessage("");
-
+    if (saveLock.current || !hydrated || !selectedRestaurantId || !currencyReady) return;
+    if (!form.name.trim() || !form.categoryId || !categories.some(x => x.id === form.categoryId)) {
+      setStatus("error"); setMessage("أدخل اسمًا صالحًا واختر قسمًا متاحًا قبل الحفظ."); return;
+    }
+    if (form.configuration && canManageConfiguration) {
+      setValidationAttempt(n => n + 1);
+      const issues = [...validateConfigurationV2(form.configuration), ...validateConfigurationCurrencyV2(form.configuration, form.currency),
+        ...validateGroupLevelsV2(form.configuration, id => configurationSources.get(id)?.configuration ?? undefined)];
+      if (issues.length || configurationLoading) {
+        setStatus("error"); setMessage("أكمل بيانات التكوين والمصادر قبل حفظ المنتج.");
+        editor.setState(s => ({ ...s, issues })); return;
+      }
+    }
+    saveLock.current = true;
+    setStatus("saving"); setMessage("");
+    editor.setState(s => ({ ...s, pending: true, issues: [], conflict: false }));
+    const submitted = form;
     try {
-      const productImageUrls = normalizedProductImageUrls(form.imageUrls);
-      const headers = {
-        "Content-Type": "application/json",
-        ...selectedRestaurantHeaders()
-      };
-
-      const response = await fetch(`${API_URL}/dashboard/products${productId ? `/${productId}` : ""}`, {
-        method: productId ? "PATCH" : "POST",
-        headers,
-        body: JSON.stringify({
-          name: form.name,
-          description: form.description,
-          ...(!productId && configurationMode === "NETWORK" ? { configurationIntent: "NETWORK_SETUP" } : {}),
-          ...(configurationMode === "NETWORK" || form.basePrice.trim() === "" ? {} : { basePrice: Number(form.basePrice) }),
-          currency: form.currency,
-          categoryId: form.categoryId || undefined,
-          moodKey: form.moodKeys[0] || undefined,
-          moodKeys: form.moodKeys,
-          imageUrl: productImageUrls[0] || undefined,
-          images: productImageUrls.map((url, index) => ({
-            url,
-            altText: index === 0 ? form.name : `${form.name} ${index + 1}`
+      const images = normalizedProductImageUrls(submitted.imageUrls);
+      const advancedMedia = { model3dUrl: submitted.model3dUrl, model3dFormat: submitted.model3dFormat, vrUrl: submitted.vrUrl };
+      const input: SaveProductEditor = {
+        create: versions.current.create, expectedProductVersion: versions.current.product,
+        expectedConfigurationVersion: versions.current.configuration,
+        product: {
+          name: submitted.name, description: submitted.description, categoryId: submitted.categoryId || null,
+          basePrice: submitted.basePrice.trim() || null,
+          isNew: submitted.isNew, isFeatured: submitted.isFeatured, isPopular: submitted.isPopular, moodKeys: submitted.moodKeys,
+          images: images.map((url, index) => submitted.imageReferences.find(x => x.url === url)
+            ?? { url, altText: index === 0 ? submitted.name : submitted.name + " " + (index + 1) }),
+          ingredients: submitted.ingredients.filter(x => x.name.trim()).map(x => ({
+            ...(x.libraryId ? { libraryId: x.libraryId } : {}), name: x.name,
+            imageUrl: x.imageUrl
           })),
-          ingredients: form.ingredients
-            .map((item) => ({
-              libraryId: item.libraryId,
-              adminName: item.adminName?.trim() || undefined,
-              displayName: (item.displayName || item.name).trim() || undefined,
-              name: (item.displayName || item.name).trim(),
-              imageUrl: item.imageUrl.trim() || undefined
-            }))
-            .filter((item) => item.name || item.imageUrl),
-          nutrition: {
-            details: form.mealDetails
-              .map((item) => ({
-                libraryId: item.libraryId,
-                adminName: item.adminName?.trim() || undefined,
-                displayName: (item.displayName || item.label).trim() || undefined,
-                label: (item.displayName || item.label).trim(),
-                value: item.value.trim(),
-                icon: item.icon,
-                iconUrl: item.iconUrl?.trim() || undefined
-              }))
-              .filter((item) => item.label || item.value)
-          },
-          ...(isSuperAdmin
-            ? {
-                model3dUrl: form.model3dUrl,
-                model3dFormat: form.model3dFormat,
-                vrUrl: form.vrUrl,
-                vrType: form.vrUrl ? "PANORAMA" : ""
-              }
-            : {}),
-          isFeatured: form.isNew,
-          isNew: form.isNew,
-          isPopular: form.isPopular
-        })
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.message ?? "تعذر حفظ المنتج. تأكد من تشغيل API وتسجيل الدخول الحقيقي.");
-      }
-
-      setStatus("success");
-      if (!productId && configurationMode === "NETWORK") {
-        const payload = await response.json().catch(() => null);
-        const createdId = payload?.data?.id ?? payload?.id;
-        if (typeof createdId !== "string" || !createdId) {
-          throw new Error("تم إنشاء الصنف لكن لم يُرجع الخادم معرّفه. افتحه من قائمة المنتجات لإكمال الشبكة.");
-        }
-        setMessage("تم إنشاء شبكة غير مسعّرة وغير متاحة للعامة. أكمل التكوين ثم فعّل التوفر يدويًا.");
-        router.push(`/dashboard/products/${encodeURIComponent(createdId)}/edit`);
-      } else {
-        setMessage("تم حفظ المنتج بنجاح.");
-        if (!configurationDirty) setTimeout(() => router.push("/dashboard/products"), 700);
-      }
+          mealDetails: submitted.mealDetails.filter(x => x.libraryId || x.value.trim()).map(x => ({
+            ...(x.libraryId ? { libraryId: x.libraryId } : {}), label: x.label, value: x.value,
+            icon: x.icon, iconUrl: x.iconUrl ?? "", ...(x.valueType ? { valueType: x.valueType } : {})
+          }))
+        },
+        ...(submitted.configuration && canManageConfiguration ? { configuration: { ...submitted.configuration, productId: stableId,
+          revision: versions.current.configuration + 1 } } : {}),
+        ...(isSuperAdmin && productEditorFingerprint(advancedMedia) !== productEditorFingerprint(mediaBaseline.current)
+          ? { advancedMedia } : {})
+      };
+      const aggregate = await saveProductEditor((path, init) => fetch(API_URL + path, {
+        ...init, headers: { ...selectedRestaurantHeaders(), ...init?.headers }
+      }), stableId, input, uploadStatus !== "idle" || modelUploadStatus !== "idle");
+      versions.current = { product: aggregate.editVersion, configuration: aggregate.configurationVersion, create: false };
+      mediaBaseline.current = aggregate.advancedMedia;
+      const unchanged = productEditorFingerprint(latestDraft.current) === productEditorFingerprint(submitted);
+      if (unchanged) {
+        const p = aggregate.product;
+        const imageUrls = p.images.map(x => x.url);
+        editor.hydrate({ ...submitted, ...p, categoryId: p.categoryId ?? "", basePrice: p.basePrice ?? "",
+          configuration: aggregate.configuration, imageUrls, imageUrl: imageUrls[0] ?? "",
+          imageReferences: p.images,
+          ingredients: p.ingredients.map(x => ({ ...x, imageUrl: x.imageUrl ?? "" })),
+          mealDetails: p.mealDetails, ...aggregate.advancedMedia });
+      } else editor.saved(submitted);
+      setStatus("success"); setMessage("تم حفظ المنتج بنجاح.");
+      window.dispatchEvent(new Event("ordersawa:product-saved"));
+      // Keep this editor open: a pending edit cannot be discarded by delayed navigation.
+      if (!productId && unchanged)
+        router.replace("/dashboard/products/" + encodeURIComponent(stableId) + "/edit");
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "حدث خطأ أثناء الحفظ.");
-    }
+      setMessage(safeProductSaveMessage(error));
+      editor.setState(s => ({ ...s, pending: false, conflict: error instanceof ProductEditorSaveError && error.status === 409,
+        issues: error instanceof ProductEditorSaveError ? error.issues : [] }));
+    } finally { saveLock.current = false; }
   }
 
-  async function handleImageUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploadStatus("uploading");
-    setMessage("");
-
-    try {
-      const body = new FormData();
-      body.append("file", file);
-      body.append("type", "IMAGE");
-      body.append("altText", form.name || file.name);
-
-      const response = await fetch(`${API_URL}/dashboard/media/upload`, {
-        method: "POST",
-        headers: selectedRestaurantHeaders(),
-        body
-      });
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(payload?.message ?? "تعذر رفع الصورة.");
-      }
-
-      setPrimaryImage(payload?.data?.url ?? payload?.url ?? "");
-      setUploadStatus("idle");
-    } catch (error) {
-      setUploadStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر رفع الصورة.");
-    } finally {
-      event.target.value = "";
-    }
-  }
-
+  const imageUploadLock = useRef(false);
   async function handleGalleryImagesUpload(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    if (!files.length) return;
-
-    setUploadStatus("uploading");
-    setMessage("");
-
+    const input = event.currentTarget, files = Array.from(input.files ?? []);
+    if (!files.length || imageUploadLock.current) return;
+    if (latestDraft.current.imageUrls.length + files.length > MAX_PRODUCT_IMAGES) {
+      setUploadStatus("error"); setMessage("الحد الأقصى خمس صور. لم تُرفع أو تُحذف أي صورة من هذه المحاولة."); input.value = ""; return;
+    }
+    imageUploadLock.current = true; setUploadStatus("uploading"); setMessage("");
     try {
-      const uploadedUrls: string[] = [];
-
       for (const file of files) {
-        const body = new FormData();
-        body.append("file", file);
-        body.append("type", "IMAGE");
-        body.append("altText", form.name || file.name);
-
-        const response = await fetch(`${API_URL}/dashboard/media/upload`, {
-          method: "POST",
-          headers: selectedRestaurantHeaders(),
-          body
-        });
+        const body = new FormData(); body.append("file", file); body.append("type", "IMAGE");
+        body.append("altText", latestDraft.current.name || file.name);
+        const response = await fetch(`${API_URL}/dashboard/media/upload`, { method: "POST", headers: selectedRestaurantHeaders(), body });
         const payload = await response.json().catch(() => null);
-
-        if (!response.ok) {
-          throw new Error(payload?.message ?? "تعذر رفع إحدى الصور.");
-        }
-
+        if (!response.ok) throw new Error(payload?.message ?? "تعذر رفع الصورة. أعد اختيار الصور التي لم تُرفع.");
         const url = payload?.data?.url ?? payload?.url;
-        if (url) uploadedUrls.push(url);
+        if (typeof url !== "string" || !url.trim()) throw new Error("لم يُعد الرفع رابط صورة صالحًا.");
+        // Append each successful upload to the latest draft, retaining concurrent text/tree edits and partial success.
+        setForm(current => { const imageUrls = appendImage(current.imageUrls, url); return { ...current, imageUrls, imageUrl: imageUrls[0] ?? "" }; });
       }
-
-      setProductImages([...form.imageUrls, ...uploadedUrls]);
       setUploadStatus("idle");
     } catch (error) {
-      setUploadStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر رفع الصور.");
-    } finally {
-      event.target.value = "";
-    }
-  }
-
-  async function handleIngredientImageUpload(index: number, event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploadStatus("uploading");
-    setMessage("");
-
-    try {
-      const body = new FormData();
-      body.append("file", file);
-      body.append("type", "IMAGE");
-      body.append("altText", form.ingredients[index]?.name || form.name || file.name);
-
-      const response = await fetch(`${API_URL}/dashboard/media/upload`, {
-        method: "POST",
-        headers: selectedRestaurantHeaders(),
-        body
-      });
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(payload?.message ?? "تعذر رفع صورة المكون.");
-      }
-
-      updateIngredient(index, { imageUrl: payload?.data?.url ?? payload?.url ?? "" });
-      setUploadStatus("idle");
-    } catch (error) {
-      setUploadStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر رفع صورة المكون.");
-    } finally {
-      event.target.value = "";
-    }
-  }
-
-  async function handleMealDetailIconUpload(index: number, event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setUploadStatus("uploading");
-    setMessage("");
-
-    try {
-      const body = new FormData();
-      body.append("file", file);
-      body.append("type", "PNG_ICON");
-      body.append("altText", form.mealDetails[index]?.label || form.name || file.name);
-
-      const response = await fetch(`${API_URL}/dashboard/media/upload`, {
-        method: "POST",
-        headers: selectedRestaurantHeaders(),
-        body
-      });
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(payload?.message ?? "تعذر رفع أيقونة التفصيل.");
-      }
-
-      updateMealDetail(index, { iconUrl: payload?.data?.url ?? payload?.url ?? "" });
-      setUploadStatus("idle");
-    } catch (error) {
-      setUploadStatus("error");
-      setMessage(error instanceof Error ? error.message : "تعذر رفع أيقونة التفصيل.");
-    } finally {
-      event.target.value = "";
-    }
+      setUploadStatus("error"); setMessage(error instanceof Error ? error.message : "تعذر رفع الصور.");
+    } finally { imageUploadLock.current = false; input.value = ""; }
   }
 
   async function handleModelUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -983,8 +673,8 @@ export function ProductForm({ productId }: { productId?: string }) {
         throw new Error(payload?.message ?? "تعذر رفع ملف 3D. تأكد أن الباقة تدعم 3D وأن الملف GLB أو GLTF.");
       }
 
-      update("model3dUrl", payload?.data?.url ?? payload?.url ?? "");
-      update("model3dFormat", inferModelFormat(file.name));
+      const model = validatedModelUpload(payload?.data ?? payload);
+      patchFields(model);
       setModelUploadStatus("idle");
     } catch (error) {
       setModelUploadStatus("error");
@@ -994,528 +684,62 @@ export function ProductForm({ productId }: { productId?: string }) {
     }
   }
 
-  const productGalleryUrls = form.imageUrls;
-  const selectedIngredientKeys = useMemo(
-    () => new Set(form.ingredients.map((ingredient) => ingredientKey(ingredient.name)).filter(Boolean)),
-    [form.ingredients]
-  );
-  const filteredIngredientSuggestions = useMemo(() => {
-    const query = ingredientKey(ingredientSearch);
-
-    return ingredientSuggestions
-      .filter((ingredient) => {
-        const key = ingredientKey(ingredient.name);
-        const searchable = `${ingredient.name} ${ingredient.adminName ?? ""} ${ingredient.displayName ?? ""}`.toLocaleLowerCase();
-        return key && !selectedIngredientKeys.has(key) && (!query || searchable.includes(query));
-      })
-      .slice(0, 8);
-  }, [ingredientSearch, ingredientSuggestions, selectedIngredientKeys]);
-  const searchedIngredientName = ingredientSearch.trim();
-  const searchedIngredientKey = ingredientKey(searchedIngredientName);
-  const canAddSearchedIngredient =
-    Boolean(searchedIngredientKey) &&
-    !selectedIngredientKeys.has(searchedIngredientKey) &&
-    !ingredientSuggestions.some((ingredient) => ingredientKey(ingredient.name) === searchedIngredientKey);
-  const selectedMealDetailKeys = useMemo(
-    () => new Set(form.mealDetails.map((detail) => mealDetailKey(detail)).filter((key) => key !== "||")),
-    [form.mealDetails]
-  );
-  const filteredMealDetailSuggestions = useMemo(() => {
-    const query = mealDetailSearch.trim().toLocaleLowerCase();
-
-    return mealDetailSuggestions
-      .filter((detail) => {
-        const key = mealDetailKey(detail);
-        const searchable = `${detail.label} ${detail.value} ${detail.icon} ${detail.adminName ?? ""} ${detail.displayName ?? ""}`.toLocaleLowerCase();
-        return key !== "||" && !selectedMealDetailKeys.has(key) && (!query || searchable.includes(query));
-      })
-      .slice(0, 8);
-  }, [mealDetailSearch, mealDetailSuggestions, selectedMealDetailKeys]);
-  const filteredDetailIconOptions = useMemo(() => {
-    const query = detailIconSearch.trim().toLocaleLowerCase();
-
-    return DETAIL_ICON_OPTIONS.filter((option) => {
-      const searchable = `${option.key} ${option.label}`.toLocaleLowerCase();
-      return !query || searchable.includes(query);
-    });
-  }, [detailIconSearch]);
+  function requestClose() {
+    if (status === "saving") return;
+    if (editor.dirty && !window.confirm("لديك تغييرات غير محفوظة. هل تريد إغلاق المحرر دون حفظها؟")) return;
+    router.replace("/dashboard/products", { scroll: false });
+  }
 
   return (
-    <>
-    <form className={`product-form-page ${isSuperAdmin ? "" : "owner-product-form"}`} onSubmit={handleSubmit}>
-      <section className="products-header">
-        <div>
-          <Link className="back-link" href="/dashboard/products">
-            <ArrowRight size={18} />
-            المنتجات
-          </Link>
-          <h1>{productId ? "تعديل المنتج" : "إضافة منتج"}</h1>
-          <p>{productId ? "عدّل بيانات الصنف هنا، وشبكة التكوين في المحرر أسفل الصفحة." : "أنشئ صنفًا عاديًا أو ابدأ إعداد شبكة ثم أكملها في المحرر."}</p>
+    <dialog ref={popupRef} className={popup.modal} dir="rtl" aria-labelledby="product-editor-title"
+      onCancel={e => { if (e.target !== e.currentTarget) return; e.preventDefault(); requestClose(); }}
+      onClick={e => { if (e.target === e.currentTarget) { const r=e.currentTarget.getBoundingClientRect(); if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) requestClose(); } }}>
+    <form className={popup.form} onSubmit={handleSubmit}>
+      <header className={popup.header}>
+        <h3 id="product-editor-title">{productId ? "تعديل صنف — " + form.name : "إضافة صنف"}</h3>
+        <button className={popup.close} type="button" aria-label="إغلاق محرر المنتج" disabled={status === "saving"} onClick={requestClose}><X size={18} /></button>
+      </header>
+      <div className={popup.body} data-product-editor-scroll>
+
+      <ProductEditorFields draft={form} patch={patchFields} categories={categories} moods={moodOptions}
+        ingredients={ingredientSuggestions} details={mealDetailSuggestions}
+        ingredientStatus={ingredientLibraryStatus} detailStatus={mealDetailLibraryStatus}
+        disabled={!hydrated || status === "saving"} sizesControlBase={sizesControlBase} baseReadOnly={!!form.configuration && !canManageConfiguration}
+        uploading={uploadStatus === "uploading"} uploadError={uploadStatus === "error"}
+        onUpload={handleGalleryImagesUpload} onDismissUploadError={() => { setUploadStatus("idle"); setMessage(""); }} />
+      {isSuperAdmin && <section className={popup.modelSection} aria-label="إدارة 3D الحالية">
+        <div className={popup.modelHead}><h3>صورة 3D</h3></div>
+        <div className={popup.modelActions}>
+          <label className={popup.modelUpload}>رفع ملف / صورة 3D
+            <input aria-label="رفع ملف 3D للوجبة" accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+              disabled={!selectedRestaurantId || modelUploadStatus === "uploading" || status === "saving"}
+              onChange={handleModelUpload} type="file" />
+          </label>
+          <span className={popup.modelState}>{form.model3dUrl ? (form.model3dUrl.split("?")[0].split("/").pop() || "ملف محفوظ") : "لا يوجد ملف 3D"}</span>
         </div>
-        <button className="primary-action" type="submit" disabled={status === "saving"}>
-          {status === "saving" ? <Loader2 className="spin" size={22} /> : <Save size={22} />}
-          حفظ المنتج
+      </section>}
+      <section aria-label="حالة حفظ المنتج" aria-live="polite">
+        {modelUploadStatus === "uploading" && <p className="form-message">يتم رفع ملف 3D...</p>}
+        {editor.dirty && <small>تغييرات غير محفوظة</small>}
+        {message && <p role={status === "error" ? "alert" : "status"} className={status === "success" ? "form-message success" : "form-message"}>{message}</p>}
+      </section>
+      <ProductConfigurationEditor productName={form.name} previewStyle={previewStyle} serverIssues={editor.issues} productId={stableId} restaurantId={selectedRestaurantId} currency={form.currency}
+        basePrice={form.basePrice.trim() || null} configuration={form.configuration}
+        canManage={canManageConfiguration && hydrated} assigned={configurationAssigned} pending={status === "saving"}
+        validationAttempt={validationAttempt} request={(path, init) => fetch(API_URL + path, {
+          ...init, headers: { ...selectedRestaurantHeaders(), ...init?.headers }, cache: "no-store"
+        })}
+        onChange={configuration => setForm(current => ({ ...current, configuration, configurationMode: "NETWORK",
+          basePrice: configuration.basePrice ?? "" }))}
+        onSources={sourcesChanged} onValidity={validityChanged} />
+      </div>
+      <footer className={popup.footer}>
+        <button className={popup.save} type="submit" aria-label="حفظ المنتج" disabled={!hydrated || !selectedRestaurantId || !currencyReady || status === "saving" || uploadStatus !== "idle" || modelUploadStatus !== "idle" || configurationLoading}>
+          {status === "saving" ? <Loader2 className="spin" size={18} /> : null} حفظ الصنف
         </button>
-      </section>
-
-      <section className="product-form-layout">
-        <div className="product-form-card">
-          {!productId ? (
-            <fieldset className="full product-creation-mode">
-              <legend>نوع الصنف الجديد</legend>
-              <label><input type="radio" name="creation-mode" checked={configurationMode === "LEGACY"} onChange={() => setConfigurationMode("LEGACY")} /> صنف عادي بسعر أساسي</label>
-              <label><input type="radio" name="creation-mode" checked={configurationMode === "NETWORK"} onChange={() => setConfigurationMode("NETWORK")} /> إعداد شبكة تكوين (أحجام، إضافات، كومبوهات)</label>
-              {configurationMode === "NETWORK" ? <p>سيُنشأ الصنف بشبكة فارغة وBase Price بلا قيمة، دون سعر تمهيدي أو إتاحة للعامة. أكمل الأحجام أو الأسعار في المحرر قبل تفعيل التوفر.</p> : null}
-            </fieldset>
-          ) : null}
-          <label className="full">
-            <span>المطعم</span>
-            <input value={selectedRestaurantName || selectedRestaurantId} readOnly required />
-          </label>
-
-          <label>
-            <span>اسم المنتج</span>
-            <input value={form.name} onChange={(event) => update("name", event.target.value)} required />
-          </label>
-
-          <label>
-            <span>القسم</span>
-            <select value={form.categoryId} onChange={(event) => update("categoryId", event.target.value)}>
-              <option value="">بدون قسم</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <fieldset className="product-mood-picker">
-            <legend>شو مزاجك اليوم</legend>
-            {moodOptions.length ? (
-              <div className="product-mood-options">
-                {moodOptions.map((mood) => (
-                  <button
-                    key={mood.key}
-                    type="button"
-                    className={`product-mood-chip ${form.moodKeys.includes(mood.key) ? "selected" : ""}`}
-                    onClick={() => toggleMoodKey(mood.key)}
-                    aria-pressed={form.moodKeys.includes(mood.key)}
-                  >
-                    <span className="product-mood-chip-mark" aria-hidden="true" />
-                    <span>{mood.label}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <span className="product-mood-empty">لا توجد خيارات مزاج مفعلة في الـ builder.</span>
-            )}
-          </fieldset>
-
-          <label className="full">
-            <span>الوصف</span>
-            <textarea
-              value={form.description}
-              onChange={(event) => update("description", event.target.value)}
-              rows={4}
-            />
-          </label>
-
-          <div className="product-ingredients-editor full">
-            <div className="field-row-head">
-              <span>مكونات الوجبة</span>
-              <button type="button" onClick={() => addIngredient()}>
-                <Plus size={16} />
-                إضافة مكون
-              </button>
-            </div>
-            <div className="ingredient-library-picker">
-              <label className="ingredient-search-field">
-                <span>إضافة مكون موجود</span>
-                <input
-                  value={ingredientSearch}
-                  onChange={(event) => setIngredientSearch(event.target.value)}
-                  placeholder="ابحث عن مكون محفوظ..."
-                />
-              </label>
-              {ingredientSearch || filteredIngredientSuggestions.length || ingredientLibraryStatus !== "idle" ? (
-                <div className="ingredient-suggestion-list">
-                  {ingredientLibraryStatus === "loading" ? <span className="ingredient-suggestion-note">جاري تحميل المكونات...</span> : null}
-                  {ingredientLibraryStatus === "error" ? <span className="ingredient-suggestion-note">تعذر تحميل المكونات الحالية.</span> : null}
-                  {filteredIngredientSuggestions.map((ingredient) => (
-                    <button
-                      key={ingredientKey(ingredient.name)}
-                      type="button"
-                      className="ingredient-suggestion"
-                      onClick={() => addExistingIngredient(ingredient)}
-                    >
-                      {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : <span className="ingredient-suggestion-image" />}
-                      <span>
-                        {ingredient.adminName ?? ingredient.name}
-                        <small>يظهر للزبون: {ingredient.displayName ?? ingredient.name}</small>
-                      </span>
-                      <small>{ingredient.usageCount ?? 0}x</small>
-                    </button>
-                  ))}
-                  {canAddSearchedIngredient ? (
-                    <button
-                      type="button"
-                      className="ingredient-suggestion ingredient-suggestion-create"
-                      onClick={() => addExistingIngredient({ name: searchedIngredientName, imageUrl: "" })}
-                    >
-                      <Plus size={16} />
-                      <span>إضافة "{searchedIngredientName}" كمكون جديد</span>
-                    </button>
-                  ) : null}
-                  {ingredientSearch && !filteredIngredientSuggestions.length && !canAddSearchedIngredient && ingredientLibraryStatus === "idle" ? (
-                    <span className="ingredient-suggestion-note">لا يوجد مكون مطابق أو تمت إضافته مسبقاً.</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            {form.ingredients.length ? (
-              <div className="ingredient-form-list">
-                {form.ingredients.map((ingredient, index) => (
-                  <div className="ingredient-form-row" key={`ingredient-${index}`}>
-                    {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name || "مكون"} /> : <span className="ingredient-image-placeholder" />}
-                    <label>
-                      <span>اسم المكون</span>
-                      <input
-                        value={ingredient.name}
-                        onChange={(event) => updateIngredient(index, { name: event.target.value })}
-                        placeholder="بطاطا"
-                      />
-                      {ingredient.adminName ? <small>اسم الإدارة: {ingredient.adminName} - يظهر للزبون: {ingredient.displayName ?? ingredient.name}</small> : null}
-                    </label>
-                    <label>
-                      <span>صورة اختيارية</span>
-                      <input
-                        accept="image/*"
-                        disabled={!selectedRestaurantId || uploadStatus === "uploading"}
-                        onChange={(event) => handleIngredientImageUpload(index, event)}
-                        type="file"
-                      />
-                    </label>
-                    <label className="ingredient-url-field">
-                      <span>رابط الصورة</span>
-                      <input
-                        value={ingredient.imageUrl}
-                        onChange={(event) => updateIngredient(index, { imageUrl: event.target.value })}
-                        placeholder="https://..."
-                      />
-                    </label>
-                    <button type="button" className="ingredient-remove" onClick={() => removeIngredient(index)} aria-label="حذف المكون">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <button type="button" className="ingredient-empty-add" onClick={() => addIngredient()}>
-                <Plus size={16} />
-                إضافة أول مكون
-              </button>
-            )}
-          </div>
-
-          {productId || configurationMode === "LEGACY" ? <label>
-            <span>السعر</span>
-            <input
-              className="no-number-spin"
-              value={form.basePrice}
-              onChange={(event) => update("basePrice", event.target.value)}
-              type="number"
-              min="0"
-              step="0.000001"
-              required={!productId}
-              disabled={Boolean(productId && configurationMode === "NETWORK")}
-            />
-            {productId && configurationMode === "NETWORK" ? <small className="field-hint">يُدار السعر الأساسي لمنتج Network من محرر الشبكة فقط، ويمكن تركه null دون تحويله إلى صفر.</small> : null}
-          </label> : null}
-
-          <label>
-            <span>العملة</span>
-            <input value={form.currency} onChange={(event) => update("currency", event.target.value)} />
-          </label>
-
-          <section className="meal-details-editor full">
-            <div className="field-row-head">
-              <span>تفاصيل الوجبة</span>
-              <button type="button" onClick={addMealDetail}>
-                <Plus size={16} />
-                إضافة تفصيل
-              </button>
-            </div>
-            <div className="meal-detail-library-picker">
-              <label className="ingredient-search-field">
-                <span>بحث في التفاصيل المحفوظة</span>
-                <input
-                  value={mealDetailSearch}
-                  onChange={(event) => setMealDetailSearch(event.target.value)}
-                  placeholder="ابحث باسم التفصيل أو قيمته..."
-                />
-              </label>
-              {mealDetailSearch || filteredMealDetailSuggestions.length || mealDetailLibraryStatus !== "idle" ? (
-                <div className="meal-detail-suggestion-list">
-                  {mealDetailLibraryStatus === "loading" ? <span className="ingredient-suggestion-note">جاري تحميل التفاصيل...</span> : null}
-                  {mealDetailLibraryStatus === "error" ? <span className="ingredient-suggestion-note">تعذر تحميل التفاصيل المحفوظة.</span> : null}
-                  {filteredMealDetailSuggestions.map((detail) => {
-                    const DetailIcon = detailIconComponent(detail.icon);
-
-                    return (
-                      <button
-                        key={mealDetailKey(detail)}
-                        type="button"
-                        className="meal-detail-suggestion"
-                        onClick={() => addExistingMealDetail(detail)}
-                      >
-                        {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={16} />}
-                        <span>
-                          {detail.adminName ?? detail.label}
-                          <small>يظهر للزبون: {detail.displayName ?? detail.label}</small>
-                        </span>
-                        {detail.value ? <b>{detail.value}</b> : null}
-                        <small>{detail.usageCount ?? 0}x</small>
-                      </button>
-                    );
-                  })}
-                  {mealDetailSearch && !filteredMealDetailSuggestions.length && mealDetailLibraryStatus === "idle" ? (
-                    <span className="ingredient-suggestion-note">لا يوجد تفصيل مطابق أو تمت إضافته مسبقاً.</span>
-                  ) : null}
-                </div>
-              ) : null}
-              <label className="ingredient-search-field">
-                <span>بحث في مكتبة الأيقونات</span>
-                <input
-                  value={detailIconSearch}
-                  onChange={(event) => setDetailIconSearch(event.target.value)}
-                  placeholder="مثال: وزن، لحم، وقت..."
-                />
-              </label>
-            </div>
-            {form.mealDetails.length ? (
-              <div className="meal-detail-form-list">
-                {form.mealDetails.map((detail, index) => {
-                  const DetailIcon = detailIconComponent(detail.icon);
-
-                  return (
-                    <div className="meal-detail-form-row" key={`meal-detail-${index}`}>
-                      <span className="meal-detail-icon-preview" aria-hidden="true">
-                        {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={18} />}
-                      </span>
-                      <label>
-                        <span>اسم التفصيل</span>
-                        <input
-                          value={detail.label}
-                          onChange={(event) => updateMealDetail(index, { label: event.target.value })}
-                          placeholder="الوزن التقريبي"
-                        />
-                        {detail.adminName ? <small>اسم الإدارة: {detail.adminName} - يظهر للزبون: {detail.displayName ?? detail.label}</small> : null}
-                      </label>
-                      <label>
-                        <span>القيمة</span>
-                        <input
-                          value={detail.value}
-                          onChange={(event) => updateMealDetail(index, { value: event.target.value })}
-                          placeholder="350 غ"
-                        />
-                      </label>
-                      <div className="meal-detail-icon-library">
-                        <span>الأيقونة</span>
-                        <div>
-                          {filteredDetailIconOptions.map((option) => {
-                            const Icon = option.icon;
-
-                            return (
-                              <button
-                                key={option.key}
-                                type="button"
-                                className={detail.icon === option.key ? "selected" : ""}
-                                onClick={() => updateMealDetail(index, { icon: option.key, iconUrl: "" })}
-                                title={option.label}
-                                aria-label={option.label}
-                              >
-                                <Icon size={16} />
-                              </button>
-                            );
-                          })}
-                          {!filteredDetailIconOptions.length ? <small>لا توجد أيقونة مطابقة.</small> : null}
-                        </div>
-                        <label className="meal-detail-custom-icon">
-                          <span>أيقونة مخصصة</span>
-                          <input
-                            accept="image/*"
-                            disabled={!selectedRestaurantId || uploadStatus === "uploading"}
-                            onChange={(event) => handleMealDetailIconUpload(index, event)}
-                            type="file"
-                          />
-                          <input
-                            value={detail.iconUrl ?? ""}
-                            onChange={(event) => updateMealDetail(index, { iconUrl: event.target.value })}
-                            placeholder="https://..."
-                          />
-                        </label>
-                      </div>
-                      <button type="button" className="ingredient-remove" onClick={() => removeMealDetail(index)} aria-label="حذف التفصيل">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <button type="button" className="ingredient-empty-add" onClick={addMealDetail}>
-                <Plus size={16} />
-                إضافة أول تفصيل
-              </button>
-            )}
-          </section>
-
-          <label className="full">
-            <span>صورة المنتج</span>
-            <input accept="image/*" disabled={!selectedRestaurantId || uploadStatus === "uploading"} onChange={handleImageUpload} type="file" />
-          </label>
-
-          <label className="full">
-            <span>رابط الصورة بعد الرفع</span>
-            <input value={form.imageUrl} onChange={(event) => setPrimaryImage(event.target.value)} />
-          </label>
-
-          <section className="product-gallery-manager full">
-            <div className="product-gallery-head">
-              <div>
-                <span>صور المنتج الإضافية</span>
-                <small>أول صورة هي الصورة الرئيسية. يمكنك ترتيب الصور التي تظهر في صفحة المنتج.</small>
-              </div>
-              <button type="button" onClick={() => addProductImageUrl()}>
-                <Plus size={16} />
-                رابط صورة
-              </button>
-            </div>
-            <label className="gallery-upload-button">
-              <ImagePlus size={18} />
-              <span>رفع عدة صور</span>
-              <input
-                accept="image/*"
-                disabled={!selectedRestaurantId || uploadStatus === "uploading"}
-                multiple
-                onChange={handleGalleryImagesUpload}
-                type="file"
-              />
-            </label>
-            <div className="product-gallery-list">
-              {productGalleryUrls.map((url, index) => (
-                <article key={`${url}-${index}`} className="product-gallery-row">
-                  <span className="gallery-thumb">
-                    {url ? <img src={url} alt="" /> : <ImagePlus size={18} />}
-                  </span>
-                  <label>
-                    <small>{index === 0 ? "الصورة الرئيسية" : `صورة ${index + 1}`}</small>
-                    <input value={url} onChange={(event) => updateProductImageUrl(index, event.target.value)} placeholder="https://..." />
-                  </label>
-                  <div>
-                    <button type="button" onClick={() => moveProductImage(index, -1)} disabled={index === 0}>
-                      <ArrowRight size={15} />
-                    </button>
-                    <button type="button" onClick={() => moveProductImage(index, 1)} disabled={index === productGalleryUrls.length - 1}>
-                      <ArrowRight size={15} className="flip" />
-                    </button>
-                    <button type="button" onClick={() => removeProductImage(index)}>
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <label className="full">
-            <span>رفع ملف 3D للوجبة</span>
-            <input
-              accept=".glb,.gltf,.usdz,model/gltf-binary,model/gltf+json"
-              disabled={!selectedRestaurantId || modelUploadStatus === "uploading"}
-              onChange={handleModelUpload}
-              type="file"
-            />
-            <small className="field-hint">ارفع GLB/GLTF للمشاهدة داخل الصفحة. للآيفون وQuick Look الأفضل توفير ملف USDZ.</small>
-          </label>
-
-          <label className="full">
-            <span>رابط ملف 3D للوجبة</span>
-            <input value={form.model3dUrl} onChange={(event) => update("model3dUrl", event.target.value)} placeholder="https://.../meal.glb" />
-          </label>
-
-          <label>
-            <span>نوع ملف 3D</span>
-            <select value={form.model3dFormat} onChange={(event) => update("model3dFormat", event.target.value)}>
-              <option value="GLB">GLB</option>
-              <option value="GLTF">GLTF</option>
-              <option value="USDZ">USDZ</option>
-            </select>
-          </label>
-
-          <label>
-            <span>رابط VR / بانوراما</span>
-            <input value={form.vrUrl} onChange={(event) => update("vrUrl", event.target.value)} placeholder="https://.../panorama.jpg" />
-          </label>
-
-          <label className="checkbox-row full">
-            <input
-              checked={form.isPopular}
-              onChange={(event) => update("isPopular", event.target.checked)}
-              type="checkbox"
-            />
-            <span>عرض المنتج ضمن الأكثر طلباً</span>
-          </label>
-
-          <label className="checkbox-row full">
-            <input
-              checked={form.isNew}
-              onChange={(event) => update("isNew", event.target.checked)}
-              type="checkbox"
-            />
-            <span>عرض المنتج ضمن جديدنا</span>
-          </label>
-
-          {uploadStatus === "uploading" ? <p className="form-message success">يتم رفع الصورة...</p> : null}
-          {modelUploadStatus === "uploading" ? <p className="form-message success">يتم رفع ملف 3D...</p> : null}
-          {message ? <p className={status === "success" ? "form-message success" : "form-message"}>{message}</p> : null}
-        </div>
-
-        <aside className="product-preview-card">
-          <div>
-            <ImagePlus size={32} />
-            <span>معاينة المنتج</span>
-          </div>
-          {form.imageUrl ? (
-            <img src={form.imageUrl} alt={form.name || "معاينة"} />
-          ) : (
-            <span className="product-preview-placeholder" aria-hidden="true">
-              <ImagePlus size={34} />
-            </span>
-          )}
-          <h2>{form.name || "اسم المنتج"}</h2>
-          <p>{form.description || "وصف مختصر للمنتج سيظهر هنا."}</p>
-          {form.ingredients.length ? <small>{form.ingredients.map((item) => item.name.trim()).filter(Boolean).join(" - ")}</small> : null}
-          <b>
-            {configurationMode === "NETWORK" ? productId ? "السعر من شبكة التكوين" : "شبكة غير مسعّرة بعد" : form.basePrice.trim() ? displayCurrencyAmount(form.basePrice, form.currency) : "لا يوجد سعر أساسي"}
-          </b>
-        </aside>
-      </section>
+        <button type="button" disabled={status === "saving"} onClick={requestClose}>إلغاء</button>
+      </footer>
     </form>
-    {productId && selectedRestaurantId ? (
-      <ProductConfigurationEditor
-        productId={productId}
-        productName={form.name}
-        currency={form.currency}
-        restaurantId={selectedRestaurantId}
-        onDirtyChange={setConfigurationDirty}
-        onSaved={(saved) => {
-          setConfigurationMode(saved.mode);
-          setForm((current) => ({ ...current, basePrice: saved.basePrice ?? "" }));
-        }}
-      />
-    ) : null}
-    </>
+    </dialog>
   );
 }

@@ -1,3 +1,4 @@
+import { feedbackMode, restaurantMapsUrl, googleMapsShareUrl } from "@menu/shared";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { defaultSectionSettings } from "@menu/shared";
 import { Prisma } from "@prisma/client";
@@ -25,6 +26,22 @@ type DashboardBanner = {
   isActive: boolean;
   sortOrder: number;
 };
+
+const zones: Record<string, string> = {
+  sy: "Asia/Damascus", syria: "Asia/Damascus", "سوريا": "Asia/Damascus", "سورية": "Asia/Damascus",
+  de: "Europe/Berlin", germany: "Europe/Berlin", "ألمانيا": "Europe/Berlin",
+  tr: "Europe/Istanbul", turkey: "Europe/Istanbul", "تركيا": "Europe/Istanbul",
+  sa: "Asia/Riyadh", "السعودية": "Asia/Riyadh", ae: "Asia/Dubai", "الإمارات": "Asia/Dubai",
+  lb: "Asia/Beirut", "لبنان": "Asia/Beirut", jo: "Asia/Amman", "الأردن": "Asia/Amman"
+};
+const currencyZones: Record<string, string> = {
+  SYP: "Asia/Damascus", "ل.س": "Asia/Damascus", SAR: "Asia/Riyadh", AED: "Asia/Dubai",
+  TRY: "Europe/Istanbul", JOD: "Asia/Amman", LBP: "Asia/Beirut"
+};
+export function marketTimeZone(country: string | null, currency: string) {
+  const key = country?.trim().toLowerCase();
+  return key ? zones[key] ?? "UTC" : currencyZones[currency.trim().toUpperCase()] ?? "UTC";
+}
 
 @Injectable()
 export class DashboardService {
@@ -60,6 +77,7 @@ export class DashboardService {
       id: restaurant.id,
       name: restaurant.name,
       slug: restaurant.slug,
+      currency: restaurant.currency,
       type: restaurant.type,
       logoUrl: restaurant.logoUrl,
       heroImageUrl: restaurant.heroImageUrl,
@@ -87,79 +105,51 @@ export class DashboardService {
     };
   }
 
-  async overview(restaurantId: string) {
-    const [
-      products,
-      categories,
-      branches,
-      orders,
-      visits,
-      todayVisits,
-      whatsappClicks,
-      features,
-      newProducts,
-      unavailableProducts,
-      viewedEvents
-    ] = await Promise.all([
-      this.prisma.product.count({ where: { restaurantId, deletedAt: null } }),
-      this.prisma.category.count({ where: { restaurantId, deletedAt: null } }),
-      this.prisma.branch.count({ where: { restaurantId, deletedAt: null } }),
-      this.prisma.order.count({ where: { restaurantId } }),
-      this.prisma.analyticsEvent.count({ where: { restaurantId, type: "MENU_VIEWED" } }),
-      this.prisma.analyticsEvent.count({
-        where: { restaurantId, type: "MENU_VIEWED", createdAt: { gte: this.startOfToday() } }
-      }),
-      this.prisma.analyticsEvent.count({ where: { restaurantId, type: "WHATSAPP_ORDER_CLICKED" } }),
-      this.featureFlags.listFeatures(restaurantId),
-      this.prisma.product.findMany({
-        where: { restaurantId, deletedAt: null, isNew: true },
-        include: { category: true, images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } },
-        orderBy: { createdAt: "desc" },
-        take: 8
-      }),
-      this.prisma.product.findMany({
-        where: { restaurantId, deletedAt: null, isAvailable: false },
-        include: { category: true, images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-        take: 8
-      }),
-      this.prisma.analyticsEvent.findMany({
-        where: { restaurantId, type: "PRODUCT_VIEWED" },
-        orderBy: { createdAt: "desc" },
-        take: 500
-      })
-    ]);
-    const topViewed = await this.topViewedProducts(restaurantId, viewedEvents);
-
-    return {
-      cards: {
-        todayViews: todayVisits,
-        menuViews: visits,
-        productsCount: products,
-        products,
-        categories,
-        branches,
-        orders,
-        visits,
-        todayVisits,
-        whatsappClicks
-      },
-      lists: {
-        topViewedProducts: topViewed,
-        topViewed,
-        newProducts: newProducts.map((product) => this.serializeProductSummary(product)),
-        unavailableProducts: unavailableProducts.map((product) => this.serializeProductSummary(product))
-      },
-      lockedHighlights: [
-        "PRODUCT_VR_VIEWER",
-        "CUSTOM_DOMAIN",
-        "WHITE_LABEL",
-        "ANALYTICS_ADVANCED"
-      ].map((key) => ({
-        key,
-        locked: !features.some((feature) => feature.key === key && feature.enabled)
-      }))
+  async overview(restaurantId: string, period = "1", showFeedback = false, rankingOnly = false) {
+    if (!["1", "7", "30"].includes(period)) throw new BadRequestException("Invalid period");
+    const { country, currency } = await this.prisma.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId }, select: { country: true, currency: true }
+    });
+    const zone = marketTimeZone(country, currency);
+    const updatedAt = new Date();
+    const [window] = await this.prisma.$queryRaw<Array<{ start: Date }>>`
+      SELECT (((timezone(${zone}, ${updatedAt}::timestamptz)::date - ${Number(period) - 1}::int)
+        ::timestamp AT TIME ZONE ${zone}) AT TIME ZONE 'UTC') AS start`;
+    const createdAt = { gte: window.start, lte: updatedAt };
+    const ranking = await this.prisma.$queryRaw<Array<{ id: string; name: string; views: number; imageUrl: string | null }>>`
+      WITH counts AS (
+        SELECT p.id, COUNT(*)::int AS views FROM "AnalyticsEvent" e
+        JOIN "Product" p ON p."restaurantId" = e."restaurantId" AND p."deletedAt" IS NULL AND
+          (p.id = e.metadata->>'productId' OR
+          (e.metadata->>'productId' IS NULL AND p.slug = e.metadata->>'productSlug'))
+        WHERE e."restaurantId" = ${restaurantId} AND e.type = 'PRODUCT_VIEWED'
+          AND e."createdAt" BETWEEN ${window.start} AND ${updatedAt}
+        GROUP BY p.id ORDER BY views DESC, p.id LIMIT ${rankingOnly ? Prisma.sql`ALL` : Prisma.sql`5`}
+      )
+      SELECT p.id, p.name, counts.views, (SELECT i.url FROM "ProductImage" i
+        WHERE i."productId" = p.id AND i."isActive" ORDER BY i."sortOrder", i.id LIMIT 1) AS "imageUrl"
+      FROM counts JOIN "Product" p USING (id) ORDER BY counts.views DESC, p.id`;
+    const summary = { zone, updatedAt, start: window.start, lists: { topViewedProducts: ranking } };
+    if (rankingOnly) return summary;
+    const review = async (condition: Prisma.ProductWhereInput) => {
+      const where = { restaurantId, deletedAt: null, ...condition };
+      const [count, items] = await Promise.all([
+        this.prisma.product.count({ where }),
+        this.prisma.product.findMany({ where, select: { id: true, name: true }, orderBy: { id: "asc" }, take: 3 })
+      ]);
+      return { count, items };
     };
+    const [visits, views, unavailable, missingImage, feedback] = await Promise.all([
+      this.prisma.analyticsEvent.count({ where: { restaurantId, createdAt, type: "MENU_VIEWED" } }),
+      this.prisma.analyticsEvent.count({ where: { restaurantId, createdAt, type: "PRODUCT_VIEWED" } }),
+      review({ isAvailable: false }), review({ images: { none: { isActive: true } } }),
+      showFeedback ? this.prisma.restaurantFeedback.findMany({
+        where: { restaurantId }, take: 3, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true, stars: true, comment: true, createdAt: true }
+      }) : null
+    ]);
+    return { ...summary, visits, views, unavailable, missingImage,
+      feedback: feedback?.map(row => ({ ...row, comment: row.comment?.slice(0, 140) })) ?? null };
   }
 
   branches(restaurantId: string) {
@@ -227,26 +217,30 @@ export class DashboardService {
   }
 
   async deleteBranch(restaurantId: string, id: string) {
-    const branchCount = await this.prisma.branch.count({ where: { restaurantId, deletedAt: null } });
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize branch removals per tenant before counting its live branches.
+      await tx.$queryRaw`SELECT id FROM "Restaurant" WHERE id = ${restaurantId} FOR UPDATE`;
+      const branchCount = await tx.branch.count({ where: { restaurantId, deletedAt: null } });
 
-    if (branchCount <= 1) {
-      throw new BadRequestException("Restaurant must keep at least one branch");
-    }
-
-    const branch = await this.prisma.branch.findFirst({
-      where: { id, restaurantId, deletedAt: null }
-    });
-
-    if (!branch) {
-      throw new BadRequestException("Branch not found");
-    }
-
-    return this.prisma.branch.update({
-      where: { id },
-      data: {
-        isActive: false,
-        deletedAt: new Date()
+      if (branchCount <= 1) {
+        throw new BadRequestException("Restaurant must keep at least one branch");
       }
+
+      const branch = await tx.branch.findFirst({
+        where: { id, restaurantId, deletedAt: null }
+      });
+
+      if (!branch) {
+        throw new BadRequestException("Branch not found");
+      }
+
+      return tx.branch.update({
+        where: { id },
+        data: {
+          isActive: false,
+          deletedAt: new Date()
+        }
+      });
     });
   }
 
@@ -450,27 +444,21 @@ export class DashboardService {
   }
 
   async reorderCategories(restaurantId: string, items: Array<{ id: string; sortOrder: number }>) {
-    const categories = await this.prisma.category.findMany({
-      where: { restaurantId, id: { in: items.map((item) => item.id) }, deletedAt: null },
-      select: { id: true, slug: true }
-    });
-    const ownedIds = new Set(categories.map((category) => category.id));
-    const protectedIds = new Set(categories.filter((category) => category.slug === "all").map((category) => category.id));
-
-    if (ownedIds.size !== items.length) {
-      throw new NotFoundException("One or more categories were not found");
-    }
-
-    await this.prisma.$transaction(
-      items.map((item) =>
-        this.prisma.category.update({
-          where: { id: item.id },
-          data: { sortOrder: protectedIds.has(item.id) ? 0 : Math.max(1, item.sortOrder) }
-        })
-      )
-    );
-
-    await this.ensureAllCategory(restaurantId);
+    await this.prisma.$transaction(async tx => {
+      const catalog = await tx.category.findMany({
+        where: { restaurantId, deletedAt: null }, select: { id: true, slug: true }
+      });
+      const ranks = new Map(items.map(item => [item.id, item.sortOrder]));
+      const selected = catalog.filter(row => ranks.has(row.id));
+      if (!items.length || selected.length !== items.length) throw new BadRequestException("Invalid reorder scope");
+      if (new Set(ranks.values()).size !== items.length) throw new BadRequestException("Duplicate ranks");
+      if (catalog.length !== items.length || catalog.some(row => row.slug === "all" ? ranks.get(row.id) !== 0 : ranks.get(row.id) === 0)) {
+        throw new BadRequestException("Submit the complete category order with All first");
+      }
+      for (const item of items) {
+        await tx.category.update({ where: { id: item.id, restaurantId }, data: { sortOrder: item.sortOrder } });
+      }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return this.categories(restaurantId, { page: 1, limit: Math.max(items.length, 20), sort: "sortOrder" });
   }
@@ -528,7 +516,7 @@ export class DashboardService {
     }
 
     const dnsVerified = await this.hasDomainVerificationTxt(domain.domain, domain.verificationToken);
-    const allowDevBypass = process.env.DOMAIN_VERIFY_BYPASS === "true";
+    const allowDevBypass = process.env.NODE_ENV === "development" && process.env.DOMAIN_VERIFY_BYPASS === "true";
 
     if (!dnsVerified && !allowDevBypass) {
       return this.prisma.customDomain.update({
@@ -719,6 +707,10 @@ export class DashboardService {
         city: restaurant.city,
         country: restaurant.country,
         address: branch?.address ?? "",
+        latitude: branch?.latitude ?? null,
+        longitude: branch?.longitude ?? null,
+        feedbackMode: feedbackMode(dashboardSettings.feedbackMode),
+        googleMapsUrl: googleMapsShareUrl(dashboardSettings.googleMapsUrl) ?? "",
         whatsappPhone: restaurant.whatsappPhone,
         phone: dashboardSettings.phone ?? "",
         email: dashboardSettings.email ?? "",
@@ -755,6 +747,13 @@ export class DashboardService {
       }
     });
     const branch = current.branches[0] ?? null;
+    if (dto.googleMapsUrl?.trim() && !googleMapsShareUrl(dto.googleMapsUrl)) throw new BadRequestException("Invalid Google Maps URL");
+    const changesLocation = dto.latitude !== undefined || dto.longitude !== undefined;
+    const latitude = dto.latitude !== undefined ? dto.latitude : branch?.latitude;
+    const longitude = dto.longitude !== undefined ? dto.longitude : branch?.longitude;
+    if (changesLocation && (latitude != null || longitude != null) && (!branch || !restaurantMapsUrl(latitude, longitude))) {
+      throw new BadRequestException("Provide a valid latitude and longitude together");
+    }
     const existingSettings = this.asJsonObject(current.themeSettings?.settings);
     const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
     const deliveryFee = dto.deliveryFee === undefined
@@ -780,10 +779,10 @@ export class DashboardService {
       }
     });
 
-    if (branch && dto.address !== undefined) {
+    if (branch && (dto.address !== undefined || changesLocation)) {
       await this.prisma.branch.update({
         where: { id: branch.id },
-        data: { address: dto.address }
+        data: { ...(dto.address !== undefined ? {address: dto.address} : {}), ...(changesLocation ? {latitude,longitude} : {}) }
       });
     }
 
@@ -806,6 +805,8 @@ export class DashboardService {
 
     const nextDashboardSettings = {
       ...existingDashboardSettings,
+      feedbackMode: feedbackMode(dto.feedbackMode ?? existingDashboardSettings.feedbackMode),
+      googleMapsUrl: dto.googleMapsUrl !== undefined ? googleMapsShareUrl(dto.googleMapsUrl) ?? "" : existingDashboardSettings.googleMapsUrl ?? "",
       ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
       ...(dto.email !== undefined ? { email: dto.email } : { email: existingDashboardSettings.email ?? "" }),
       ...(dto.instagramUrl !== undefined ? { instagramUrl: dto.instagramUrl } : { instagramUrl: existingDashboardSettings.instagramUrl ?? "" }),
@@ -884,85 +885,10 @@ export class DashboardService {
   private async hasDomainVerificationTxt(domain: string, token: string) {
     try {
       const records = await resolveTxt(domain);
-      return records.flat().some((record) => record.includes(token));
+      return Boolean(token) && records.some((chunks) => chunks.join("") === token);
     } catch {
       return false;
     }
-  }
-
-  private startOfToday() {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    return date;
-  }
-
-  private async topViewedProducts(restaurantId: string, events: Array<{ metadata: Prisma.JsonValue }>) {
-    const counts = new Map<string, number>();
-
-    for (const event of events) {
-      const metadata = this.asJsonObject(event.metadata);
-      const key =
-        typeof metadata.productId === "string"
-          ? `id:${metadata.productId}`
-          : typeof metadata.productSlug === "string"
-            ? `slug:${metadata.productSlug}`
-            : null;
-      if (key) {
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
-    }
-
-    const keys = [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([id]) => id);
-
-    if (!keys.length) {
-      const fallback = await this.prisma.product.findMany({
-        where: { restaurantId, deletedAt: null },
-        include: { category: true, images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } },
-        orderBy: [{ isPopular: "desc" }, { createdAt: "desc" }],
-        take: 8
-      });
-
-      return fallback.map((product) => this.serializeProductSummary(product, 0));
-    }
-
-    const products = await this.prisma.product.findMany({
-      where: {
-        restaurantId,
-        deletedAt: null,
-        OR: [
-          { id: { in: keys.filter((key) => key.startsWith("id:")).map((key) => key.slice(3)) } },
-          { slug: { in: keys.filter((key) => key.startsWith("slug:")).map((key) => key.slice(5)) } }
-        ]
-      },
-      include: { category: true, images: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } }
-    });
-    const byKey = new Map<string, any>();
-    products.forEach((product) => {
-      byKey.set(`id:${product.id}`, product);
-      byKey.set(`slug:${product.slug}`, product);
-    });
-
-    return keys
-      .map((key) => {
-        const product = byKey.get(key);
-        return product ? this.serializeProductSummary(product, counts.get(key) ?? 0) : null;
-      })
-      .filter((product): product is NonNullable<typeof product> => Boolean(product));
-  }
-
-  private serializeProductSummary(product: any, views = 0) {
-    return {
-      id: product.id,
-      name: product.name,
-      categoryName: product.category?.name ?? "",
-      imageUrl: product.images?.[0]?.url ?? null,
-      views,
-      isAvailable: product.isAvailable,
-      isNew: product.isNew
-    };
   }
 
   private async ensureHeroSection(restaurantId: string) {
@@ -1170,38 +1096,64 @@ export class DashboardService {
   }
 
   private async ensureAllCategory(restaurantId: string) {
-    const existing = await this.prisma.category.findFirst({
-      where: { restaurantId, slug: "all", deletedAt: null },
-      select: { id: true, isActive: true, sortOrder: true, name: true }
-    });
-
-    if (existing) {
-      if (!existing.isActive || existing.sortOrder !== 0 || existing.name !== "الكل") {
-        await this.prisma.category.update({
-          where: { id: existing.id },
-          data: { name: "الكل", isActive: true, sortOrder: 0 }
+    const where = { restaurantId_slug: { restaurantId, slug: "all" } };
+    // The unique key also covers soft-deleted rows. Reuse the existing row
+    // rather than inserting a conflicting second "all" category.
+    const normalize = async (category: {
+      id: string; name: string; sortOrder: number; isActive: boolean; deletedAt: Date | null;
+    }) => {
+      if (category.deletedAt !== null || !category.isActive
+        || category.sortOrder !== 0 || category.name !== "الكل") {
+        return this.prisma.category.update({
+          where: { id: category.id },
+          data: { deletedAt: null, name: "الكل", isActive: true, sortOrder: 0 }
         });
       }
-      return existing;
-    }
+      return category;
+    };
 
-    return this.prisma.category.create({
-      data: {
-        restaurantId,
-        name: "الكل",
-        slug: "all",
-        description: "كل الأصناف",
-        imagePosition: "78,50",
-        imageWidth: 34,
-        imageHeight: 34,
-        color: "#ed1f2b",
-        backgroundType: "GRADIENT",
-        backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
-        visualScrollEnabled: false,
-        sortOrder: 0,
-        isActive: true
-      }
+    const existing = await this.prisma.category.findUnique({
+      where,
+      select: { id: true, name: true, sortOrder: true, isActive: true, deletedAt: true }
     });
+    if (existing) return normalize(existing);
+
+    try {
+      return await this.prisma.category.create({
+        data: {
+          restaurantId,
+          name: "الكل",
+          slug: "all",
+          description: "كل الأصناف",
+          imagePosition: "78,50",
+          imageWidth: 34,
+          imageHeight: 34,
+          color: "#ed1f2b",
+          backgroundType: "GRADIENT",
+          backgroundValue: "linear-gradient(135deg, #ed1f2b, #7f1118)",
+          visualScrollEnabled: false,
+          sortOrder: 0,
+          isActive: true
+        }
+      });
+    } catch (error) {
+      // Concurrent dashboard requests may both observe a missing row. Only
+      // recover the exact (restaurantId, slug) unique race, not unrelated
+      // SQL errors such as another primary-key conflict.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError)
+        || error.code !== "P2002") throw error;
+      const target = error.meta?.target;
+      const slugRace = Array.isArray(target)
+        ? target.length === 2 && target.includes("restaurantId") && target.includes("slug")
+        : target === "Category_restaurantId_slug_key";
+      if (!slugRace) throw error;
+      const created = await this.prisma.category.findUnique({
+        where,
+        select: { id: true, name: true, sortOrder: true, isActive: true, deletedAt: true }
+      });
+      if (!created) throw error;
+      return normalize(created);
+    }
   }
 
   private async nextCategorySortOrder(restaurantId: string) {

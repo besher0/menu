@@ -1,0 +1,29 @@
+# Replace STAGING_HOST and TLS certificate paths. Dedicated staging host only.
+# This proxy must be the only public route to the loopback Node services.
+server {
+    listen 443 ssl;
+    server_name STAGING_HOST *.STAGING_HOST;
+    ssl_certificate /etc/letsencrypt/live/STAGING_HOST/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/STAGING_HOST/privkey.pem;
+    client_max_body_size 80m;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-OrderSawa-Internal-Restaurant-Rewrite "";
+        proxy_set_header X-OrderSawa-Internal-Restaurant-Slug "";
+        proxy_read_timeout 60s;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-OrderSawa-Internal-Restaurant-Rewrite "";
+        proxy_set_header X-OrderSawa-Internal-Restaurant-Slug "";
+    }
+}

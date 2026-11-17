@@ -1,12 +1,12 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { BadRequestException } from "@nestjs/common";
 import { parsePublicQuoteSelection } from "../public-menu/public-product-quote";
-import type { ProductSelectionV1 } from "@menu/shared";
+import type { ProductSelectionV2 } from "@menu/shared";
 
 export type NetworkOrderLineRequest = {
   productId: string;
   quantity: number;
-  selection: ProductSelectionV1;
+  selection: ProductSelectionV2;
   note?: string;
 };
 

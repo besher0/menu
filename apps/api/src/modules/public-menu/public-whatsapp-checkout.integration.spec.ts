@@ -3,8 +3,9 @@ import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { PrismaClient } from "@prisma/client";
 import { ABO_MALEK_THEME } from "@menu/shared";
-import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { randomBytes, randomUUID } from "node:crypto";
+import { ProductsService } from "../products/products.service";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -22,7 +23,7 @@ if (url) {
 }
 const integration = url ? describe : describe.skip;
 
-const pizza = { schemaVersion: 1, productId: "s6e2-pizza", revision: 1, basePrice: null,
+const pizza = { schemaVersion: 2, productId: "s6e2-pizza", revision: 1, basePrice: null,
   groups: [
     { type: "SIZE", id: "sizes", label: "Sizes", sizes: [
       { id: "small", label: "Small", price: "100" }, { id: "medium", label: "Medium", price: "200.000001" },
@@ -33,41 +34,41 @@ const pizza = { schemaVersion: 1, productId: "s6e2-pizza", revision: 1, basePric
         children: [{ type: "OPTIONS", id: "sauces", label: "Sauces", min: 0, max: 1, includedQuantity: 0,
           options: [{ id: "bbq", label: "BBQ", price: "5.000001", maxQuantity: 1 }] }] }] }
   ] };
-const source = { schemaVersion: 1, productId: "s6e2-source", revision: 1, basePrice: null,
+const source = { schemaVersion: 2, productId: "s6e2-source", revision: 1, basePrice: null,
   groups: [{ type: "SIZE", id: "source-sizes", label: "Source sizes", sizes: [
     { id: "source-small", label: "Small", price: "100" }, { id: "source-large", label: "Large", price: "200" }
   ] }] };
-const combo = { schemaVersion: 1, productId: "s6e2-combo", revision: 1, basePrice: "0",
+const combo = { schemaVersion: 2, productId: "s6e2-combo", revision: 1, basePrice: "0",
   groups: [{ type: "OPTIONS", id: "slots", label: "Slots", min: 3, max: 3, includedQuantity: 0, options: [
     { id: "original", label: "First pizza", price: "10", maxQuantity: 1,
-      linkedProduct: { sourceProductId: "s6e2-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
+      linkedProduct: { sourceProductId: "s6e2-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": { price: "5" }, "source-large": { price: "8" } } } },
     { id: "second-original", label: "Second pizza", price: "10", maxQuantity: 1,
-      linkedProduct: { sourceProductId: "s6e2-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": "5", "source-large": "8" } } },
+      linkedProduct: { sourceProductId: "s6e2-source", mode: "ORIGINAL", originalPriceOverrides: { "source-small": { price: "5" }, "source-large": { price: "8" } } } },
     { id: "custom", label: "Extra pizza", price: "3", maxQuantity: 1,
       linkedProduct: { sourceProductId: "s6e2-source", mode: "CUSTOM", customConfiguration: {
-        schemaVersion: 1, productId: "s6e2-source", revision: 1, basePrice: null,
+        schemaVersion: 2, productId: "s6e2-source", revision: 1, basePrice: null,
         groups: [{ type: "SIZE", id: "custom-sizes", label: "Pizza sizes", sizes: [{ id: "custom-one", label: "Medium", price: "7" }] }]
       } } }
   ] }] };
-const pizzaSelection = (revision = 1) => ({ schemaVersion: 1, productId: "s6e2-pizza", configurationRevision: revision, groups: [
+const pizzaSelection = (revision = 1) => ({ schemaVersion: 2, productId: "s6e2-pizza", configurationRevision: revision, groups: [
   { type: "SIZE", groupId: "sizes", sizeChoiceId: "medium" },
   { type: "OPTIONS", groupId: "toppings", instances: [
     { instanceId: "cheese-1", optionId: "cheese", children: [{ type: "OPTIONS", groupId: "sauces", instances: [{ instanceId: "sauce-1", optionId: "bbq" }] }] },
     { instanceId: "cheese-2", optionId: "cheese" }, { instanceId: "cheese-3", optionId: "cheese" }
   ] }
 ] });
-const comboSelection = () => ({ schemaVersion: 1, productId: "s6e2-combo", configurationRevision: 1, groups: [{
+const comboSelection = () => ({ schemaVersion: 2, productId: "s6e2-combo", configurationRevision: 1, groups: [{
   type: "OPTIONS", groupId: "slots", instances: [
-    { instanceId: "z-first", optionId: "original", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
+    { instanceId: "z-first", optionId: "original", linkedSelection: { schemaVersion: 2, productId: "s6e2-source", configurationRevision: 1,
       groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: "source-small" }] } },
-    { instanceId: "z-second", optionId: "second-original", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
+    { instanceId: "z-second", optionId: "second-original", linkedSelection: { schemaVersion: 2, productId: "s6e2-source", configurationRevision: 1,
       groups: [{ type: "SIZE", groupId: "source-sizes", sizeChoiceId: "source-large" }] } },
-    { instanceId: "a-third", optionId: "custom", linkedSelection: { schemaVersion: 1, productId: "s6e2-source", configurationRevision: 1,
+    { instanceId: "a-third", optionId: "custom", linkedSelection: { schemaVersion: 2, productId: "s6e2-source", configurationRevision: 1,
       groups: [{ type: "SIZE", groupId: "custom-sizes", sizeChoiceId: "custom-one" }] } }
   ]
 }] });
 
-const legacyLine = { mode: "LEGACY", lineId: "legacy:legacy", productSlug: "legacy", quantity: 2, expectedUnitPrice: "12.000001" };
+const legacyLine = { mode: "LEGACY", lineId: "legacy:legacy", productId: "s6e2-legacy", productSlug: "legacy", quantity: 2, expectedUnitPrice: "12.000001" };
 const networkLine = { mode: "NETWORK", lineId: "network-pizza", productId: "s6e2-pizza", quantity: 2,
   selection: pizzaSelection(), expectedUnitPrice: "265.000004" };
 const comboLine = { mode: "NETWORK", lineId: "network-combo", productId: "s6e2-combo", quantity: 1,
@@ -158,7 +159,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
 
   beforeEach(async () => {
     await setShowPrices(true);
-    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { name: "Pizza Margherita", configurationTree: pizza, configurationVersion: 1, isAvailable: true } });
+    await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { deletedAt: null, name: "Pizza Margherita", configurationTree: pizza, configurationVersion: 1, isAvailable: true } });
     await prisma.product.update({ where: { id: "s6e2-source" }, data: { configurationTree: source, configurationVersion: 1, isAvailable: true } });
     await prisma.product.update({ where: { id: "s6e2-legacy" }, data: { basePrice: "12.000001", isAvailable: true } });
     await prisma.subscriptionFeature.update({ where: { id: "s6e2-network" }, data: { enabled: true } });
@@ -172,6 +173,30 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     else process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = oldFlag;
     if (oldKey === undefined) delete process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY;
     else process.env.PUBLIC_WHATSAPP_CHECKOUT_HMAC_KEY = oldKey;
+  });
+
+  it("returns the same grouped catalog on both reads when category ranks tie or change", async () => {
+    const restaurantId = "catalog-order-test";
+    await prisma.restaurant.create({ data: { id: restaurantId, slug: restaurantId, name: "Ordering", currency: "EUR" } });
+    await prisma.category.createMany({ data: ["combos", "pizza", "other"].map(slug => ({
+      id: "test-cat-" + slug, restaurantId, slug, name: slug, sortOrder: slug === "other" ? 2 : 1
+    })) });
+    const source = ["combos", "pizza", "combos", "other", "pizza", "combos", null, "pizza", "pizza"];
+    await prisma.product.createMany({ data: source.map((slug, i) => ({
+      id: "ordered-" + i, slug: "ordered-" + i, name: String(9 - i), restaurantId,
+      categoryId: slug && "test-cat-" + slug, sortOrder: i, basePrice: "10", currency: "EUR",
+      isActive: i !== 7, isAvailable: i !== 8
+    })) });
+    async function check(expected: number[]) {
+      const menu = await (await fetch(origin + "/public/menus/" + restaurantId)).json();
+      const products = await (await fetch(origin + "/public/menus/" + restaurantId + "/products")).json();
+      for (const list of [menu.products, products]) {
+        expect(list.map((p: { id: string }) => p.id)).toEqual(expected.map(i => "ordered-" + i));
+      }
+    }
+    await check([0, 2, 5, 1, 4, 3, 6]);
+    await prisma.category.update({ where: { id: "test-cat-pizza" }, data: { sortOrder: 0 } });
+    await check([1, 4, 0, 2, 5, 3, 6]);
   });
 
   it("rejects Legacy-only on both trusted endpoints before creating a draft or Order", async () => {
@@ -291,6 +316,171 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     await setDeliveryFee(null);
   });
 
+  it("serializes distinct deliveries across two independent database clients and remembers suppressed receipts", async () => {
+    const other = new PrismaClient({ datasourceUrl: url });
+    const tenant = "s6e2-r1";
+    const clientId = randomUUID();
+    const event = () => ({ type: "MENU_VIEWED", clientId, eventId: randomUUID(), path: "/m/s6e2-r1/menu" });
+    const track = (body: ReturnType<typeof event>) => app.get(PublicMenuService).track(tenant, body, "Mozilla");
+    const count = () => prisma.analyticsEvent.count({ where: { restaurantId: tenant, type: "MENU_VIEWED" } });
+    const before = await count();
+    const home = { ...event(), path: "/m/s6e2-r1" };
+    const menu = event();
+    try {
+      const secondApi = new PublicMenuService(other as unknown as PrismaService, app.get(FeatureFlagsService), app.get(ConfigService));
+      await Promise.all([track(home), secondApi.track(tenant, menu, "Mozilla")]);
+      expect(await count()).toBe(before + 1);
+      const key = await prisma.menuVisitWindow.findFirstOrThrow({ where: { restaurantId: tenant }, orderBy: { lastAcceptedAt: "desc" } });
+      const age = async (minutes: number) => {
+        await prisma.$executeRaw`UPDATE "MenuVisitWindow" SET "lastAcceptedAt" = clock_timestamp() - ${minutes} * interval '1 minute'
+          WHERE "restaurantId" = ${tenant} AND "browserKey" = ${key.browserKey}`;
+      };
+      for (const minutes of [1, 29]) {
+        await age(minutes);
+        const where = { restaurantId_browserKey: { restaurantId: tenant, browserKey: key.browserKey } };
+        const prior = await prisma.menuVisitWindow.findUniqueOrThrow({ where });
+        await track(event());
+        expect((await prisma.menuVisitWindow.findUniqueOrThrow({ where })).lastAcceptedAt).toEqual(prior.lastAcceptedAt);
+        expect(await count()).toBe(before + 1);
+      }
+      await age(30);
+      await track(home);
+      await track(menu);
+      expect(await count()).toBe(before + 1);
+      await track(event());
+      await track({ ...event(), clientId: randomUUID() });
+      expect(await count()).toBe(before + 3);
+    } finally {
+      await other.$disconnect();
+    }
+  });
+
+  it("returns actionable review counts and only three public feedback fields plus ID", async () => {
+    const tenant = "merchant-home-fixture";
+    await prisma.restaurant.create({ data: { id: tenant, slug: tenant, name: "QA", currency: "SYP" } });
+    const service = new DashboardService(prisma as unknown as PrismaService, app.get(FeatureFlagsService));
+    const read = async (owner = true) => {
+      const data = await service.overview(tenant, "1", owner);
+      if (!("feedback" in data)) throw new Error("Expected home detail");
+      return data;
+    };
+    const empty = await read();
+    expect(empty).toMatchObject({ zone: "Asia/Damascus", views: 0, visits: 0, feedback: [],
+      missingImage: { count: 0, items: [] }, unavailable: { count: 0, items: [] } });
+    const item = await prisma.product.create({ data: { restaurantId: tenant, name: "QA", slug: "qa", basePrice: 10, isAvailable: false } });
+    for (let i = 1; i <= 4; i++) {
+      await prisma.restaurantFeedback.create({ data: { restaurantId: tenant, stars: i, comment: "QA",
+        createdAt: new Date(i * 86400000), requestId: randomUUID(), dedupeKey: String(i).padStart(64, "0") } });
+    }
+    const full = await read();
+    expect(full.unavailable.count).toBe(1);
+    expect(full.missingImage.items[0].id).toBe(item.id);
+    expect(full.feedback?.map(row => row.stars)).toEqual([4,3,2]);
+    expect(full.feedback?.[0]).not.toHaveProperty("customerPhone");
+    expect((await read(false)).feedback).toBeNull();
+    await prisma.product.update({ where: { id: item.id }, data: { isAvailable: true, images: { create: { url: "/assets/qa.jpg" } } } });
+    expect(await read()).toMatchObject({ unavailable: { count: 0 }, missingImage: { count: 0 } });
+  });
+
+  it("uses restaurant-local calendar boundaries across midnight and DST", async () => {
+    const tenant = "s6e2-r1";
+    const service = new DashboardService(prisma as unknown as PrismaService, app.get(FeatureFlagsService));
+    const { country } = await prisma.restaurant.findUniqueOrThrow({ where: { id: tenant } });
+    try {
+      await prisma.restaurant.update({ where: { id: tenant }, data: { country: "DE" } });
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-03-29T22:05:00Z")); // Monday 00:05 after the spring transition
+      for (const [days, start] of [["1","2026-03-29T22:00:00.000Z"],["7","2026-03-23T23:00:00.000Z"],["30","2026-02-28T23:00:00.000Z"]]) {
+        expect((await service.overview(tenant, days)).start.toISOString()).toBe(start);
+      }
+      await prisma.restaurant.update({ where: { id: tenant }, data: { country: "سوريا" } });
+      expect((await service.overview(tenant)).start.toISOString()).toBe("2026-03-29T21:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+      await prisma.restaurant.update({ where: { id: tenant }, data: { country } });
+    }
+  });
+
+  it("ranks the whole period by ID and excludes deleted or foreign products", async () => {
+    const tenant = "s6e2-r1";
+    const service = new DashboardService(prisma as unknown as PrismaService, app.get(FeatureFlagsService));
+    const now = new Date();
+    const fiveDaysAgo = new Date(+now - 5 * 86400000);
+    try {
+      for (const id of ["s6e2-legacy", "s6e2-pizza"]) {
+        await prisma.analyticsEvent.createMany({ data: Array.from({ length: 510 }, () => ({
+          restaurantId: tenant, type: "PRODUCT_VIEWED", metadata: { productId: id }, createdAt: fiveDaysAgo
+        })) });
+      }
+      const today = await service.overview(tenant);
+      expect(today.lists.topViewedProducts).toEqual([]);
+      for (const days of ["7", "30"]) {
+        const result = await service.overview(tenant, days);
+        expect(result.lists.topViewedProducts.map(p => [p.id,p.views])).toEqual([["s6e2-legacy",510],["s6e2-pizza",510]]);
+      }
+      await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { deletedAt: now } });
+      expect((await service.overview(tenant, "30")).lists.topViewedProducts.map(p => p.id)).toEqual(["s6e2-legacy"]);
+      expect((await service.overview("s6e2-r2", "30")).lists.topViewedProducts).toEqual([]);
+    } finally {
+      await prisma.analyticsEvent.deleteMany({ where: { restaurantId: tenant, type: "PRODUCT_VIEWED", createdAt: fiveDaysAgo } });
+      await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { deletedAt: null } });
+    }
+  });
+
+  it("attributes valid product views to reports, without accepting foreign or mismatched product identities", async () => {
+    const tenant = "s6e2-r1";
+    const send = (productSlug: string, productId: string, eventId = randomUUID(), pathSlug = productSlug) =>
+      fetch(`${origin}/public/menus/${tenant}/track`, { method: "POST",
+        headers: { "content-type": "application/json", "user-agent": "Mozilla" },
+        body: JSON.stringify({ type: "PRODUCT_VIEWED", path: `/m/${tenant}/product/${pathSlug}`,
+          eventId, metadata: { productId, productSlug, ignoredClientField: true } }) });
+    const dashboard = new DashboardService(prisma as unknown as PrismaService, app.get(FeatureFlagsService));
+    const products = new ProductsService(prisma as unknown as PrismaService, app.get(FeatureFlagsService), {} as never, app.get(ConfigService));
+    const visitsBefore = (await dashboard.analytics(tenant)).visits;
+    const historical = await prisma.analyticsEvent.create({ data: { restaurantId: tenant, type: "PRODUCT_VIEWED" } });
+    await prisma.analyticsEvent.create({ data: { restaurantId: tenant, type: "PRODUCT_VIEWED", metadata: { productSlug: "legacy" } } });
+    const first = randomUUID();
+    expect((await send("legacy", "s6e2-legacy", first)).ok).toBe(true);
+    expect((await send("legacy", "s6e2-legacy", first)).ok).toBe(true);
+    expect((await send("pizza", "s6e2-pizza")).ok).toBe(true);
+    expect((await send("legacy", "s6e2-foreign")).status).toBe(400);
+    expect((await send("foreign", "s6e2-foreign")).status).toBe(400);
+    expect((await send("legacy", "s6e2-legacy", randomUUID(), "pizza")).status).toBe(400);
+    expect((await send("absent", "missing")).status).toBe(400);
+    const overview = await dashboard.overview(tenant);
+    expect(overview.lists.topViewedProducts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "s6e2-legacy", views: 2 }), expect.objectContaining({ id: "s6e2-pizza", views: 1 })
+    ]));
+    expect(overview.lists.topViewedProducts.filter(p => p.id === "s6e2-legacy")).toHaveLength(1);
+    const listed = await products.list(tenant);
+    expect(listed.data.find(p => p.id === "s6e2-legacy")?.views).toBe(2);
+    const stored = await prisma.analyticsEvent.findMany({ where: { restaurantId: tenant, type: "PRODUCT_VIEWED", id: { not: historical.id } } });
+    expect(stored.map(row => row.metadata)).toContainEqual({ productId: "s6e2-legacy", productSlug: "legacy" });
+    const totals = await dashboard.analytics(tenant);
+    expect(totals.visits).toBe(visitsBefore);
+    expect(totals.conversionRate).toBe(totals.visits ? Number((100 * totals.whatsappClicks / totals.visits).toFixed(1)) : 0);
+    expect((await dashboard.analytics("s6e2-r2")).conversionRate).toBe(0);
+  });
+
+  it("P0 tracks visible views idempotently across concurrent retries and tenants, never on reads/prefetch", async () => {
+    const eventId = '11111111-1111-4111-8111-111111111111';
+    const send = (slug: string, headers = {}) => fetch(`${origin}/public/menus/${slug}/track`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': 'Mozilla/5.0', ...headers },
+      body: JSON.stringify({ type: 'MENU_VIEWED', path: `/m/${slug}/menu`, eventId, clientId: '22222222-2222-4222-8222-222222222222' })
+    });
+    const before = await prisma.analyticsEvent.count({ where: { type: 'MENU_VIEWED' } });
+    for (const suffix of ['', '?track=0', '?track=1']) {
+      expect((await fetch(`${origin}/public/menus/s6e2-r1${suffix}`)).status).toBe(200);
+    }
+    await send('s6e2-r1', { purpose: 'prefetch' });
+    await send('s6e2-r1', { 'user-agent': 'Googlebot' });
+    expect(await prisma.analyticsEvent.count({ where: { type: 'MENU_VIEWED' } })).toBe(before);
+    const responses = await Promise.all([send('s6e2-r1'), send('s6e2-r1'), send('s6e2-r1')]);
+    expect(responses.every(r => r.ok)).toBe(true);
+    await send('s6e2-r2');
+    expect(await prisma.analyticsEvent.count({ where: { type: 'MENU_VIEWED' } })).toBe(before + 2);
+  });
+
   it("saves and reloads a fixed delivery fee through the Dashboard settings service", async () => {
     const dashboard = new DashboardService(prisma as any, { assertFeature: async () => undefined } as any);
     const saved = await dashboard.updateSettings("s6e2-r1", { deliveryFee: "15.000000" });
@@ -330,7 +520,8 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
   });
 
   it("uses stored Arabic product and option names in the confirmed HTTP message", async () => {
-    const arabicPizza = JSON.parse(JSON.stringify(pizza)) as typeof pizza;
+    const arabicPizza = structuredClone(pizza);
+    if (!arabicPizza.groups[0].sizes || !arabicPizza.groups[1].options) throw new Error("Malformed pizza fixture");
     arabicPizza.groups[0].label = "الأحجام";
     arabicPizza.groups[0].sizes[1].label = "وسط";
     arabicPizza.groups[1].label = "الإضافات";
@@ -529,7 +720,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     await prisma.restaurant.update({ where: { id: "s6e2-r1" }, data: { whatsappPhone: "+201000000000" } });
     const before = await prisma.order.count();
     const beforeEvents = await prisma.analyticsEvent.count({ where: { restaurantId: "s6e2-r1", type: "WHATSAPP_ORDER_CLICKED" } });
-    const legacyBody = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup",
+    const legacyBody = { items: [{ productSlug: "legacy", productId: "s6e2-legacy", expectedUnitPrice: "12.000001", quantity: 1 }], fulfillmentType: "pickup",
       customerName: "Synthetic Customer", customerPhone: "0000000000", orderNote: "Synthetic note" };
     const originalFlag = process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT;
     process.env.ENABLE_PUBLIC_NETWORK_WHATSAPP_CHECKOUT = "0";
@@ -555,14 +746,14 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
       && order.whatsappMessage?.includes("Synthetic note") && order.status === "PENDING_WHATSAPP")).toBe(true);
     const network = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items: [{ productSlug: "pizza", quantity: 1 }] })
+      body: JSON.stringify({ items: [{ productSlug: "pizza", productId: "s6e2-pizza", expectedUnitPrice: "100", quantity: 1 }] })
     });
     expect(network.status).toBe(400);
     expect(await prisma.order.count()).toBe(before + 2);
   });
 
   it("persists the unchanged Legacy order route with fixed, free and pending delivery fee messages", async () => {
-    const body = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "delivery",
+    const body = { items: [{ productSlug: "legacy", productId: "s6e2-legacy", expectedUnitPrice: "12.000001", quantity: 1 }], fulfillmentType: "delivery",
       deliveryArea: "Area A", deliveryNear: "School", deliveryBeside: "Building 5" };
     const submitLegacy = async () => {
       const response = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
@@ -654,7 +845,7 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
 
   it("replays one numbered Legacy order for a double click and keeps a separate Mixed number", async () => {
     const key = `legacy-retry-${randomBytes(12).toString("hex")}`;
-    const payload = { items: [{ productSlug: "legacy", quantity: 1 }], fulfillmentType: "pickup", idempotencyKey: key };
+    const payload = { items: [{ productSlug: "legacy", productId: "s6e2-legacy", expectedUnitPrice: "12.000001", quantity: 1 }], fulfillmentType: "pickup", idempotencyKey: key };
     const beforeOrders = await prisma.order.count();
     const beforeEvents = await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } });
     const legacy = await Promise.all(Array.from({ length: 2 }, () => fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
@@ -676,7 +867,8 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
 
   it("rejects historical fractional SYP prices and formats a valid mixed draft without changing exact totals", async () => {
     const before = await prisma.order.count();
-    const wholePizza = JSON.parse(JSON.stringify(pizza)) as typeof pizza;
+    const wholePizza = structuredClone(pizza);
+    if (!wholePizza.groups[0].sizes || !wholePizza.groups[1].options) throw new Error("Malformed pizza fixture");
     wholePizza.groups[0].sizes[1].price = "200";
     wholePizza.groups[1].options[0].price = "30";
     wholePizza.groups[1].options[0].children[0].options[0].price = "5";
@@ -697,17 +889,17 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
       ]));
       expect(valid.status).toBe(200);
       expect(valid.body.draft.totalAmount).toBe("554");
-      expect(valid.body.messagePreview).toContain("554 SYP");
-      expect(valid.body.messagePreview).not.toContain("554.00 SYP");
+      expect(valid.body.messagePreview).toContain("554 ل.س");
+      expect(valid.body.messagePreview).not.toMatch(/554\.00|SYP/);
 
       const legacyOrder = await fetch(`${origin}/public/menus/s6e2-r1/orders/whatsapp`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items: [{ productSlug: "legacy", quantity: 2 }], fulfillmentType: "pickup",
+        body: JSON.stringify({ items: [{ productSlug: "legacy", productId: "s6e2-legacy", expectedUnitPrice: "12", quantity: 2 }], fulfillmentType: "pickup",
           customerName: "Synthetic SYP Customer", customerPhone: "0000000000" })
       });
       expect(legacyOrder.status).toBe(201);
       const legacyPayload = await legacyOrder.json() as { message: string };
-      expect(legacyPayload.message).toContain("24 SYP");
+      expect(legacyPayload.message).toContain("24 ل.س");
       expect(await prisma.order.count()).toBe(before + 1);
 
       await prisma.product.update({ where: { id: "s6e2-pizza" }, data: { configurationTree: pizza } });

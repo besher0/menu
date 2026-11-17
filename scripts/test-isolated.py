@@ -1,0 +1,124 @@
+"""Run all suites in a fresh, loopback-only PostgreSQL 16 cluster. Never attach to an existing server."""
+import json, os, secrets, shutil, socket, subprocess, sys, tempfile, uuid
+from pathlib import Path
+
+s = Path(__file__).resolve().parents[1]
+nm = s / "node_modules"
+pg = Path(os.environ["PG_BIN"]).resolve()
+d = Path(os.environ.get("QA_OUTPUT") or tempfile.mkdtemp(prefix="ordersawa-qa-")).resolve()
+d.mkdir(parents=True, exist_ok=True)
+env = {k: v for k, v in os.environ.items() if k.upper() in {
+    "PATH", "COMSPEC", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR",
+    "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "CHECKPOINT_DISABLE",
+    "PRISMA_SCHEMA_ENGINE_BINARY", "PRISMA_QUERY_ENGINE_LIBRARY", "NEXT_TELEMETRY_DISABLED"
+}}
+if not __debug__:
+    raise RuntimeError("Optimized Python is not supported by the isolated fixture checks")
+operations_only = "--operations-only" in sys.argv
+if not operations_only:
+ import runpy
+ runpy.run_path(str(s/'scripts/test-release-v2.py'), run_name='__main__')
+ raise SystemExit(0)
+port = 55440
+with socket.socket()as so:so.bind(('127.0.0.1',port))
+run=d/('pg-'+uuid.uuid4().hex[:12]);run.mkdir();data=run/'data';pw=secrets.token_hex(32);role='u51qa';P={**env,'PGHOST':'127.0.0.1','PGPORT':str(port),'PGUSER':role,'PGPASSWORD':pw,'PGCLIENTENCODING':'UTF8'}
+def call(exe,*args,sql=None,env=P):
+ if os.name=='nt' and Path(exe).parent==pg: exe=Path(exe).with_suffix('.exe')
+ p=subprocess.run([str(exe),*map(str,args)],env=env,input=sql,stdout=subprocess.PIPE,stderr=subprocess.PIPE,encoding='utf8',errors='replace')
+ if p.returncode:raise RuntimeError((p.stderr or p.stdout)[-2200:].replace(pw,'[redacted]'))
+ return p.stdout.strip()
+def sql(db,stmt):return call(pg/'psql','-XAt','-v','ON_ERROR_STOP=1','-d',db,sql=stmt)
+def check(db):
+ v=sql(db,"select host(inet_server_addr()),inet_server_port(),current_database(),current_setting('data_directory'),(pg_control_system()).system_identifier").split('|')
+ assert v[:3]==['127.0.0.1',str(port),db] and Path(v[3]).resolve()==data.resolve() and v[4]==ident
+def url(db):return f'postgresql://{role}:{pw}@127.0.0.1:{port}/{db}'
+secret=run/'init-once';fd=os.open(secret, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd,'w',encoding='ascii') as f: f.write(pw)
+try:call(pg/'initdb','-D',data,'-A','scram-sha-256','-U',role,'--locale=C','-E','UTF8','--pwfile='+str(secret))
+finally:secret.unlink()
+with (run/'startup.log').open('wb') as io:
+ subprocess.run([pg/('pg_ctl.exe' if os.name=='nt' else 'pg_ctl'),'-D',data,'-o','-h 127.0.0.1 -p '+str(port) + ('' if os.name=='nt' else ' -k '+str(run)),'-l',run/'pg.log','-w','start'],env=P,stdin=subprocess.DEVNULL,stdout=io,stderr=io,check=True,timeout=60)
+try:
+ ident=sql('postgres','select system_identifier from pg_control_system()');check('postgres')
+ template='u51_qa_schema';sql('postgres','create database '+template);check(template)
+ import shutil
+ node=shutil.which('node')
+ fixture_env={**env,'DATABASE_URL':url(template),'DIRECT_URL':url(template)}
+ cli=[nm/'prisma/build/index.js']
+ call(node,*cli,'migrate','deploy','--schema',s/'apps/api/prisma/schema.prisma',env=fixture_env)
+ diff=call(node,*cli,'migrate','diff','--from-schema-datasource',s/'apps/api/prisma/schema.prisma','--to-schema-datamodel',s/'apps/api/prisma/schema.prisma','--script',env=fixture_env)
+ (d/'migration-drift.sql').write_text(diff,encoding='utf8')
+ migrations=sql(template,'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL')
+ checks=sql(template,"select count(*) from pg_constraint where conrelid='public.\"Product\"'::regclass and conname like 'Product_%check' and convalidated")
+ assert checks=='5'
+ (d/'migration.json').write_text(json.dumps({'completed':int(migrations),'validatedProductChecks':int(checks),'drift':any(line.strip() and not line.startswith('--') for line in diff.splitlines())}))
+ ver=sql('postgres',"select current_setting('server_version_num')")
+ assert int(ver)//10000 in (16,18),'Operations rehearsal supports PostgreSQL 16/18 only'
+ (d/'cluster.json').write_text(json.dumps(dict(verified=True,host='127.0.0.1',port=port,systemIdentifier=ident,serverVersion=sql('postgres','show server_version'),dataDirectory=str(data),operationsOnly=True)))
+ # Production startup must be tested with an ordinary role in this same verified disposable cluster.
+ from production_boot import verify
+ app_db='ordersawa_credential_probe'
+ sql('postgres','create database '+app_db+' template '+template);check(app_db)
+ sql('postgres',"CREATE ROLE credential_probe LOGIN PASSWORD '"+pw+"'")
+ runtime_uri=f'postgresql://credential_probe:{pw}@127.0.0.1:{port}/{app_db}'
+ boot=verify(s,env,runtime_uri,run)
+ (d/'production-startup.json').write_text(json.dumps(boot,indent=2),encoding='utf8')
+ from upgrade_fixture import verify as verify_upgrade
+ upgrade=verify_upgrade(s,run,pg,node,env,url,sql,check,call,configuration_v2=True)
+ (d/'populated-upgrade.json').write_text(json.dumps(upgrade,indent=2))
+ # A restore drill checks both user data and constraints in an independent DB.
+ source_db = 'ordersawa_qa_restore_source'
+ target_db = 'ordersawa_qa_restored'
+ for db in (source_db, target_db):
+  sql('postgres','create database '+db+(' template '+template if db==source_db else ''))
+  check(db)
+ sql(source_db,"CREATE TABLE qa_marker (v text PRIMARY KEY); INSERT INTO qa_marker VALUES ('synthetic')")
+ archive=run/'synthetic.dump'
+ call(pg/'pg_dump','-Fc','-f',archive,source_db)
+ call(pg/'pg_restore','--exit-on-error','--no-owner','-d',target_db,archive)
+ assert sql(target_db,'SELECT v FROM qa_marker')=='synthetic'
+ assert sql(source_db,"SELECT count(*) FROM pg_constraint")==sql(target_db,"SELECT count(*) FROM pg_constraint")
+ (d/'restore.json').write_text(json.dumps({'markerMatch':True,'constraintCount':int(sql(target_db,"SELECT count(*) FROM pg_constraint"))}))
+ bench='ordersawa_qa_bench'
+ sql('postgres','create database '+bench+' template '+template)
+ check(bench)
+ baseline={}
+ call(node,s/'scripts/test-api-benchmark.cjs',env={**env,**baseline,'DATABASE_URL':url(bench),'DIRECT_URL':url(bench),'QA_DATA_DIR':str(data),'QA_OUTPUT':str(d)})
+ # Exercise real readiness under a reversible, database-specific connection interruption.
+ import urllib.request, urllib.error, time
+ plan=sql(bench,"EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) SELECT id FROM \"Product\" WHERE \"restaurantId\"='qa-500' AND \"deletedAt\" IS NULL ORDER BY \"sortOrder\"")
+ (d/'explain.json').write_text(plan)
+ with socket.socket() as probe:
+  probe.bind(('127.0.0.1',0)); api_port=probe.getsockname()[1]
+ release='qa-readiness-'+uuid.uuid4().hex
+ recovery_api=subprocess.Popen([node,'dist/main.js'],cwd=s/'apps/api',env={**env,'DATABASE_URL':url(bench),'DIRECT_URL':url(bench),'JWT_SECRET':secrets.token_hex(32),'ORDERSAWA_RELEASE_ID':release,'API_HOST':'127.0.0.1','PORT':str(api_port),'ORDERSAWA_DEMO_UPLOADS_DIR':str(run/'uploads')},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+ def health(path):
+  try: response=opener.open('http://127.0.0.1:'+str(api_port)+path,timeout=12)
+  except urllib.error.HTTPError as error: response=error
+  with response:
+   if response.headers.get('X-OrderSawa-Release')!=release: raise RuntimeError('Unexpected API identity')
+   return response.status
+ try:
+  for attempt in range(80):
+   if recovery_api.poll() is not None: raise RuntimeError('Readiness process exited')
+   try:
+    if health('/health/ready')==200: break
+   except urllib.error.URLError: pass
+   time.sleep(.2)
+  else: raise RuntimeError('Readiness startup timeout')
+  check(bench)
+  sql('postgres','ALTER DATABASE '+bench+' ALLOW_CONNECTIONS false')
+  try:
+   sql('postgres',"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='ordersawa_qa_bench'")
+   observed={'downReady':health('/health/ready'),'downLive':health('/health')}
+  finally: sql('postgres','ALTER DATABASE '+bench+' ALLOW_CONNECTIONS true')
+  observed['restoredReady']=health('/health/ready')
+  (d/'readiness.json').write_text(json.dumps(observed))
+  assert observed=={'downReady':503,'downLive':200,'restoredReady':200}
+ finally:
+  recovery_api.terminate(); recovery_api.wait(timeout=20)
+ assert not json.loads((d/'migration.json').read_text())['drift'],'Schema drift'
+
+finally:
+ if Path(sql('postgres','show data_directory')).resolve()==data.resolve() and sql('postgres','select system_identifier from pg_control_system()')==ident:call(pg/'pg_ctl','-D',data,'-m','fast','-w','stop')

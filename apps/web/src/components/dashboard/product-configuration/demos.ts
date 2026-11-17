@@ -1,4 +1,4 @@
-import type { ProductConfigurationV1 } from "@menu/shared";
+import { validateGroupLevels, type ProductConfigurationV1 } from "@menu/shared";
 import type { ProductCandidate, ProductConfigurationEnvelope } from "./types";
 import { cloneConfiguration } from "./editor-model";
 
@@ -8,10 +8,13 @@ export type DemoLinkedSource = {
 };
 
 export function selectComboDemoSources(sources: DemoLinkedSource[]) {
-  const original = sources.find(({ envelope }) => envelope.mode === "NETWORK" && Boolean(envelope.configurationTree)) ?? null;
-  const custom = sources.find(({ envelope }) => envelope.mode === "LEGACY")
-    ?? sources.find(({ product }) => product.id !== original?.product.id)
-    ?? sources[0]
+  const trees = new Map(sources.map(item => [item.product.id, item.envelope.configurationTree]));
+  const compatible = sources.filter(({ envelope }) => !envelope.configurationTree ||
+    validateGroupLevels(envelope.configurationTree, id => trees.get(id) ?? undefined, 1).length === 0);
+  const original = compatible.find(({ envelope }) => envelope.mode === "NETWORK" && Boolean(envelope.configurationTree)) ?? null;
+  const custom = compatible.find(({ envelope }) => envelope.mode === "LEGACY")
+    ?? compatible.find(({ product }) => product.id !== original?.product.id)
+    ?? compatible[0]
     ?? null;
   return { original, custom };
 }

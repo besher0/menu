@@ -40,7 +40,6 @@ export function RestaurantsClient() {
   const [deletingRestaurantId, setDeletingRestaurantId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Restaurant | null>(null);
   const [message, setMessage] = useState("");
-  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -75,14 +74,6 @@ export function RestaurantsClient() {
     };
   }, []);
 
-  useEffect(() => {
-    function handleGlobalSearch(event: Event) {
-      setSearch(String((event as CustomEvent<string>).detail ?? ""));
-    }
-
-    window.addEventListener("admin:global-search", handleGlobalSearch);
-    return () => window.removeEventListener("admin:global-search", handleGlobalSearch);
-  }, []);
 
   const stats = useMemo(() => {
     const active = restaurants.filter((restaurant) => restaurant.isActive).length;
@@ -92,24 +83,6 @@ export function RestaurantsClient() {
     return { active, inactive, products };
   }, [restaurants]);
 
-  const filteredRestaurants = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return restaurants;
-
-    return restaurants.filter((restaurant) =>
-      [
-        restaurant.name,
-        restaurant.slug,
-        restaurant.city,
-        restaurant.type,
-        restaurant.plan,
-        restaurant.planKey,
-        restaurant.isActive ? "active فعال" : "inactive موقوف"
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term))
-    );
-  }, [restaurants, search]);
 
   function dashboardHref(restaurant: Restaurant) {
     const params = new URLSearchParams({
@@ -187,7 +160,7 @@ export function RestaurantsClient() {
   function exportRestaurants() {
     downloadCsv("restaurants.csv", [
       ["Name", "Slug", "City", "Type", "Plan", "Status", "Branches", "Products", "Orders", "Public URL"],
-      ...filteredRestaurants.map((restaurant) => [
+      ...restaurants.map((restaurant) => [
         restaurant.name,
         restaurant.slug,
         restaurant.city ?? "",
@@ -230,11 +203,11 @@ export function RestaurantsClient() {
         {status === "error" ? <EmptyState title="تعذر تحميل المطاعم" text={message} /> : null}
         {status === "ready" && message ? <p className="form-message">{message}</p> : null}
 
-        {status === "ready" && filteredRestaurants.length === 0 ? (
+        {status === "ready" && restaurants.length === 0 ? (
           <EmptyState title="لا توجد مطاعم" text="ابدأ بإضافة مطعم جديد، وبعدها ستظهر قائمة المطاعم هنا." />
         ) : null}
 
-        {status === "ready" && filteredRestaurants.length > 0 ? (
+        {status === "ready" && restaurants.length > 0 ? (
           <table className="admin-table">
             <thead>
               <tr>
@@ -248,7 +221,7 @@ export function RestaurantsClient() {
               </tr>
             </thead>
             <tbody>
-              {filteredRestaurants.map((restaurant) => (
+              {restaurants.map((restaurant) => (
                 <tr key={restaurant.id}>
                   <td>
                     <span className="table-avatar" />

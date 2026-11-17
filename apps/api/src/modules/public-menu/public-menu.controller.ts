@@ -62,11 +62,15 @@ export class PublicMenuController {
   }
 
   @Post(":restaurantSlug/track")
+  @Header("Cache-Control", "no-store")
   track(
     @Param("restaurantSlug") restaurantSlug: string,
-    @Body() body: { type?: string; path?: string; metadata?: Record<string, unknown> },
+    @Body() body: { type?: string; path?: string; metadata?: Record<string, unknown>; eventId?: string; clientId?: string },
     @Req() request: Request
   ) {
+    if (request.headers["next-router-prefetch"] || /prefetch/i.test(String(request.headers.purpose ?? request.headers["sec-purpose"] ?? ""))) {
+      return { ignored: true };
+    }
     return this.publicMenuService.track(restaurantSlug, body, request.headers["user-agent"]);
   }
 

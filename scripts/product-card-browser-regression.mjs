@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
 
+import { measurePhotoShapes } from "./measure-menu-photo-shapes.mjs";
+
 const origin = process.env.CARD_QA_ORIGIN ?? "http://127.0.0.1:3101";
 const url = new URL(origin);
 if (url.protocol !== "http:" || !["127.0.0.1", "192.168.178.69"].includes(url.hostname)
@@ -109,23 +111,37 @@ try {
     const metrics = await evaluate(`(() => {
       const card = document.querySelector('.menu-product-row');
       const button = card.querySelector('.menu-product-open');
-      const label = document.querySelector('.menu-category-chip > span:last-of-type');
+      const strip = document.querySelector('.menu-category-strip');
+      const chips = [...strip.querySelectorAll('.menu-category-chip')];
+      const label = chips[0].querySelector(':scope > span:last-of-type');
+      const uniformCategories = chips.every(chip => {
+        const icon = chip.querySelector('.menu-category-icon');
+        const name = chip.querySelector(':scope > span:last-of-type');
+        const style = getComputedStyle(name);
+        return chip.getBoundingClientRect().width === 66 && icon?.getBoundingClientRect().width === 66
+          && icon.getBoundingClientRect().height === 56 && name.clientWidth <= 64
+          && style.whiteSpace === 'nowrap' && style.textOverflow === 'ellipsis';
+      });
       const copy = card.querySelector('.menu-product-copy');
       const price = card.querySelector('.product-price');
       const title = card.querySelector('b');
       const r = (element) => { const box = element.getBoundingClientRect(); return { x: box.x, y: box.y, width: box.width, height: box.height, bottom: box.bottom }; };
-      return { width: innerWidth, card: r(card), button: r(button), copy: r(copy),
+      return { uniformCategories, gap: getComputedStyle(strip).columnGap, width: innerWidth, card: r(card), button: r(button), copy: r(copy),
         title: r(title), price: r(price), label: { text: label.innerText, scrollWidth: label.scrollWidth, clientWidth: label.clientWidth },
         direction: document.querySelector('.public-screen')?.dir };
     })()`);
     const screenshot = await cdp("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-    if (metrics.button.width < 200 || metrics.button.height < 94 || metrics.label.scrollWidth > metrics.label.clientWidth
+    if (metrics.button.width < 200 || metrics.button.height < 94 || !metrics.uniformCategories || metrics.gap !== "12px"
       || metrics.title.bottom >= metrics.price.y || metrics.price.bottom > metrics.card.bottom + 1) {
       throw new Error(`Readability or hitbox failed at ${width}px: ${JSON.stringify(metrics)}`);
     }
     const imageName = `menu-after-${originLabel}-${width}.png`;
     await writeFile(join(output, imageName), Buffer.from(screenshot.data, "base64"));
-    results.push({ width, metrics, screenshot: imageName });
+    const shapeHeights = await evaluate(`(${measurePhotoShapes.toString()})()`);
+    if (Math.max(...shapeHeights) - Math.min(...shapeHeights) > 1) {
+      throw new Error(`Image ratio changed the list row height at ${width}px: ${shapeHeights}`);
+    }
+    results.push({ width, metrics, shapeHeights, screenshot: imageName });
   }
 
   await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 900, deviceScaleFactor: 1, mobile: false });

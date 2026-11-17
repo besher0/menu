@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getPublicProductQuote, PublicProductQuoteError } from "@/lib/api";
-import type { ProductSelectionV1 } from "@menu/shared";
+import type { ProductSelectionV2 } from "@menu/shared";
 
-const selection: ProductSelectionV1 = {
-  schemaVersion: 1, productId: "pizza", configurationRevision: 3,
+const selection: ProductSelectionV2 = {
+  schemaVersion: 2, productId: "pizza", configurationRevision: 3,
   groups: [{ type: "SIZE", groupId: "sizes", sizeChoiceId: "large" }]
 };
 

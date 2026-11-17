@@ -9,6 +9,8 @@ import { PublicMenuController } from "./public-menu.controller";
 import { PublicWhatsappCheckoutService } from "./public-whatsapp-checkout.service";
 import { PublicMenuService } from "./public-menu.service";
 
+import { DashboardService } from "../dashboard/dashboard.service";
+
 const databaseUrl = process.env.PUBLIC_MENU_RACE_TEST_DATABASE_URL;
 const expectedDatabase = "ordersawa_stage3_stage6d3c1_public";
 if (databaseUrl) {
@@ -25,6 +27,7 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
   const secondRestaurant = "s6d3c1-second";
   const productId = "s6d3c1-legacy-product";
   let app: INestApplication;
+  let dashboard: DashboardService;
   let origin: string;
   let race: { expected: number; reads: number; wait: Promise<void>; release: () => void } | null = null;
   let injectForeignKeyFailure = false;
@@ -69,6 +72,8 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
       currency: "EGP", basePrice: "12" } });
 
     const category = {
+      count: (args: Parameters<typeof prisma.category.count>[0]) => prisma.category.count(args),
+      findMany: (args: Parameters<typeof prisma.category.findMany>[0]) => prisma.category.findMany(args),
       findUnique: async (args: Parameters<typeof prisma.category.findUnique>[0]) => {
         const result = await prisma.category.findUnique(args);
         if (race && race.reads < race.expected && args.where?.restaurantId_slug?.slug === "all") {
@@ -108,6 +113,7 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     app = await NestFactory.create(TestModule, { logger: false });
     await app.listen(0, "127.0.0.1");
     origin = await app.getUrl();
+    dashboard = new DashboardService(db as unknown as PrismaService, app.get(FeatureFlagsService));
   });
 
   beforeEach(async () => {
@@ -195,4 +201,83 @@ integration("Stage 6D.3C1 Public Menu all-category HTTP regression", () => {
     expect(response.status).toBe(500);
     expect(await all()).toBeNull();
   });
+  it("dashboard creates one all row and repeated category listing preserves its identity", async () => {
+    await dashboard.categories(firstRestaurant);
+    const row = await all();
+    expect(row).toMatchObject({ restaurantId: firstRestaurant, slug: "all", name: "الكل", sortOrder: 0 });
+    await dashboard.categories(firstRestaurant);
+    expect((await all())?.id).toBe(row?.id);
+    expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
+  });
+
+  it("dashboard leaves a healthy all row and saved presentation unchanged", async () => {
+    const row = await prisma.category.create({ data: { restaurantId: firstRestaurant, slug: "all", name: "الكل", sortOrder: 0, color: "#123456", description: "Saved" } });
+    await dashboard.categories(firstRestaurant);
+    expect(await all()).toMatchObject({ id: row.id, color: "#123456", description: "Saved" });
+  });
+
+  async function deletedAll() {
+    const row = await prisma.category.create({ data: { restaurantId: firstRestaurant, slug: "all", name: "Historic", sortOrder: 7, isActive: false, deletedAt: new Date(), color: "#123456", description: "Historic" } });
+    await prisma.product.update({ where: { id: productId }, data: { categoryId: row.id } });
+    return row;
+  }
+
+  it("dashboard restores a deleted all preserving the product relation, ID and styling", async () => {
+    const row = await deletedAll();
+    await dashboard.categories(firstRestaurant);
+    expect(await all()).toMatchObject({ id: row.id, deletedAt: null, isActive: true, name: "الكل", sortOrder: 0, color: "#123456", description: "Historic" });
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).categoryId).toBe(row.id);
+  });
+
+  it("two concurrent dashboard requests create only one all row", async () => {
+    armRace(2);
+    const responses = await Promise.all([dashboard.categories(firstRestaurant), dashboard.categories(firstRestaurant)]);
+    expect(responses.every(r => r.data.some(c => c.slug === "all"))).toBe(true);
+    expect(await prisma.category.count({ where: { restaurantId: firstRestaurant, slug: "all" } })).toBe(1);
+  });
+
+  it("two concurrent dashboard requests restore the same deleted all row", async () => {
+    const row = await deletedAll();
+    armRace(2);
+    await Promise.all([dashboard.categories(firstRestaurant), dashboard.categories(firstRestaurant)]);
+    expect(await all()).toMatchObject({ id: row.id, deletedAt: null, isActive: true });
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).categoryId).toBe(row.id);
+  });
+
+  it("dashboard propagates a real unrelated primary-key P2002", async () => {
+    injectUnrelatedUniqueFailure = true;
+    await expect(dashboard.categories(firstRestaurant)).rejects.toMatchObject({ code: "P2002", meta: { target: ["id"] } });
+    expect(await all()).toBeNull();
+  });
+
+  it("dashboard propagates a real foreign-key failure", async () => {
+    injectForeignKeyFailure = true;
+    await expect(dashboard.categories(firstRestaurant)).rejects.toMatchObject({ code: "P2003" });
+    expect(await all()).toBeNull();
+  });
+
+  it("dashboard scopes all categories independently for two restaurants", async () => {
+    await Promise.all([dashboard.categories(firstRestaurant), dashboard.categories(secondRestaurant)]);
+    const first = await all(firstRestaurant), second = await all(secondRestaurant);
+    expect(first?.id).not.toBe(second?.id);
+    expect(first?.restaurantId).toBe(firstRestaurant);
+    expect(second?.restaurantId).toBe(secondRestaurant);
+  });
+
+  it("dashboard listing preserves the identity initialized first by the public menu", async () => {
+    expect((await menu()).status).toBe(200);
+    const row = await all();
+    await dashboard.categories(firstRestaurant);
+    expect((await all())?.id).toBe(row?.id);
+  });
+
+  it("public menu reads a restored dashboard all and its existing product relationship", async () => {
+    const row = await deletedAll();
+    await dashboard.categories(firstRestaurant);
+    const response = await menu();
+    expect(response.status).toBe(200);
+    expect(response.body.categories.some((c: { id: string }) => c.id === row.id)).toBe(true);
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).categoryId).toBe(row.id);
+  });
+
 });

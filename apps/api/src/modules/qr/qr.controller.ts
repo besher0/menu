@@ -1,3 +1,4 @@
+import { requireRestaurantPermission } from "../../common/restaurant-permission";
 import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { AppRequest } from "../../common/app-request";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -13,21 +14,25 @@ export class QrController {
 
   @Get()
   list(@Req() request: AppRequest) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.qrService.list(request.restaurant!.id, request.restaurant!.slug);
   }
 
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateQrCodeDto) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.qrService.create(request.restaurant!.id, request.restaurant!.slug, dto);
   }
 
   @Patch(":id")
   update(@Req() request: AppRequest, @Param("id") id: string, @Body() dto: UpdateQrCodeDto) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.qrService.update(request.restaurant!.id, request.restaurant!.slug, id, dto);
   }
 
   @Get(":id/svg")
   svg(@Req() request: AppRequest, @Param("id") id: string) {
+    requireRestaurantPermission(request, "menu.publish");
     return this.qrService.svgForDashboard(request.restaurant!.id, id);
   }
 }

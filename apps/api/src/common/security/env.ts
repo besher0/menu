@@ -1,7 +1,7 @@
 export function readPositiveInt(name: string, fallback: number) {
   const value = Number(process.env[name]);
 
-  if (!Number.isFinite(value) || value <= 0) {
+  if (!Number.isSafeInteger(value) || value < 1) {
     return fallback;
   }
 

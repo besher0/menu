@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap");
+@import "./fonts/almarai/almarai.css";
 
 html {
   color-scheme: light;
@@ -5997,7 +5997,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .wide-product::before {
-  background: linear-gradient(90deg, rgb(0 0 0 / 58%), rgb(0 0 0 / 18%) 58%, transparent);
+  background: linear-gradient(to left, rgb(0 0 0 / 76%), rgb(0 0 0 / 26%) 60%, transparent);
   content: "";
   inset: 0;
   position: absolute;
@@ -6005,7 +6005,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .wide-product img {
-  filter: brightness(0.78);
+  filter: none;
   height: 100%;
   inset: 0;
   object-fit: cover;
@@ -6043,7 +6043,7 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .wide-product b {
   align-self: end;
-  color: var(--color-text-first, #201217);
+  color: #fff;
   font-size: 20px;
   font-weight: 900;
   line-height: 1.15;
@@ -6092,7 +6092,10 @@ body:has(.public-page)::-webkit-scrollbar {
   box-shadow: none;
   margin-top: -2px;
   padding-bottom: 4px;
-  padding-top: 0;
+  padding-top: 6px;
+  height: 85px;
+  min-height: 85px;
+  max-height: 85px;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -6199,27 +6202,6 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .menu-category-chip small {
   display: none;
-}
-
-/* Keep image chips in the existing scrolling strip without truncating their names. */
-.menu-category-strip:not(.category-nav-text-tabs) {
-  height: auto;
-  max-height: none;
-}
-
-.menu-category-strip:not(.category-nav-text-tabs) .menu-category-chip {
-  flex: 0 0 auto;
-  height: auto;
-  min-width: 66px;
-  width: max-content;
-}
-
-.menu-category-strip:not(.category-nav-text-tabs) .menu-category-chip > span:last-of-type {
-  line-height: 1.2;
-  max-width: min(120px, 32vw);
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  white-space: normal;
 }
 
 .menu-category-strip.category-nav-text-tabs {
@@ -6782,6 +6764,14 @@ body:has(.public-page)::-webkit-scrollbar {
   display: block;
 }
 
+/* Let the legacy grid and text size the row independently of the photo. */
+.menu-product-row:not(.card-horizontal-contained) .menu-product-image-link > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .menu-product-row .product-image-placeholder {
   display: flex;
 }
@@ -7104,7 +7094,6 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: start;
   white-space: nowrap;
 }
-.menu-category-chip > span:last-of-type { direction: inherit; unicode-bidi: plaintext; }
 .menu-product-row .product-price,
 .menu-product-card .product-price {
   max-width: 100%;
@@ -7328,9 +7317,16 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .product-photo {
   background: #f6f7f9;
-  height: 318px;
+  height: calc(var(--product-hero-height, 318px) * var(--product-hero-scale, 1));
   overflow: hidden;
   position: relative;
+}
+
+/* Reserve the remaining viewport only while full-page Network choices load.
+   No dimensions persist on the loaded configurator; QuickView/cart are untouched. */
+.product-detail .product-sheet > .public-configuration-loading {
+  min-height: calc(100svh - 318px);
+  align-items: flex-start;
 }
 
 .product-photo > img,
@@ -7352,7 +7348,7 @@ body:has(.public-page)::-webkit-scrollbar {
   height: 36px;
   justify-content: center;
   position: absolute;
-  top: 44px;
+  top: 16px;
   width: 36px;
 }
 
@@ -8110,7 +8106,8 @@ body:has(.public-page)::-webkit-scrollbar {
 .vertigo-product-detail .product-photo {
   background: var(--color-surface);
   border-radius: 16px;
-  height: clamp(255px, 67vw, 285px);
+  --product-hero-height: clamp(255px, 67vw, 285px);
+  height: calc(var(--product-hero-height) * var(--product-hero-scale, 1));
   margin-inline: 8px;
 }
 
@@ -8418,6 +8415,33 @@ body:has(.public-page)::-webkit-scrollbar {
   justify-content: center;
   padding: 0;
   width: 18px;
+}
+
+/* List controls share the same rounded strokes without an SVG subtree per button. */
+.menu-product-quantity button {
+  position: relative;
+}
+
+.menu-product-quantity button::before,
+.menu-product-quantity button:first-child::after {
+  content: "";
+  position: absolute;
+  width: 9.33px;
+  height: 1.17px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.menu-product-quantity button:first-child::after {
+  transform: rotate(90deg);
+}
+
+@media (forced-colors: active) {
+  .menu-product-quantity button::before,
+  .menu-product-quantity button:first-child::after {
+    forced-color-adjust: none;
+    background: ButtonText;
+  }
 }
 
 .quantity-control button:disabled {
@@ -9279,10 +9303,10 @@ body:has(.public-page)::-webkit-scrollbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
-  margin-top: auto;
-  padding-top: 10px;
+  margin: 0;
+  padding: 0;
 }
 
 .drawer-social-links a {
@@ -9301,7 +9325,6 @@ body:has(.public-page)::-webkit-scrollbar {
 .drawer-social-links a:hover {
   background: color-mix(in srgb, var(--color-secondary) 13%, #fff);
   color: var(--color-secondary);
-  transform: translateY(-2px);
 }
 
 .drawer-social-links .social-instagram {
@@ -9415,7 +9438,7 @@ body:has(.public-page)::-webkit-scrollbar {
   overscroll-behavior: contain;
   padding: 28px;
   position: fixed;
-  right: 0;
+  inset-inline-start: 0;
   top: 0;
   width: min(72%, 340px);
   z-index: 90;
@@ -9976,7 +9999,7 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .public-logo-fallback,
-.public-drawer-logo {
+span.public-drawer-logo {
   border-radius: 50%;
   background:
     radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--color-secondary, #f59e0b) 85%, #fff), transparent 32%),
@@ -9991,6 +10014,8 @@ body:has(.public-page)::-webkit-scrollbar {
 }
 
 .public-drawer-logo {
+  border-radius: 50%;
+  justify-self: center;
   width: 78px;
   height: 78px;
 }
@@ -12232,6 +12257,16 @@ body {
   position: relative;
 }
 
+.settings-page .delivery-fee-field input {
+  display: block;
+  width: min(100%, 240px);
+  height: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  direction: rtl;
+  text-align: right;
+}
+
 .settings-page h1 {
   font-size: 30px;
   margin: 12px 0 6px;
@@ -13023,3 +13058,160 @@ body {
   word-break: break-word;
 }
 .whatsapp-preview-dialog > button { background: var(--color-secondary); border: 0; border-radius: 10px; color: white; cursor: pointer; font: inherit; min-height: 42px; }
+
+/* Public sidebar About / unified feedback only. */
+.public-info-dialog { box-sizing: border-box; width: min(430px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); border: 0; border-radius: 24px; padding: 22px; color: #20242c; background: #fff; box-shadow: 0 12px 50px #0003; font: inherit; overflow: auto; }
+.public-info-dialog::backdrop { background: #0005; }
+.public-info-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.public-info-dialog h2 { font-size: 21px; margin: 0; }
+.public-info-dialog header button { border: 0; background: transparent; width: 44px; height: 44px; display: grid; place-items: center; color: inherit; flex-shrink: 0; }
+.public-about-content p, .feedback-entry p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.public-about-address { color: #62686e; }
+.public-maps-link { display: flex; width: 44px; height: 44px; border-radius: 50%; align-items: center; justify-content: center; margin-top: 20px; color: var(--color-primary,#c33); background: #f8f9fa; border: 1px solid #f0f1f2; }
+.public-rating-stars { padding: 0; border: 0; margin: 0 0 16px; }
+.public-rating-stars legend { font-weight: 700; margin-bottom: 16px; }
+.public-rating-stars > div { display: flex; direction: ltr; justify-content: center; }
+.public-rating-stars label { display: grid; place-items: center; min-width: 44px; min-height: 48px; color: #a7abb0; cursor: pointer; position: relative; border-radius: 10px; }
+.public-rating-stars label.selected { color: var(--color-secondary,#d6a33d); }
+.public-rating-stars input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.public-rating-stars label:has(input:focus-visible), .public-info-dialog button:focus-visible, .public-maps-link:focus-visible { outline: 2px solid var(--color-primary,#c33); outline-offset: 3px; }
+.public-feedback-prompt { line-height: 1.8; margin: 0 0 16px; }
+.public-feedback-field { display: grid; gap: 6px; margin-bottom: 16px; font-size: 15px; }
+.public-feedback-field input, .public-feedback-field textarea { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid #dce0e3; border-radius: 12px; padding: 10px 12px; font: inherit; color: inherit; background: #fff; text-align: start; }
+.public-feedback-field textarea { resize: vertical; }
+.public-feedback-submit { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 46px; border: 0; border-radius: 24px; background: var(--color-primary,#c33); color: #fff; font: inherit; font-weight: 700; }
+.public-feedback-submit.via-whatsapp { background: #168d48; }
+.public-feedback-submit:disabled { opacity: .6; }
+.public-feedback-error { color: #ad2323; }
+.feedback-entry { margin-block: 16px; }
+.feedback-entry header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.feedback-entry header strong { color: #b48220; direction: ltr; }
+.feedback-entry time { color: #69737d; font-size: 14px; }
+.feedback-tone { border-radius: 20px; padding: 3px 10px; font-size: 13px; }
+.feedback-tone.tone-positive { color: #17613b; background: #eaf7ef; }
+.feedback-tone.tone-neutral { color: #775923; background: #fff5dd; }
+.feedback-tone.tone-negative { color: #9c3030; background: #fcecec; }
+.feedback-inbox nav { display: flex; align-items: center; justify-content: center; gap: 16px; }
+
+/* Customer-only typography: theme variables must not override the Legacy menu family. */
+.public-screen { --font-base: "Almarai", Arial, Tahoma, sans-serif !important; --font-heading: "Almarai", Arial, Tahoma, sans-serif !important; }
+.public-drawer { box-sizing: border-box; width: min(72%, 340px); gap: 18px; padding-bottom: max(28px, env(safe-area-inset-bottom)); scroll-padding-block: 24px; }
+.drawer-language {display:flex;align-items:center;justify-content:space-between;gap:12px;}
+/* Keep the English label and fixed pill within the 72% drawer on narrow phones. */
+@media(max-width:380px){.public-drawer .drawer-language{gap:8px;}}
+.public-drawer .drawer-language-control {display:flex;border:1px solid #e4e6e8;border-radius:12px;padding:3px;gap:2px;}
+.public-drawer .drawer-language-control button {min-height:44px;min-width:48px;justify-content:center;border-radius:9px;font-size:14px;}
+.public-drawer .drawer-language-control button[aria-pressed="true"] {background:var(--color-primary);color:white;font-weight:700;}
+.drawer-section {min-width:0;border-bottom:1px solid #eceef0;}
+.public-drawer .drawer-section-toggle {width:100%;gap:12px;text-align:start;padding:4px 0;font:inherit;}
+.drawer-chevron {transition:transform .16s ease;}
+.drawer-section-toggle[aria-expanded="true"] .drawer-chevron {transform:rotate(180deg);}
+.drawer-section-content {padding:6px 0 18px;animation:drawer-content-in .16s ease;}
+.drawer-section-content[hidden] {display:none;}
+.drawer-hours-row {display:flex;justify-content:space-between;gap:12px;padding:9px 0;font-size:13px;border-bottom:1px solid #f3f4f5;}
+.drawer-hours-row:last-child {border:0;}
+.public-info-content {font:inherit;min-width:0;}
+.public-info-content p {overflow-wrap:anywhere;}
+.public-drawer button.public-feedback-submit {justify-content:center;min-height:48px;background:var(--color-primary);color:white;scroll-margin-block:24px;}
+.public-drawer button.public-feedback-submit.via-whatsapp {background:#168d48;}
+.public-drawer .public-feedback-field input,.public-drawer .public-feedback-field textarea {font-size:16px;scroll-margin-block:24px;}
+.public-drawer .public-rating-stars label {min-width:40px;flex:1;}
+.public-drawer button:focus-visible {outline:2px solid var(--color-primary);outline-offset:3px;}
+@keyframes drawer-content-in {from{opacity:.6}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.drawer-section-content{animation:none}.drawer-chevron{transition:none}}
+
+/* Match menu navigation controls to the product back control. */
+.public-screen.view-menu .public-header {grid-template-columns:44px minmax(0,1fr) 44px;}
+.public-screen.view-menu .public-header > button:first-child:not(.public-header-menu-button) {width:42px;height:42px;border-radius:50%;padding:0;justify-content:center;}
+.public-screen.view-menu .public-header > img,
+.public-screen.view-menu .public-header > .public-logo-fallback {width:44px;height:44px;}
+.public-drawer[dir="ltr"] {box-shadow:16px 0 44px rgb(16 24 40 / 30%);}
+
+/* Public page navigation contract. Drawer branding is intentionally independent. */
+.public-screen {--public-control-size:42px;--public-logo-size:44px;--public-header-edge:16px;--public-header-top:calc(12px + env(safe-area-inset-top,0px));}
+.public-screen:not(.view-product) {padding-top:var(--public-header-top);}
+.public-screen .public-header,
+.public-screen .vertigo-product-header {grid-template-columns:var(--public-logo-size) minmax(0,1fr) var(--public-logo-size);align-items:center;min-height:var(--public-logo-size);}
+.public-screen .public-header {padding:0;}
+.public-screen.view-cart .public-header > .public-nav-control:first-child,
+.public-screen .public-header > .public-nav-control:first-child,
+.public-screen .public-nav-control {box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:var(--public-control-size);height:var(--public-control-size);min-width:var(--public-control-size);padding:0;border-radius:50%;touch-action:manipulation;}
+.public-screen .public-nav-control:not(.public-header-menu-button):not(:has(.lucide-menu)) {background:var(--color-surface,#fff);border:1px solid var(--color-border);box-shadow:0 8px 20px rgb(16 24 40 / 14%);color:var(--color-secondary);}
+.public-screen .public-nav-control::before {content:none!important;}
+.public-screen .public-header .public-nav-control .public-back-icon,
+.public-screen .public-nav-control .public-back-icon {display:block!important;width:24px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
+.public-screen[dir="ltr"] .public-back-icon {transform:rotate(180deg);}
+.public-screen .public-header-logo {box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:var(--public-logo-size);height:var(--public-logo-size);min-width:var(--public-logo-size);padding:0;border:0;background:transparent;box-shadow:none;cursor:pointer;touch-action:manipulation;}
+.public-screen .public-header-logo img,
+.public-screen .public-header-logo .public-logo-fallback {box-sizing:border-box;width:var(--public-logo-size);height:var(--public-logo-size);object-fit:contain;border-radius:50%;}
+.public-screen .public-nav-control:focus-visible,
+.public-screen .public-header-logo:focus-visible {outline:2px solid var(--color-primary);outline-offset:3px;}
+.public-screen .public-nav-control:hover {filter:brightness(.97);}
+.public-screen .public-nav-control:active {filter:brightness(.94);}
+.public-screen .product-photo > .public-nav-control {top:calc(var(--public-header-top) + (var(--public-logo-size) - var(--public-control-size))/2);right:auto;left:auto;inset-inline-start:var(--public-header-edge);z-index:3;}
+.public-screen .product-photo > .public-header-logo {position:absolute;top:var(--public-header-top);inset-inline-end:var(--public-header-edge);z-index:3;}
+.public-screen .vertigo-product-header {padding:var(--public-header-top) var(--public-header-edge) 12px;}
+.public-screen .vertigo-product-header .public-nav-control {grid-column:1;grid-row:1;}
+.public-screen .vertigo-product-header .public-header-logo {grid-column:3;grid-row:1;}
+.public-screen .vertigo-product-header p {grid-column:2;grid-row:1;}
+.public-screen .vertigo-product-detail .product-photo > .product-back-link {display:none;}
+
+/* Existing AR/EN actions, one moving visual indicator. */
+.public-drawer .drawer-language-control {position:relative;isolation:isolate;box-sizing:border-box;flex:0 0 125px;width:125px;height:42px;padding:3px;gap:0;border:0;border-radius:999px;background:#f4f4f5;direction:ltr;}
+.public-drawer .drawer-language-control::before {content:"";position:absolute;z-index:-1;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/2);border-radius:999px;background:var(--color-primary);transform:translateX(0);transition:transform 180ms ease-in-out;}
+.public-drawer .drawer-language-control:has(button:last-child[aria-pressed="true"])::before {transform:translateX(100%);}
+.public-drawer .drawer-language-control button {flex:1;min-width:0;width:50%;height:36px;min-height:36px;padding:0;border-radius:999px;background:transparent;font-family:inherit;font-size:14px;font-weight:700;justify-content:center;color:#45454a;}
+.public-drawer .drawer-language-control button[aria-pressed="true"] {background:transparent;color:#fff;}
+@media(prefers-reduced-motion:reduce){.public-drawer .drawer-language-control::before{transition:none;}}
+
+/* Product gallery controls only; the existing image geometry and cyclic order stay intact. */
+.product-photo > button.product-gallery-arrow {display:none;top:45%;bottom:auto;width:30px;height:30px;opacity:0;pointer-events:none;transition:opacity 180ms ease-in-out;}
+.product-photo > .product-gallery-prev {left:auto;right:auto;inset-inline-start:16px;}
+.product-photo > .product-gallery-next {left:auto;right:auto;inset-inline-end:16px;}
+.public-screen[dir="rtl"] .product-gallery-arrow svg {transform:rotate(180deg);}
+.product-gallery-dots {position:absolute;display:flex;align-items:center;justify-content:center;gap:2px;bottom:28px;left:50%;transform:translateX(-50%);z-index:3;}
+.vertigo-product-detail .product-gallery-dots {bottom:6px;}
+.product-gallery-dots button {box-sizing:content-box;flex:none;width:7px;height:7px;padding:9px 7px;border:0;border-radius:999px;background:transparent;cursor:pointer;position:relative;transition:width 180ms ease-in-out;}
+.product-gallery-dots button::before {content:"";position:absolute;inset:9px 7px;border-radius:999px;background:rgb(255 255 255 / 45%);box-shadow:0 1px 3px rgb(0 0 0 / 30%);}
+.product-gallery-dots button.active {width:24px;}
+.product-gallery-dots button.active::before {background:white;}
+.product-gallery-dots button:focus-visible,.product-photo:focus-visible {outline:2px solid var(--color-primary);outline-offset:-2px;}
+@media(hover:hover) and (pointer:fine){.product-photo > button.product-gallery-arrow{display:flex;}.product-photo:hover > button.product-gallery-arrow,.product-photo:focus-within > button.product-gallery-arrow{opacity:1;pointer-events:auto;}}
+@media(prefers-reduced-motion:reduce){.product-gallery-dots button,.product-photo > button.product-gallery-arrow{transition:none;}}
+
+.public-screen .public-header > .public-nav-control:first-child {grid-column:1;grid-row:1;}
+.public-screen .public-header > .public-header-logo {grid-column:3;grid-row:1;}
+.public-screen .public-header > p {grid-column:2;grid-row:1;}
+.public-screen.template-vertigo.view-home .public-header {top:var(--public-header-top);left:var(--public-header-edge);right:var(--public-header-edge);direction:inherit;}
+.public-screen .public-header .public-header-logo img,
+.public-screen .public-header-logo img {width:var(--public-logo-size);height:var(--public-logo-size);object-fit:contain;border:2px solid color-mix(in srgb,var(--color-secondary) 68%,#fff);box-shadow:0 8px 18px color-mix(in srgb,var(--color-secondary) 22%,transparent);}
+
+/* Owner review: retain the original hero height on mobile and desktop. */
+
+/* Home hamburger: 24px visible ink including 2px round strokes. */
+.public-screen.view-home .public-header > .public-nav-control:has(.lucide-menu) {width:44px;height:44px;min-width:44px;}
+.public-screen.view-home .public-header > .public-nav-control .lucide-menu {width:33px;height:33px;stroke-width:2px;stroke-linecap:round;}
+.public-screen.view-home .public-header > .public-nav-control .lucide-menu line {vector-effect:non-scaling-stroke;}
+
+.public-about-address {white-space:pre-wrap;overflow-wrap:anywhere;}
+
+/* Drawer About only: inherit the established Almarai menu family. */
+.public-drawer .public-about-content {text-align:start;font-family:inherit;min-width:0;}
+.public-drawer .public-about-content .drawer-about-description {font-size:15px;font-weight:400;line-height:1.6;margin:0;white-space:pre-wrap;unicode-bidi:plaintext;}
+.public-drawer .drawer-about-divider {border:0;border-top:1px solid #eceef0;margin:12px 0;}
+.public-drawer .drawer-about-location {display:flex;align-items:center;gap:8px;min-width:0;}
+.public-drawer .drawer-about-location-text {flex:1;min-width:0;}
+.public-drawer .drawer-about-label {display:block;font-size:12px;font-weight:400;line-height:1.6;color:#62686e;}
+.public-drawer .public-about-content .public-about-address {font-size:14px;font-weight:400;line-height:1.6;margin:2px 0 0;text-align:start;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext;}
+.public-drawer .drawer-about-map,.public-drawer .drawer-about-pin {display:flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;height:44px;margin:0;padding:0;background:none;border:0;box-shadow:none;color:var(--color-primary);}
+.public-drawer .drawer-about-map:focus-visible {outline:2px solid var(--color-primary);outline-offset:2px;border-radius:6px;}
+
+/* Interactive identity and location surfaces; preserve their existing hit boxes. */
+.public-screen .public-header .public-header-logo {padding:3px;border:1px solid #e6e8ec;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgb(16 24 40 / 8%);}
+.public-screen .public-header .public-header-logo img,
+.public-screen .public-header .public-header-logo .public-logo-fallback {width:100%;height:100%;min-width:0;object-fit:contain;border:0;box-shadow:none;}
+.public-screen .public-header .public-header-logo img {border-radius:0;}
+.public-screen .public-header .public-header-logo:active {opacity:.8;}
+.public-drawer .drawer-about-map svg,.public-drawer .drawer-about-pin svg {box-sizing:content-box;width:20px;height:20px;padding:9px;border:1px solid #e6e8ec;border-radius:50%;background:#f8f9fa;}
+.public-drawer .drawer-about-map:active {opacity:.75;}
+.public-drawer .drawer-about-map:focus-visible {border-radius:50%;}

@@ -1,3 +1,4 @@
+import { requireRestaurantPermission } from "../../common/restaurant-permission";
 import { Controller, Get, Inject, Req, UseGuards } from "@nestjs/common";
 import { AppRequest } from "../../common/app-request";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -11,6 +12,7 @@ export class OrdersController {
 
   @Get()
   list(@Req() request: AppRequest) {
+    requireRestaurantPermission(request, "analytics.view");
     return this.ordersService.list(request.restaurant!.id);
   }
 }

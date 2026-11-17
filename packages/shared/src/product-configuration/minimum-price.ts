@@ -9,11 +9,12 @@ import {
   OptionChoice,
   OptionSelectionInstance,
   ProductConfigurationContext,
-  ProductConfigurationV1,
-  ProductSelectionV1,
+  ProductConfigurationV2,
+  ProductSelectionV2,
   PRODUCT_SELECTION_SCHEMA_VERSION
-} from "./types";
-import { resolveEngineLimits, validateConfiguration } from "./validation";
+} from "./v2-types";
+import { resolveEngineLimits, validateConfiguration, validateGroupLevels } from "./validation";
+import { validateConfigurationCurrencyV2 } from "./v2-helpers";
 
 type MaybeGroupSelection = GroupSelection | undefined;
 
@@ -33,12 +34,19 @@ function uniqueIssues(issues: readonly ConfigurationIssue[]): ConfigurationIssue
  * a misleading "starting at" price.
  */
 export function calculateMinimumPrice(
-  configuration: ProductConfigurationV1,
+  configuration: ProductConfigurationV2,
   context: ProductConfigurationContext
 ): MinimumPriceResult {
+  if (!context || !context.catalogId || !context.currency) {
+    return {orderable:false,minimum:null,maximumRequired:null,display:"UNAVAILABLE",baseIgnored:false,
+      issues:[{code:"INVALID_CONTEXT",path:"$context",message:"Catalog and currency are required."}]};
+  }
   const limits = resolveEngineLimits(context.limits);
   const issues = validateConfiguration(configuration, limits);
+  if (!issues.length) issues.push(...validateConfigurationCurrencyV2(configuration, context.currency));
+  if (!issues.length && context.linkedProducts?.size) issues.push(...validateGroupLevels(configuration, id => context.linkedProducts?.get(id)?.configuration));
   let generatedStates = 0;
+  let generatedInstanceId = 0;
   let stateLimitReached = false;
 
   function countState<T>(value: T): T | undefined {
@@ -80,7 +88,7 @@ export function calculateMinimumPrice(
 
     const results: number[][] = [];
     function visit(index: number, remaining: number, current: number[]) {
-      if (stateLimitReached) return;
+      if (stateLimitReached || !countState(true)) return;
       if (index === group.options.length) {
         if (remaining === 0) {
           const state = countState([...current]);
@@ -91,7 +99,7 @@ export function calculateMinimumPrice(
 
       const option = group.options[index];
       const minimum = option.available === false ? 0 : minima[index];
-      const maximum = option.available === false ? 0 : Math.min(option.maxQuantity, remaining);
+      const maximum = option.available === false ? 0 : Math.min(option.maxQuantity ?? limits.maxQuantityPerGroup, remaining);
       for (let quantity = minimum; quantity <= maximum; quantity += 1) {
         current.push(quantity);
         visit(index + 1, remaining - quantity, current);
@@ -103,10 +111,10 @@ export function calculateMinimumPrice(
   }
 
   function enumerateProduct(
-    config: ProductConfigurationV1,
+    config: ProductConfigurationV2,
     path: string,
     productStack: readonly string[]
-  ): ProductSelectionV1[] {
+  ): ProductSelectionV2[] {
     return enumerateGroups(config.groups, path, productStack).map((groups) => ({
       schemaVersion: PRODUCT_SELECTION_SCHEMA_VERSION,
       productId: config.productId,
@@ -151,7 +159,7 @@ export function calculateMinimumPrice(
       const selections: MaybeGroupSelection[] = [];
       group.sizes.forEach((size, sizeIndex) => {
         if (size.available === false) return;
-        const childSelections = enumerateGroups(size.children ?? [], `${path}.sizes[${sizeIndex}]`, productStack);
+        const childSelections = enumerateGroups(group.children ?? [], `${path}.sizes[${sizeIndex}]`, productStack);
         childSelections.forEach((children) => {
           const state = countState<GroupSelection>({
             type: "SIZE",
@@ -174,7 +182,7 @@ export function calculateMinimumPrice(
     }
     const allocations = enumerateAllocations(group);
     const selections: MaybeGroupSelection[] = [];
-    allocations.forEach((allocation, allocationIndex) => {
+    allocations.forEach((allocation) => {
       if (allocation.every((quantity) => quantity === 0)) {
         selections.push(undefined);
         return;
@@ -189,14 +197,16 @@ export function calculateMinimumPrice(
       });
 
       combine(unitSets).forEach((units) => {
-        const instances = units.map(({ option, unit, variant }, index): OptionSelectionInstance => ({
-          instanceId: `${path}:a${allocationIndex}:u${index}:${option.id}:${unit}`,
+        const instances = units.map(({ option, variant }): OptionSelectionInstance => ({
+          instanceId: "minimum-" + (++generatedInstanceId),
           optionId: option.id,
           ...(variant.children?.length ? { children: variant.children } : {}),
           ...(variant.linkedSelection ? { linkedSelection: variant.linkedSelection } : {})
         }));
-        const state = countState<GroupSelection>({ type: "OPTIONS", groupId: group.id, instances });
-        if (state) selections.push(state);
+        for (const children of enumerateGroups(group.children ?? [], path + ".children", productStack)) {
+          const state = countState<GroupSelection>({ type: "OPTIONS", groupId: group.id, instances, children });
+          if (state) selections.push(state);
+        }
       });
     });
     return selections;

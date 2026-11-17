@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { calculatePrice, validateConfiguration, type ProductSelectionV1 } from "@menu/shared";
+import { calculatePrice, validateConfiguration } from "@menu/shared";
 import { buildSelection } from "./configuration-preview";
-import { comboDemo, includedQuantityDemo, pizzaMargheritaDemo, selectComboDemoSources } from "./demos";
+import { includedQuantityDemo, pizzaMargheritaDemo } from "./demos";
 import {
   appendChildGroup,
   appendRootGroup,
@@ -15,7 +15,7 @@ import {
   removeNode,
   serializeDraft
 } from "./editor-model";
-import type { ProductCandidate, ProductConfigurationEnvelope } from "./types";
+import type { ProductConfigurationEnvelope } from "./types";
 
 const envelope: ProductConfigurationEnvelope = {
   productId: "product-1",
@@ -33,7 +33,7 @@ describe("product configuration editor model", () => {
     const empty = createEmptyConfiguration(envelope);
     expect(empty.basePrice).toBeNull();
     expect(configurationsEqual(empty, { ...empty, basePrice: "0" })).toBe(false);
-    expect(validateConfiguration({ ...empty, basePrice: "0" })).toEqual([]);
+    expect(validateConfiguration({ ...empty, basePrice: "0" })).toEqual([expect.objectContaining({code:"UNSUPPORTED_CONFIGURATION_V1"})]);
   });
 
   it("adds, moves, nests, and removes stable nodes without mutating the source", () => {
@@ -63,112 +63,14 @@ describe("product configuration editor model", () => {
   });
 });
 
-describe("Stage 4 demo fixtures", () => {
-  it("creates a valid nested pizza demo with full size prices and overrides", () => {
-    const demo = pizzaMargheritaDemo("product-1", 1);
-    expect(validateConfiguration(demo)).toEqual([]);
-    expect(demo.basePrice).toBeNull();
-    expect(demo.groups[0].type).toBe("SIZE");
-  });
-
-  it("uses the size-specific override and exact decimal strings in preview pricing", () => {
-    const demo = pizzaMargheritaDemo("product-1", 1);
-    const selection = buildSelection(demo, new Map());
-    const size = selection.groups[0];
-    if (size.type !== "SIZE") throw new Error("Expected size selection");
-    const toppings = size.children?.find((group) => group.groupId === "demo-pizza-toppings-small");
-    if (!toppings || toppings.type !== "OPTIONS") throw new Error("Expected topping selection");
-    toppings.instances.push({
-      instanceId: "cheese-1",
-      optionId: "demo-extra-cheese-small",
-      children: [{ type: "OPTIONS", groupId: "demo-cheese-finish-small", instances: [] }]
-    });
-    const result = calculatePrice(demo, selection, { catalogId: "restaurant-a", linkedProducts: new Map() });
-    expect(result.valid).toBe(true);
-    expect(result.total).toBe("90");
-    expect(result.lines.find((line) => line.nodeId === "demo-extra-cheese-small")?.amount).toBe("10");
-  });
-
-  it("prices Included Quantity by exempting the highest-priced selected units", () => {
-    const demo = includedQuantityDemo("product-1", 1);
-    const selection: ProductSelectionV1 = {
-      schemaVersion: 1,
-      productId: "product-1",
-      configurationRevision: 1,
-      groups: [{
-        type: "OPTIONS",
-        groupId: "demo-included-toppings",
-        instances: [
-          { instanceId: "mushroom-1", optionId: "demo-included-mushroom" },
-          { instanceId: "cheese-1", optionId: "demo-included-cheese" },
-          { instanceId: "meat-1", optionId: "demo-included-meat" }
-        ]
-      }]
-    };
-    const result = calculatePrice(demo, selection, { catalogId: "restaurant-a", linkedProducts: new Map() });
-    expect(result.valid).toBe(true);
-    expect(result.total).toBe("115");
-    expect(result.lines.filter((line) => line.included).map((line) => line.amount)).toEqual(["30", "50"]);
-  });
-
-  it("creates a valid combo with ORIGINAL, CUSTOM, and a repeated source", () => {
-    const sourceConfiguration = pizzaMargheritaDemo("source-network", 3);
-    const networkEnvelope: ProductConfigurationEnvelope = {
-      ...envelope,
-      productId: "source-network",
-      mode: "NETWORK",
-      configurationVersion: 3,
-      configurationTree: sourceConfiguration,
-      basePrice: null,
-      orderabilityState: "PUBLIC_INTEGRATION_PENDING"
-    };
-    const legacyEnvelope: ProductConfigurationEnvelope = { ...envelope, productId: "source-legacy", basePrice: "25" };
-    const networkProduct: ProductCandidate = { id: "source-network", name: "بيتزا المصدر", basePrice: null, currency: "EGP", isAvailable: true, configurationMode: "NETWORK", configurationVersion: 3 };
-    const legacyProduct: ProductCandidate = { id: "source-legacy", name: "مشروب قديم", basePrice: 25, currency: "EGP", isAvailable: true, configurationMode: "LEGACY", configurationVersion: 0 };
-    const demo = comboDemo("product-1", 1, { product: networkProduct, envelope: networkEnvelope }, { product: legacyProduct, envelope: legacyEnvelope });
-    expect(validateConfiguration(demo)).toEqual([]);
-    const group = demo.groups[0];
-    if (group.type !== "OPTIONS") throw new Error("Expected options group");
-    expect(group.options.map((option) => option.linkedProduct?.sourceProductId)).toEqual(["source-network", "source-network", "source-legacy"]);
-    expect(group.options[2].linkedProduct?.mode).toBe("CUSTOM");
-    expect(group.options[2].linkedProduct?.customConfiguration?.basePrice).toBe("25");
-
-    const sources = new Map([
-      ["source-network", networkEnvelope],
-      ["source-legacy", legacyEnvelope]
-    ]);
-    const selection = buildSelection(demo, sources);
-    const linkedProducts = new Map([
-      ["source-network", { productId: "source-network", catalogId: "restaurant-a", configuration: sourceConfiguration, available: true, orderable: true }],
-      ["source-legacy", { productId: "source-legacy", catalogId: "restaurant-a", configuration: legacyEnvelope.configurationTree ?? { schemaVersion: 1 as const, productId: "source-legacy", revision: 0, basePrice: "25", groups: [] }, available: true, orderable: true }]
-    ]);
-    expect(calculatePrice(demo, selection, { catalogId: "restaurant-a", linkedProducts })).toMatchObject({ valid: true, total: "240" });
-  });
-
-  it("prefers an explicit Legacy source for the CUSTOM demo even when Network is listed first", () => {
-    const sourceConfiguration = pizzaMargheritaDemo("source-network", 3);
-    const networkEnvelope: ProductConfigurationEnvelope = {
-      ...envelope,
-      productId: "source-network",
-      mode: "NETWORK",
-      configurationVersion: 3,
-      configurationTree: sourceConfiguration,
-      basePrice: null,
-      orderabilityState: "PUBLIC_INTEGRATION_PENDING"
-    };
-    const legacyEnvelope: ProductConfigurationEnvelope = { ...envelope, productId: "source-legacy", basePrice: "25" };
-    const selected = selectComboDemoSources([
-      {
-        product: { id: "source-network", name: "Network", basePrice: null, currency: "EGP", isAvailable: true, configurationMode: "NETWORK", configurationVersion: 3 },
-        envelope: networkEnvelope
-      },
-      {
-        product: { id: "source-legacy", name: "Legacy", basePrice: 25, currency: "EGP", isAvailable: true, configurationMode: "LEGACY", configurationVersion: 0 },
-        envelope: legacyEnvelope
-      }
-    ]);
-    expect(selected.original?.product.id).toBe("source-network");
-    expect(selected.custom?.product.id).toBe("source-legacy");
-    expect(selected.custom?.envelope.mode).toBe("LEGACY");
+// The old editor is not mounted. Its positive financial cases were ported to V2:
+// v62-model.test.ts, public/product-configurator-model.test.ts and real ordering HTTP/browser acceptance.
+// Keep a negative guard for historical drafts until their separately reviewed file retirement.
+describe("retired V1 samples never activate customer pricing", () => {
+  it.each([pizzaMargheritaDemo, includedQuantityDemo])("rejects historical sample %s rather than providing a V1 financial engine", factory => {
+    const tree=factory("product-1",1), selected=buildSelection(tree,new Map());
+    const result=calculatePrice(tree,selected,{catalogId:"restaurant-a",linkedProducts:new Map()});
+    expect(result.valid).toBe(false);expect(result.total).toBeNull();
+    expect(result.issues).toEqual([expect.objectContaining({code:"UNSUPPORTED_CONFIGURATION_V1"})]);
   });
 });

@@ -50,7 +50,7 @@ export function RestaurantForm() {
     templateKey: "default",
     ownerName: "",
     ownerEmail: "",
-    ownerPassword: "password123",
+    ownerPassword: "",
     copyFromRestaurantId: ""
   });
   const sourceRestaurant = restaurants.find((restaurant) => restaurant.id === form.copyFromRestaurantId);
@@ -110,7 +110,7 @@ export function RestaurantForm() {
           ...form,
           slug: form.slug || undefined,
           copyFromRestaurantId: form.copyFromRestaurantId || undefined,
-          ownerPassword: form.ownerPassword || undefined
+          ownerPassword: form.ownerPassword
         })
       });
 
@@ -229,7 +229,7 @@ export function RestaurantForm() {
 
           <label>
             <span>كلمة مرور المالك</span>
-            <input value={form.ownerPassword} onChange={(event) => update("ownerPassword", event.target.value)} />
+            <input required minLength={12} type="password" autoComplete="new-password" value={form.ownerPassword} onChange={(event) => update("ownerPassword", event.target.value)} />
           </label>
 
           <label>

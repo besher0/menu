@@ -52,8 +52,7 @@ export class CreateRestaurantDto {
   @MinLength(2)
   ownerName: string;
 
-  @IsOptional()
   @IsString()
-  @MinLength(8)
-  ownerPassword?: string;
+  @MinLength(12)
+  ownerPassword: string;
 }

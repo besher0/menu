@@ -1,15 +1,23 @@
 "use client";
+import { SocialIcon } from "./social-icon";
+import { PublicInfoContent } from "./public-info-dialog";
+import { publicAboutInfo } from "./public-feedback-model";
 
-import Link from "next/link";
+import Link from "./restaurant-link";
+import { sidebarSocialLinks } from "./sidebar-social-links";
+import { PublicBackIcon, PublicHeaderLogo } from "./public-header-controls";
+import { PublicImage } from "./public-image";
+import { useRestaurantShell } from "./restaurant-shell-context";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createElement, type CSSProperties, type PointerEvent, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, createElement, memo, useContext, type CSSProperties, type PointerEvent, type TouchEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Pencil, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars, type PublicWhatsappLineError, type PublicWhatsappPriceChange } from "@/lib/api";
 import { getPublicProductConfiguration, getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
-import { compareMoney, multiplyMoney, sumMoney } from "@menu/shared";
+import { clientUuid } from "@/lib/client-uuid";
+import { compareMoney, currencyDisplayLabel, multiplyMoney, sumMoney } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
-import { ProductConfigurator } from "./product-configurator";
+import { ProductConfigurator, preloadProductConfigurator } from "./lazy-product-configurator";
 import { rebaseSelectionRevisions } from "./product-configurator-model";
 import { networkCartChoiceLabels, networkCartHeading } from "./cart-presentation";
 import {
@@ -18,6 +26,8 @@ import {
   applyNetworkRecheck,
   applyRebasedNetworkRecheck,
   cartNeedsPreviewGate,
+  cartCatalogReview,
+  acceptLegacyCatalogPrice,
   createNetworkCartLineId,
   networkCartItemFromQuote,
   putLegacyCartItem,
@@ -32,8 +42,12 @@ import {
 } from "./cart-model";
 import { cartDisplayedTotal, useTrustedWhatsappCheckout } from "./trusted-whatsapp-checkout";
 import { invoiceDragHeight, shouldExpandInvoice } from "./invoice-sheet-motion";
+import { leaveTrackedProduct, trackVisibleView } from "./view-tracking";
+import { commitPublicNavigation, hasSavedPublicScroll, rememberPublicNavigation, returnFromPublicProduct } from "./public-history";
+import { indexMenuProducts, indexMenuQuantities } from "./menu-render-model";
 
 type PublicLanguage = "ar" | "en";
+const MenuLanguageContext = createContext<PublicLanguage>("ar");
 type CategoryProductListLayout = "single" | "double";
 type MenuDisplayMode = "large" | "list";
 type ProductMediaMode = "image" | "3d";
@@ -115,7 +129,7 @@ const translations = {
     preparingOrder: "يتم تجهيز الطلب...",
     cartReady: "طلبك جاهز للإرسال",
     cartTotal: "المجموع",
-    orderError: "تعذر إنشاء الطلب، سيتم فتح واتساب مباشرة",
+    orderError: "تعذر إنشاء الطلب. حدّث الصفحة وراجع أصناف السلة وأسعارها ثم حاول مجددًا. لم يُرسل الطلب.",
     removeItem: "حذف المنتج",
     emptyCart: "السلة فارغة",
     viewCart: "عرض السلة",
@@ -185,7 +199,7 @@ const translations = {
     preparingOrder: "Preparing order...",
     cartReady: "Your order is ready",
     cartTotal: "Total",
-    orderError: "Could not create the order, opening WhatsApp directly",
+    orderError: "Could not create the order. Reload and review your cart items and prices before retrying. The order was not sent.",
     removeItem: "Remove item",
     emptyCart: "Your cart is empty",
     viewCart: "View cart",
@@ -413,15 +427,14 @@ function formatOpeningHours(hours?: Array<Record<string, unknown>> | Record<stri
     : ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const list = Array.isArray(hours) ? hours : Object.values(hours);
   const rows = list
-    .filter((hour): hour is Record<string, unknown> => Boolean(hour) && typeof hour === "object")
-    .slice(0, 7)
+    .filter((hour): hour is Record<string, unknown> => hour !== null && typeof hour === "object" && "day" in hour && Number.isInteger(hour.day) && Number(hour.day)>=0 && Number(hour.day)<=6)
     .map((hour) => {
       const dayIndex = Number(hour.day ?? 0);
       const day = dayNames[dayIndex] ?? String(hour.day ?? "");
       const closed = Boolean(hour.isClosed);
       const from = String(hour.opensAt ?? "");
       const to = String(hour.closesAt ?? "");
-      return `${day}: ${closed ? (language === "ar" ? "مغلق" : "Closed") : `${from} - ${to}`}`;
+      return `${day}: ${closed ? (language === "ar" ? "مغلق" : "Closed") : (from && to ? `${from} – ${to}` : (language === "ar" ? "غير محدد" : "Not provided"))}`;
     })
     .filter((row) => row.trim().length > 2);
   return rows.length ? rows : null;
@@ -450,16 +463,27 @@ function productImages(product: PublicProduct) {
 function ProductImageMedia({
   product,
   image,
-  decorative = false
+  decorative = false,
+  sizes,
+  loading,
+  fetchPriority,
+  preserveIntrinsicSize
 }: {
   product: Pick<PublicProduct, "name" | "imageUrl" | "images">;
   image?: { url?: string | null; altText?: string | null } | null;
   decorative?: boolean;
+  sizes?: string;
+  loading?: "lazy" | "eager";
+  fetchPriority?: "high" | "low" | "auto";
+  preserveIntrinsicSize?: boolean;
 }) {
   const imageUrl = image?.url?.trim() || productImage(product) || "";
 
   if (imageUrl) {
-    return <img src={imageUrl} alt={decorative ? "" : image?.altText || product.name} aria-hidden={decorative || undefined} />;
+    const source = preserveIntrinsicSize ? product.images?.find(entry => entry.url === imageUrl) : undefined;
+    const originalDimensions = source?.width && source.height ? { width: source.width, height: source.height } : undefined;
+    return <PublicImage src={imageUrl} alt={image?.altText || product.name} decorative={decorative} sizes={sizes}
+      loading={loading} fetchPriority={fetchPriority} preserveIntrinsicSize={preserveIntrinsicSize} originalDimensions={originalDimensions} />;
   }
 
   return (
@@ -542,67 +566,6 @@ function stripTrailingSlash(value: string) {
   return value.length > 1 ? value.replace(/\/+$/, "") : value;
 }
 
-function normalizeSocialUrl(value?: string | null, host?: string) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
-  const path = trimmed.replace(/^@/, "").replace(/^\/+/, "");
-  if (host && (path.toLowerCase() === host.toLowerCase() || path.toLowerCase().startsWith(`${host.toLowerCase()}/`))) {
-    return `https://${path}`;
-  }
-
-  return host ? `https://${host}/${path}` : `https://${path}`;
-}
-
-function normalizeWhatsappUrl(value?: string | null) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
-  const digits = trimmed.replace(/[^\d]/g, "");
-  return digits ? `https://wa.me/${digits}` : normalizeSocialUrl(trimmed, "wa.me");
-}
-
-function TikTokIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M15.1 3h3.1c.2 1.2.7 2.2 1.5 3 .7.8 1.7 1.3 3 1.5v3.2c-1.6-.1-3.1-.6-4.5-1.5v6.1c0 1.8-.6 3.2-1.8 4.3-1.1 1.1-2.6 1.7-4.4 1.7-1.6 0-3-.5-4.1-1.5-1.1-1-1.7-2.3-1.7-3.9 0-1.7.6-3 1.8-4.1 1.2-1 2.7-1.5 4.6-1.4v3.2c-.9-.1-1.6.1-2.2.5-.5.4-.8 1-.8 1.7 0 .6.2 1.2.7 1.6.4.4 1 .6 1.7.6.8 0 1.5-.3 2-.8.5-.6.8-1.3.8-2.2V3h.3Z"
-      />
-    </svg>
-  );
-}
-
-function SocialIcon({ type, size = 20 }: { type: string; size?: number }) {
-  if (type === "instagram") return <Instagram size={size} />;
-  if (type === "facebook") return <Facebook size={size} />;
-  if (type === "tiktok") return <TikTokIcon size={size} />;
-  return <MessageCircle size={size} />;
-}
-
-function shouldTrackProductView(restaurantSlug: string, productSlug: string) {
-  if (typeof window === "undefined") return true;
-
-  const key = `product-view:${restaurantSlug}:${productSlug}`;
-  const now = Date.now();
-  const lastTrackedAt = Number(window.sessionStorage.getItem(key) ?? 0);
-
-  if (now - lastTrackedAt < 5000) {
-    return false;
-  }
-
-  window.sessionStorage.setItem(key, String(now));
-  return true;
-}
-
 function productIngredients(product: PublicProduct): NormalizedIngredient[] {
   return (product.ingredients ?? [])
     .map((ingredient) =>
@@ -638,6 +601,36 @@ function getRelatedProducts(products: PublicProduct[], product: PublicProduct) {
   return related.slice(0, 8);
 }
 
+// Retain one visited menu, never a collection of hidden product/configuration trees.
+// The parser installs this on the SSR menu before its buttons are parsed. Only
+// this list owns the captured clicks, until its restored cart is ready.
+const menuIncreaseBootstrap = `(() => {
+  const menu = document.currentScript.parentElement;
+  const pending = [];
+  function capture(event) {
+    if (!menu.isConnected) { menu.takePendingIncreases(); return; }
+    const button = event.target.closest?.("button[data-menu-increase]");
+    if (!event.isTrusted || event.defaultPrevented || !button || !menu.contains(button) || button.disabled || menu.hidden) return;
+    event.stopPropagation();
+    pending.push(button);
+  }
+  const clear = () => { pending.length = 0; };
+  // React delegates at the document root and may intercept a discrete event
+  // during hydration. Take ownership before it, only for this menu's buttons.
+  window.addEventListener("click", capture, true);
+  window.addEventListener("pagehide", clear);
+  menu.takePendingIncreases = () => {
+    window.removeEventListener("click", capture, true);
+    window.removeEventListener("pagehide", clear);
+    delete menu.takePendingIncreases;
+    return pending;
+  };
+})();`;
+
+type EarlyMenuElement = HTMLElement & { takePendingIncreases?: () => HTMLButtonElement[] };
+
+const PersistentMenuView = memo(MenuView, (previous, next) => !previous.active && !next.active);
+
 export function PublicMenuClient({
   data,
   view,
@@ -650,6 +643,8 @@ export function PublicMenuClient({
   initialUseSubdomainRoutes?: boolean;
 }) {
   const router = useRouter();
+  const routeSearch = useSearchParams();
+  const shell = useRestaurantShell();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartLoaded, setCartLoaded] = useState(false);
   const cartRef = useRef<CartItem[]>([]);
@@ -663,21 +658,20 @@ export function PublicMenuClient({
     return next;
   }
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const orderSubmittingRef = useRef(false);
   const legacyOrderAttempt = useRef<{ payloadJson: string; idempotencyKey: string } | null>(null);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
-  const [drawerTab, setDrawerTab] = useState<"hours" | null>(null);
-  const [splashVisible, setSplashVisible] = useState(false);
-  const [splashClosing, setSplashClosing] = useState(false);
-  const splashClickBlockUntil = useRef(0);
+  const aboutInfo = publicAboutInfo(data.restaurant);
+  const [openSection, setOpenSection] = useState<"hours" | "about" | "feedback" | null>(null);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
+  const [menuVisited, setMenuVisited] = useState(view === "menu");
   const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(initialUseSubdomainRoutes);
   const storageKey = `cart:${data.restaurant.slug}:main`;
   const languageStorageKey = `language:${data.restaurant.slug}`;
-  const splashStorageKey = `splash:${data.restaurant.slug}`;
   const products = data.products;
   const activeProduct = productSlug
     ? products.find((product) => isProductRouteMatch(product, productSlug))
@@ -686,15 +680,28 @@ export function PublicMenuClient({
   const showPrices = data.restaurant.showPrices ?? true;
   const publicUi = data.theme?.publicUi as PublicThemeUiSettings | undefined;
   const whatsappOrderingEnabled = publicUi?.whatsappOrderingEnabled !== false;
-  const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
   const publicPath = (pathname = "") => restaurantPath(data.restaurant.slug, pathname, useSubdomainRoutes);
 
-  function navigateTo(href: string) {
+  const navigateTo = useCallback((href: string) => {
+    if (shell?.navigate(href)) return;
+    rememberPublicNavigation(href, data.restaurant.slug);
     window.dispatchEvent(new Event("app:navigation-start"));
     router.push(href);
-  }
-  const openingHours = formatOpeningHours(firstBranch?.openingHours, language);
+  }, [shell, data.restaurant.slug, router]);
+  useLayoutEffect(() => {
+    const scroll = commitPublicNavigation(data.restaurant.slug);
+    let second = 0;
+    const first = window.requestAnimationFrame(() => {
+      second = window.requestAnimationFrame(() => {
+        const category = view === "menu" && new URLSearchParams(location.search).get("category");
+        if (scroll === undefined && category && document.getElementById(`category-section-${category}`)) return;
+        window.scrollTo({ top: scroll ?? 0, behavior: "instant" });
+      });
+    });
+    return () => { window.cancelAnimationFrame(first); window.cancelAnimationFrame(second); };
+  }, [view, productSlug, data.restaurant.slug]);
+  const openingHours = drawerOpen && openSection === "hours" ? formatOpeningHours(firstBranch?.openingHours, language) : null;
   const allBuilderSections = data.menus?.flatMap((menu) => menu.pages?.flatMap((page) => page.sections ?? []) ?? []) ?? [];
   const hasHomeSections = !data.menus?.length || allBuilderSections.some((section) =>
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
@@ -704,16 +711,33 @@ export function PublicMenuClient({
     ? hasHomeSections ? "home" : "menu"
     : requestedView;
   const showMenuNavItem = Boolean(data.products.length || data.categories.length);
+  useEffect(() => { if (activeView === "menu") setMenuVisited(true); }, [activeView]);
+  useEffect(() => {
+    if (activeView !== "home" && activeView !== "menu" && activeView !== "product") {
+      leaveTrackedProduct();
+      return;
+    }
+    let recorded = false;
+    const record = () => {
+      if (recorded || document.visibilityState !== "visible") return;
+      recorded = true;
+      const slug = data.restaurant.slug;
+      if (activeView === "product") {
+        if (activeProduct?.slug) trackVisibleView({ slug, type: "PRODUCT_VIEWED",
+          path: `/m/${slug}/product/${activeProduct.slug}`,
+          metadata: { productId: activeProduct.id ?? undefined, productSlug: activeProduct.slug } });
+      } else {
+        trackVisibleView({ slug, type: "MENU_VIEWED", path: `/m/${slug}${activeView === "menu" ? "/menu" : ""}` });
+      }
+    };
+    record();
+    document.addEventListener("visibilitychange", record);
+    return () => document.removeEventListener("visibilitychange", record);
+  }, [activeView, data.restaurant.slug, activeProduct?.slug]);
   const showBottomNav = [hasHomeSections, showMenuNavItem].filter(Boolean).length > 1;
   const isSingleMenuPage = activeView === "menu" && showMenuNavItem && !hasHomeSections;
   const templateKey = publicTemplate(data);
   const bottomNavVariant = footerVariant(data);
-  const splashSettings = data.restaurant.splashScreen;
-  const splashLogoUrl = splashSettings?.logoUrl ?? data.restaurant.logoUrl;
-  const splashBackgroundImageUrl = splashSettings?.backgroundType === "IMAGE" ? splashSettings.backgroundImageUrl : null;
-  const splashBackgroundColor = splashSettings?.backgroundColor ?? data.theme?.colors?.primary ?? "#e51f2a";
-  const splashLogoX = splashSettings?.logoX ?? 50;
-  const splashLogoY = splashSettings?.logoY ?? 50;
 
   useEffect(() => {
     setUseSubdomainRoutes(isRestaurantSubdomainHost(window.location.host, data.restaurant.slug));
@@ -819,18 +843,6 @@ export function PublicMenuClient({
     };
   }, [data.restaurant.logoUrl, data.restaurant.name, data.restaurant.slug, data.theme?.colors?.primary, language, useSubdomainRoutes]);
 
-  useEffect(() => {
-    if (window.sessionStorage.getItem(splashStorageKey)) {
-      return;
-    }
-
-    window.sessionStorage.setItem(splashStorageKey, "1");
-    setSplashVisible(true);
-    setSplashClosing(false);
-    const timer = window.setTimeout(() => setSplashVisible(false), 3000);
-
-    return () => window.clearTimeout(timer);
-  }, [splashStorageKey]);
 
   useEffect(() => {
     if (activeView !== "menu") {
@@ -843,16 +855,30 @@ export function PublicMenuClient({
       return;
     }
 
+    const opener=document.activeElement as HTMLElement|null;
+    drawerRef.current?.querySelector<HTMLButtonElement>(".drawer-close")?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {setDrawerOpen(false);setOpenSection(null);}
+      if (event.key === "Tab") {
+        const controls=Array.from(drawerRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled)')??[]).filter(el=>el.getClientRects().length>0);
+        const first=controls[0],last=controls.at(-1);
+        if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
+        else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
+      }
+    };
+    window.addEventListener("keydown",onKey);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
+      window.removeEventListener("keydown",onKey);
+      if(opener?.isConnected) opener.focus();
       document.body.style.overflow = previousOverflow;
     };
   }, [drawerOpen]);
 
   useEffect(() => {
-    if (activeView !== "product") {
+    if (activeView !== "product" || hasSavedPublicScroll()) {
       return;
     }
 
@@ -880,7 +906,7 @@ export function PublicMenuClient({
     return true;
   }
 
-  function addToCart(product: PublicProduct) {
+  const addToCart = useCallback((product: PublicProduct) => {
     if (!whatsappOrderingEnabled || isNetworkProduct(product)) {
       return;
     }
@@ -891,9 +917,9 @@ export function PublicMenuClient({
       const existing = current.find((item) => item.mode === "LEGACY" && item.slug === product.slug);
       return putLegacyCartItem(current, product, price, productImage(product), (existing?.quantity ?? 0) + 1);
     });
-  }
+  }, [whatsappOrderingEnabled]);
 
-  function setProductQuantity(product: PublicProduct, quantity: number) {
+  const setProductQuantity = useCallback((product: PublicProduct, quantity: number) => {
     if (!whatsappOrderingEnabled || isNetworkProduct(product)) {
       return;
     }
@@ -901,7 +927,7 @@ export function PublicMenuClient({
     if (price === null) return;
 
     setCart((current) => putLegacyCartItem(current, product, price, productImage(product), Math.max(0, quantity)));
-  }
+  }, [whatsappOrderingEnabled]);
 
   function updateCartItem(lineId: string, quantity: number) {
     setCart((current) => updateCartLineQuantity(current, lineId, quantity));
@@ -993,44 +1019,17 @@ export function PublicMenuClient({
   }
 
   function openDrawer() {
-    setDrawerTab(null);
+    setOpenSection(null);
     setDrawerOpen(true);
   }
 
   function closeDrawer() {
     setDrawerOpen(false);
-    setDrawerTab(null);
+    setOpenSection(null);
   }
 
-  function blockPostSplashClick(event: React.SyntheticEvent) {
-    if (Date.now() < splashClickBlockUntil.current) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  }
 
-  function dismissSplash(event?: React.SyntheticEvent) {
-    event?.preventDefault();
-    event?.stopPropagation();
-
-    if (splashClosing) {
-      return;
-    }
-
-    splashClickBlockUntil.current = Date.now() + 500;
-    setSplashClosing(true);
-    window.setTimeout(() => {
-      setSplashVisible(false);
-      setSplashClosing(false);
-    }, 180);
-  }
-
-  const socialLinks = [
-    { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com") },
-    { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com") },
-    { key: "tiktok", label: "TikTok", href: normalizeSocialUrl(data.restaurant.tiktokUrl, "tiktok.com") },
-    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone) } : null
-  ].filter((item): item is { key: string; label: string; href: string | null } => Boolean(item)).filter((item): item is { key: string; label: string; href: string } => Boolean(item.href));
+  const socialLinks = sidebarSocialLinks(data.restaurant);
 
   function normalizeCheckoutDetails(details?: CheckoutDetails): CheckoutDetails | undefined {
     if (!details) return undefined;
@@ -1078,13 +1077,15 @@ export function PublicMenuClient({
       pickupTime: checkoutDetails?.pickupTime,
       items: legacyCart.map((item) => ({
         productSlug: item.slug,
+        productId: item.productId,
+        expectedUnitPrice: item.priceText ?? String(item.price),
         quantity: item.quantity,
         ...(item.note?.trim() ? { note: item.note.trim() } : {})
       }))
     };
     const payloadJson = JSON.stringify(request);
     if (legacyOrderAttempt.current?.payloadJson !== payloadJson) {
-      legacyOrderAttempt.current = { payloadJson, idempotencyKey: window.crypto.randomUUID() };
+      legacyOrderAttempt.current = { payloadJson, idempotencyKey: clientUuid() };
     }
     const tab = window.open("about:blank", "_blank");
     if (tab) tab.opener = null;
@@ -1120,62 +1121,43 @@ export function PublicMenuClient({
   }
 
   return (
+    <MenuLanguageContext.Provider value={language}>
     <div
       className={`public-screen view-${activeView} template-${templateKey} footer-${bottomNavVariant} ${showPrices ? "" : "prices-hidden"} ${showBottomNav ? "" : "no-bottom-nav"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
+      onClickCapture={(event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const link = event.target instanceof Element ? event.target.closest("a") : null;
+        if (!link || link.hasAttribute("download") || link.target && link.target !== "_self") return;
+        const url = new URL(link.href, window.location.href);
+        if (url.origin === location.origin) {
+          if (shell?.navigate(url.pathname + url.search + url.hash)) {
+            event.preventDefault(); event.stopPropagation();
+          } else rememberPublicNavigation(url.pathname + url.search, data.restaurant.slug);
+        }
+      }}
       dir={language === "ar" ? "rtl" : "ltr"}
       onContextMenu={(event) => event.preventDefault()}
-      onClickCapture={blockPostSplashClick}
       style={cssVars(data.theme)}
     >
-      {splashVisible ? (
-        <div
-          className={splashClosing ? "public-splash closing" : "public-splash"}
-          role="button"
-          tabIndex={0}
-          aria-label={data.restaurant.name}
-          onClick={dismissSplash}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " " || event.key === "Escape") {
-              dismissSplash(event);
-            }
-          }}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onPointerUp={(event) => {
-            dismissSplash(event);
-          }}
-          style={{
-            "--splash-bg-color": splashBackgroundColor,
-            "--splash-bg-overlay": splashBackgroundImageUrl ? "linear-gradient(180deg, rgb(0 0 0 / 46%), rgb(0 0 0 / 18%) 42%, rgb(0 0 0 / 58%))" : "none",
-            "--splash-bg-image": splashBackgroundImageUrl ? `url(${splashBackgroundImageUrl})` : "none",
-            "--splash-logo-x": `${splashLogoX}%`,
-            "--splash-logo-y": `${splashLogoY}%`
-          } as React.CSSProperties}
-        >
-          {splashLogoUrl ? <img src={splashLogoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
-        </div>
-      ) : null}
       {activeView !== "product" ? <header className="public-header">
         {activeView === "cart" ? (
-          <button onClick={() => navigateBack(publicPath(), navigateTo)} aria-label="الرجوع">
-            <ChevronLeft size={22} />
+          <button className="public-nav-control" onClick={() => navigateBack(publicPath(), navigateTo)} aria-label="الرجوع">
+            <PublicBackIcon />
           </button>
         ) : activeView === "menu" && menuNested ? (
-          <button onClick={requestMenuBack} aria-label="الرجوع">
-            <ArrowLeft size={22} />
+          <button className="public-nav-control" onClick={requestMenuBack} aria-label="الرجوع">
+            <PublicBackIcon />
           </button>
         ) : isSingleMenuPage ? (
-          <button className="public-header-menu-button" onClick={openDrawer} aria-label={t.menu}>
+          <button className="public-header-menu-button public-nav-control" onClick={openDrawer} aria-label={t.menu}>
             <Menu size={24} />
           </button>
         ) : activeView === "menu" ? (
-          <button onClick={goToRestaurantHome} aria-label="الرجوع">
-            <ArrowLeft size={22} />
+          <button className="public-nav-control" onClick={goToRestaurantHome} aria-label="الرجوع">
+            <PublicBackIcon />
           </button>
         ) : (
-          <button onClick={openDrawer} aria-label={t.menu}>
+          <button className="public-nav-control" onClick={openDrawer} aria-label={t.menu}>
             <Menu size={24} />
           </button>
         )}
@@ -1192,13 +1174,14 @@ export function PublicMenuClient({
             t.chooseCategory
           )}
         </p>
-        {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
+        <PublicHeaderLogo src={data.restaurant.logoUrl} name={data.restaurant.name} homeHref={publicPath()} restaurantSlug={data.restaurant.slug} locale={language} />
       </header> : null}
 
-      {activeView === "home" ? (
-        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} whatsappOrderingEnabled={whatsappOrderingEnabled} useSubdomainRoutes={useSubdomainRoutes} />
-      ) : activeView === "menu" ? (
-        <MenuView
+      {activeView === "menu" || menuVisited ? (
+        <PersistentMenuView
+          active={activeView === "menu"}
+          cartLoaded={cartLoaded}
+          query={routeSearch.toString()}
           data={data}
           addToCart={addToCart}
           setProductQuantity={setProductQuantity}
@@ -1216,8 +1199,12 @@ export function PublicMenuClient({
           navigateTo={navigateTo}
           useSubdomainRoutes={useSubdomainRoutes}
         />
+      ) : null}
+      {activeView === "home" ? (
+        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} whatsappOrderingEnabled={whatsappOrderingEnabled} useSubdomainRoutes={useSubdomainRoutes} />
       ) : activeView === "product" && activeProduct ? (
         <ProductView
+          key={activeProduct.id ?? activeProduct.slug}
           data={data}
           product={activeProduct}
           addToCart={addToCart}
@@ -1240,7 +1227,7 @@ export function PublicMenuClient({
           <b>{language === "ar" ? "المنتج غير متوفر حالياً" : "Product is currently unavailable"}</b>
           <Link href={publicPath("/menu")}>{t.menu}</Link>
         </main>
-      ) : (
+      ) : activeView === "cart" ? (
         <CartView
           data={data}
           cart={cart}
@@ -1254,6 +1241,7 @@ export function PublicMenuClient({
           whatsappOrderingEnabled={whatsappOrderingEnabled}
           networkWhatsappCheckoutEnabled={data.networkWhatsappCheckoutEnabled === true && whatsappOrderingEnabled}
           language={language}
+          acceptLegacyPrice={(lineId) => setCart(current => acceptLegacyCatalogPrice(current, lineId, data.products))}
           acceptNetworkPrice={acceptNetworkPrice}
           retryNetworkLine={retryNetworkLine}
           saveNetworkEdit={(product, quote, lineId, quantity, note) => addNetworkQuote(product, quote, lineId, quantity, note)}
@@ -1261,7 +1249,7 @@ export function PublicMenuClient({
           showPrices={showPrices}
           useSubdomainRoutes={useSubdomainRoutes}
         />
-      )}
+      ) : null}
 
       {whatsappOrderingEnabled && cartCount > 0 && activeView !== "cart" && activeView !== "product" ? (
         <Link href={publicPath("/cart")} className={`sticky-cart-button ${showPrices ? "" : "prices-hidden"}`}>
@@ -1280,42 +1268,38 @@ export function PublicMenuClient({
         useSubdomainRoutes={useSubdomainRoutes}
       />
 
+
       {drawerOpen ? <button className="public-drawer-backdrop" type="button" onClick={closeDrawer} aria-label={t.close} /> : null}
 
       {drawerOpen ? (
-        <aside className="public-drawer" dir={language === "ar" ? "rtl" : "ltr"} lang={language}>
+        <aside className="public-drawer" ref={drawerRef} dir={language === "ar" ? "rtl" : "ltr"} lang={language}>
           <button className="drawer-close" onClick={closeDrawer} aria-label={t.close}>
             <X size={24} />
           </button>
           {data.restaurant.logoUrl ? (
-            <img className="public-drawer-logo" src={data.restaurant.logoUrl} alt={data.restaurant.name} />
+            <PublicImage className="public-drawer-logo" src={data.restaurant.logoUrl} alt={data.restaurant.name} sizes="96px" />
           ) : (
             <span className="public-drawer-logo" />
           )}
-          <button type="button" onClick={() => setLanguage((current) => (current === "ar" ? "en" : "ar"))}>
-            <span>{t.language}</span>
-            <b>{currentLanguageLabel}</b>
-          </button>
-          <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab((current) => current === "hours" ? null : "hours")}>
-            <span>{t.hours}</span>
-            <Clock3 size={18} />
-          </button>
-          {[t.complaints, t.questions, t.rating].map((item) => (
-            <button key={item}>
-              <span>{item}</span>
-              <ArrowLeft size={18} />
-            </button>
-          ))}
-          {drawerTab === "hours" ? <div className="drawer-restaurant-info">
-            <div className="drawer-hours-list">
-              {openingHours?.length ? openingHours.map((row) => <small key={row}>{row}</small>) : <small>لا توجد أوقات دوام محددة</small>}
-            </div>
-          </div> : null}
-          <small>Version 0.1.0+12</small>
           <DrawerSocialLinks links={socialLinks} onNavigate={closeDrawer} />
+          <div className="drawer-language"><span>{t.language}</span><div role="group" aria-label={t.language} className="drawer-language-control" dir="ltr">
+            {(["ar","en"] as const).map(value=><button type="button" key={value} aria-pressed={language===value} onClick={()=>setLanguage(value)}>{value.toUpperCase()}</button>)}
+          </div></div>
+          {(["hours", ...(aboutInfo.visible ? ["about"] : []), "feedback"] as Array<"hours"|"about"|"feedback">).map(section=><section className="drawer-section" key={section}>
+            <button type="button" className="drawer-section-toggle" aria-expanded={openSection===section} aria-controls={`drawer-${section}`} onClick={()=>setOpenSection(current=>current===section?null:section)}>
+              <span>{section==="hours"?t.hours:section==="about"?(language==="ar"?"من نحن":"About us"):(language==="ar"?"التقييم والشكاوي":"Ratings & feedback")}</span><ChevronDown className="drawer-chevron" aria-hidden="true" size={16}/>
+            </button>
+            <div id={`drawer-${section}`} className="drawer-section-content" hidden={openSection!==section}>
+              {section==="hours"?<div className="drawer-hours-list">{openingHours?.length?openingHours.map((row,index)=>{
+                const separator=row.indexOf(":");return <div className="drawer-hours-row" key={index}><span>{row.slice(0,separator)}</span><span dir="auto">{row.slice(separator+1).trim()}</span></div>;
+              }):<p>{language==="ar"?"لا توجد أوقات دوام محددة":"No opening hours provided"}</p>}</div>:<PublicInfoContent drawerAbout kind={section} restaurant={data.restaurant} language={language}/>}
+            </div>
+          </section>)}
+          <small>Version 0.1.0+12</small>
         </aside>
       ) : null}
     </div>
+    </MenuLanguageContext.Provider>
   );
 }
 
@@ -1336,7 +1320,7 @@ function HomeView({
 }) {
   const featured = data.products.filter(isFeatured);
   const popular = data.products.filter(isPopular);
-  const featuredSlots = featured.slice(0, 10);
+  const newProducts = data.products.filter(isNew).slice(0, 10);
   const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
   const homePage = allPages.find((page) => page.isHome && page.sections?.some((section) => section.type === "HERO" && section.isActive !== false))
     ?? allPages.find((page) => page.isHome)
@@ -1436,7 +1420,7 @@ function HomeView({
     <main className="public-content">
       {isVertigo ? (
         <section className="vertigo-home-hero">
-          {heroImageUrl ? <img src={heroImageUrl} alt={data.restaurant.name} /> : null}
+          {heroImageUrl ? <PublicImage src={heroImageUrl} alt={data.restaurant.name} fetchPriority="high" /> : null}
           {shouldShowVertigoHeroCopy ? (
             <div className="vertigo-hero-copy">
               {heroTitle ? <h1 dir="auto">{heroTitle}</h1> : null}
@@ -1468,7 +1452,7 @@ function HomeView({
                   "--icon-height": `${item.iconHeight ?? 34}px`
                 } as React.CSSProperties}
               >
-                {item.iconUrl ? <img src={item.iconUrl} alt="" aria-hidden="true" /> : null}
+                {item.iconUrl ? <PublicImage src={item.iconUrl} alt="" decorative sizes="32px" /> : null}
                 <span>{item.label}</span>
               </Link>
             ))}
@@ -1489,7 +1473,7 @@ function HomeView({
                 const className = index === activeBanner ? "hero-promo-slide active" : "hero-promo-slide";
                 const content = (
                   <>
-                    <img src={banner.imageUrl} alt={banner.title || t.todayOffer} />
+                    <PublicImage src={banner.imageUrl} alt={banner.title || t.todayOffer} />
                     {banner.badge ? <span>{banner.badge}</span> : null}
                   </>
                 );
@@ -1549,8 +1533,6 @@ function HomeView({
         t={t}
         fillPlaceholders={false}
         showPrices={showPrices}
-        onAddToCart={whatsappOrderingEnabled ? addToCart : undefined}
-        networkConfigureEnabled={whatsappOrderingEnabled && showPrices && data.networkWhatsappCheckoutEnabled === true}
         showViewAll={false}
         returnHref={homeReturnHref}
         useSubdomainRoutes={useSubdomainRoutes}
@@ -1565,11 +1547,10 @@ function HomeView({
           </h2>
         </div>
         <div>
-          {featuredSlots.map((_, index) => {
-            const product = featured[index];
+          {newProducts.map((product, index) => {
             return product ? (
             <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref, useSubdomainRoutes)} className="wide-product">
-              <ProductImageMedia product={product} />
+              <ProductImageMedia product={product} sizes="201px" loading="lazy" />
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
               <em>{t.mealDetails}</em>
@@ -1614,7 +1595,7 @@ function VertigoFeaturedProducts({
       <div>
         {products.slice(0, 6).map((product) => (
           <Link key={`${product.id}-${product.slug}`} href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)} className="vertigo-feature-card">
-            <ProductImageMedia product={product} />
+            <ProductImageMedia product={product} sizes="(max-width: 430px) 50vw, 215px" loading="lazy" />
             <div>
               <b>{product.name}</b>
               {product.description ? <p>{product.description}</p> : null}
@@ -1627,7 +1608,81 @@ function VertigoFeaturedProducts({
   );
 }
 
+// Default shallow comparison includes every callback: no stale event closures.
+const MenuProductCard = memo(function MenuProductCard({
+  product, productListLayout, productClassName, imagePosition, quantity, showNetworkControl,
+  showRowQuantityControls, showPrices, startingAtLabel, increaseDisabled,
+  openProduct, prefetchConfiguration, setManagedNetworkProduct, setNewNetworkProduct,
+  setProductQuantity, addToCart
+}: {
+  product: PublicProduct; productListLayout: CategoryProductListLayout; productClassName: string;
+  imagePosition: number; quantity: number; showNetworkControl: boolean; showRowQuantityControls: boolean;
+  showPrices: boolean; startingAtLabel: string; increaseDisabled: boolean;
+  openProduct: (product: PublicProduct) => void; prefetchConfiguration: (product: PublicProduct) => void;
+  setManagedNetworkProduct: (product: PublicProduct) => void; setNewNetworkProduct: (product: PublicProduct) => void;
+  setProductQuantity: (product: PublicProduct, quantity: number) => void; addToCart: (product: PublicProduct) => void;
+}) {
+    const productContent = (
+      <>
+        <span className="menu-product-image-link">
+          <ProductImageMedia product={product} sizes={productListLayout === "double" ? "(max-width: 430px) 50vw, 215px" : "142px"}
+            loading={imagePosition >= 0 ? "eager" : "lazy"}
+            fetchPriority={imagePosition === 0 ? "high" : "auto"}
+            preserveIntrinsicSize={productListLayout === "single" && !productClassName.includes("card-horizontal-contained")} />
+        </span>
+        <div className="menu-product-copy">
+          <b dir="auto">{product.name}</b>
+          <p>{product.description}</p>
+          {showPrices ? (
+            <ProductPrice
+              price={productPrice(product)}
+              currency={product.currency}
+              priceFirst={productListLayout === "double"}
+              startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"}
+              startingAtLabel={startingAtLabel}
+            />
+          ) : null}
+        </div>
+      </>
+    );
+
+    return (
+      <article key={`${product.id}-${product.slug}`} className={productClassName} data-cart-mode={isNetworkProduct(product) ? "NETWORK" : "LEGACY"}
+        onPointerEnter={(event) => { if (event.pointerType === "mouse") prefetchConfiguration(product); }}
+        onFocus={() => prefetchConfiguration(product)}>
+        <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
+          {productContent}
+        </button>
+        {showRowQuantityControls && showNetworkControl ? (
+          <QuantityControl
+            className="menu-product-quantity"
+            compactIcons
+            increaseSlug={product.slug}
+            quantity={quantity}
+            onDecrease={() => setManagedNetworkProduct(product)}
+            onIncrease={() => setNewNetworkProduct(product)}
+            label={product.name}
+            increaseDisabled={increaseDisabled}
+          />
+        ) : showRowQuantityControls && !isNetworkProduct(product) && hasLegacyOrderPrice(product) ? (
+          <QuantityControl
+            className="menu-product-quantity"
+            compactIcons
+            increaseSlug={product.slug}
+            quantity={quantity}
+            onDecrease={() => setProductQuantity(product, quantity - 1)}
+            onIncrease={() => addToCart(product)}
+            label={product.name}
+          />
+        ) : null}
+      </article>
+    );
+});
+
 function MenuView({
+  cartLoaded,
+  active,
+  query,
   data,
   addToCart,
   setProductQuantity,
@@ -1645,6 +1700,9 @@ function MenuView({
   navigateTo,
   useSubdomainRoutes
 }: {
+  cartLoaded: boolean;
+  active: boolean;
+  query: string;
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
   setProductQuantity: (product: PublicProduct, quantity: number) => void;
@@ -1662,21 +1720,27 @@ function MenuView({
   navigateTo: (href: string) => void;
   useSubdomainRoutes: boolean;
 }) {
-  const searchParams = useSearchParams();
-  const menuQuery = searchParams.toString();
-  const selectedMood = searchParams.get("mood")?.trim() || "";
-  const selectedCollection = searchParams.get("collection") === "popular" || searchParams.get("collection") === "new"
-    ? searchParams.get("collection")
+  const menuElement = useRef<EarlyMenuElement>(null);
+  const savedQuery = useRef(query);
+  const menuQuery = active ? query : savedQuery.current;
+  useEffect(() => { if (active) savedQuery.current = menuQuery; }, [active, menuQuery]);
+  const menuParams = useMemo(() => new URLSearchParams(menuQuery), [menuQuery]);
+  const menuShell = useRestaurantShell();
+  const prefetchConfiguration = useCallback((product: PublicProduct) => {
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? "")) return;
+    if (product.productConfiguration?.mode === "NETWORK") preloadProductConfigurator();
+    menuShell?.configurations.prefetch(product, language, product.currency);
+  }, [menuShell, language]);
+  const selectedMood = menuParams.get("mood")?.trim() || "";
+  const selectedCollection = menuParams.get("collection") === "popular" || menuParams.get("collection") === "new"
+    ? menuParams.get("collection")
     : "";
-  const selectedCategoryParam = searchParams.get("category")?.trim() || "";
-  const displayParam = searchParams.get("display");
-  const allPages = data.menus?.flatMap((menu) => menu.pages ?? []) ?? [];
-  const categoryGridSection = allPages
-    .flatMap((page) => page.sections ?? [])
-    .find((section) => section.type === "CATEGORY_GRID");
-  const productListSection = allPages
-    .flatMap((page) => page.sections ?? [])
-    .find((section) => section.type === "PRODUCT_LIST");
+  const selectedCategoryParam = menuParams.get("category")?.trim() || "";
+  const displayParam = menuParams.get("display");
+  const menuSections = useMemo(() => data.menus?.flatMap(menu => menu.pages?.flatMap(page => page.sections ?? []) ?? []) ?? [], [data.menus]);
+  const categoryGridSection = menuSections.find(section => section.type === "CATEGORY_GRID");
+  const productListSection = menuSections.find(section => section.type === "PRODUCT_LIST");
   const isVertigo = publicTemplate(data) === "vertigo";
   const productListLayout: CategoryProductListLayout = data.theme?.layout?.categoryProductListLayout === "single" ? "single" : "double";
   const selectedDisplayParam: MenuDisplayMode = productListLayout === "double"
@@ -1684,6 +1748,7 @@ function MenuView({
     : displayParam === "large" ? "large" : "list";
   const categoryNavVariant = categoryGridSection?.settings?.categoryNavVariant ?? (isVertigo ? "text-tabs" : "image-chips");
   const productCardVariant = productListSection?.settings?.cardVariant ?? (isVertigo ? "horizontal-contained" : "");
+  const productClassName = `${productListLayout === "double" ? "menu-product-card" : "menu-product-row"} ${productCardVariant ? `card-${productCardVariant}` : ""}`.trim();
   const categoryControlsEnabled = categoryGridSection ? categoryGridSection.isActive !== false : true;
   const showCategoryLanding = categoryControlsEnabled && categoryGridSection?.settings?.showLandingCategories !== false;
   const showNestedCategoryStrip = categoryControlsEnabled && categoryGridSection?.settings?.showNestedCategoryStrip !== false;
@@ -1692,7 +1757,16 @@ function MenuView({
   );
   const [selectedProduct, setSelectedProduct] = useState<PublicProduct | null>(null);
   const [newNetworkProduct, setNewNetworkProduct] = useState<PublicProduct | null>(null);
+  const openNetworkConfiguration = useCallback((product: PublicProduct) => {
+    // Start both dependencies on selection, including clicks replayed after hydration.
+    preloadProductConfigurator();
+    menuShell?.configurations.prefetch(product, language, product.currency);
+    setNewNetworkProduct(product);
+  }, [menuShell, language]);
   const [managedNetworkProduct, setManagedNetworkProduct] = useState<PublicProduct | null>(null);
+  useEffect(() => {
+    if (!active) { setSelectedProduct(null); setNewNetworkProduct(null); setManagedNetworkProduct(null); }
+  }, [active]);
   const newNetworkDialogRef = useRef<HTMLElement | null>(null);
   const managedNetworkDialogRef = useRef<HTMLElement | null>(null);
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
@@ -1703,8 +1777,10 @@ function MenuView({
   const spotlightDragMoved = useRef(false);
   const manualCategoryScrollUntil = useRef(0);
   const categoryStripRef = useRef<HTMLElement | null>(null);
+  const categoryJump = useRef<{ slug: string; cancel: () => void } | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>(selectedDisplayParam);
   const menuCartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const quantities = useMemo(() => indexMenuQuantities(cart), [cart]);
   const managedNetworkLines = managedNetworkProduct
     ? cart.filter((line): line is NetworkCartItem => line.mode === "NETWORK" && line.productId === managedNetworkProduct.id) : [];
 
@@ -1735,44 +1811,53 @@ function MenuView({
   const lastMenuBackSignal = useRef(menuBackSignal);
   const allCategory = useMemo(() => data.categories.find((category) => category.slug === "all"), [data.categories]);
   const regularCategories = useMemo(() => data.categories.filter((category) => category.slug !== "all"), [data.categories]);
-  const selectedMoodKey = normalizeMenuKey(selectedMood);
-  const moodAliases = new Set([selectedMoodKey]);
-  data.menus?.forEach((menu) => {
-    menu.pages?.forEach((page) => {
-      page.sections?.forEach((section) => {
-        section.settings?.moodItems?.forEach((item) => {
-          const key = item.key?.trim() || "";
-          const label = item.label?.trim() || "";
-          if ([key, label].some((value) => normalizeMenuKey(value) === selectedMoodKey)) {
-            if (key) moodAliases.add(normalizeMenuKey(key));
-            if (label) moodAliases.add(normalizeMenuKey(label));
-          }
+  const { moodProducts, collectionProducts, moodLabel } = useMemo(() => {
+    const selectedMoodKey = normalizeMenuKey(selectedMood);
+    const moodAliases = new Set([selectedMoodKey]);
+    let moodLabel = selectedMood;
+    data.menus?.forEach((menu) => {
+      menu.pages?.forEach((page) => {
+        page.sections?.forEach((section) => {
+          section.settings?.moodItems?.forEach((item) => {
+            const key = item.key?.trim() || "";
+            const label = item.label?.trim() || "";
+            if ([key, label].some((value) => normalizeMenuKey(value) === selectedMoodKey)) {
+              if (label) moodLabel = label;
+              if (key) moodAliases.add(normalizeMenuKey(key));
+              if (label) moodAliases.add(normalizeMenuKey(label));
+            }
+          });
         });
       });
     });
-  });
-  const moodProducts = selectedMood
-    ? data.products.filter((product) => {
-      const productCategorySlug = product.category?.slug ?? product.categorySlug ?? "";
-      const category = regularCategories.find((item) => item.slug === productCategorySlug);
-      return [
-        ...productMoodKeys(product),
-        productCategorySlug,
-        product.category?.name,
-        category?.slug,
-        category?.name
-      ].some((value) => moodAliases.has(normalizeMenuKey(value)));
-    })
-    : [];
-  const collectionProducts = selectedCollection === "popular"
-    ? data.products.filter(isPopular)
-    : selectedCollection === "new"
-      ? data.products.filter(isFeatured).length ? data.products.filter(isFeatured) : data.products.filter(isNew)
+    const moodProducts = selectedMood
+      ? data.products.filter((product) => {
+        const productCategorySlug = product.category?.slug ?? product.categorySlug ?? "";
+        const category = regularCategories.find((item) => item.slug === productCategorySlug);
+        return [
+          ...productMoodKeys(product),
+          productCategorySlug,
+          product.category?.name,
+          category?.slug,
+          category?.name
+        ].some((value) => moodAliases.has(normalizeMenuKey(value)));
+      })
       : [];
-  const contextTitle = selectedMood || (selectedCollection === "popular" ? t.mostPopular : selectedCollection === "new" ? t.newItems : "");
+    const collectionProducts = selectedCollection === "popular"
+      ? data.products.filter(isPopular)
+      : selectedCollection === "new"
+        ? data.products.filter(isNew)
+        : [];
+    return { moodProducts, collectionProducts, moodLabel };
+  }, [selectedMood, selectedCollection, data.menus, data.products, regularCategories]);
+  const contextTitle = moodLabel || (selectedCollection === "popular" ? t.mostPopular : selectedCollection === "new" ? t.newItems : "");
   const contextProducts = selectedMood ? moodProducts : collectionProducts;
   const categoryProductsSource = selectedMood ? data.products : selectedCollection ? contextProducts : data.products;
-  const visibleProducts = categoryProductsSource;
+  const productIndex = useMemo(() => indexMenuProducts(categoryProductsSource, regularCategories), [categoryProductsSource, regularCategories]);
+  // Native lazy loading waits for layout. Let the HTML parser discover the leading
+  // screen of cards immediately, in the same category order as the rendered list.
+  const visibleProducts = productIndex.ordered;
+  const leadingProducts = useMemo(() => visibleProducts.slice(0, productListLayout === "double" ? 8 : 6), [visibleProducts, productListLayout]);
   const showRowQuantityControls = whatsappOrderingEnabled && productListLayout === "single" && !(isVertigo && productCardVariant === "horizontal-contained");
   const menuReturnParams = new URLSearchParams(menuQuery);
 
@@ -1789,13 +1874,17 @@ function MenuView({
   }
 
   const menuReturnQuery = menuReturnParams.toString();
+  // Only event handlers read this ref, after commit. Category highlighting must
+  // not invalidate 500 card callbacks; opening still uses the latest query.
+  const menuReturnQueryRef = useRef(menuReturnQuery);
+  useLayoutEffect(() => { menuReturnQueryRef.current = menuReturnQuery; }, [menuReturnQuery]);
   const menuReturnHref = `${restaurantPath(data.restaurant.slug, "/menu", useSubdomainRoutes)}${menuReturnQuery ? `?${menuReturnQuery}` : ""}`;
   const activeCategory = selectedCategorySlug === "all"
     ? allCategory
     : regularCategories.find((category) => category.slug === selectedCategorySlug);
   const activeProducts = selectedCategorySlug === "all"
     ? visibleProducts
-    : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === selectedCategorySlug);
+    : productIndex.byCategory.get(selectedCategorySlug) ?? [];
   const normalizedSpotlightIndex = activeProducts.length
     ? Math.min(Math.max(activeSpotlightIndex, 0), activeProducts.length - 1)
     : 0;
@@ -1809,9 +1898,8 @@ function MenuView({
   const highlightedCategorySlug = menuDisplayMode === "large" && selectedCategorySlug === "all" && spotlightCategorySlug
     ? spotlightCategorySlug
     : selectedCategorySlug;
-  const productsWithoutCategory = selectedCategorySlug === "all"
-    ? visibleProducts.filter((product) => !regularCategories.some((category) => (product.category?.slug ?? product.categorySlug) === category.slug))
-    : [];
+  // Scroll tracking changes the highlighted chip; list membership must stay stable.
+  const productsWithoutCategory = productIndex.uncategorized;
   const orderedCategories = useMemo(() => allCategory ? [allCategory, ...regularCategories] : regularCategories, [allCategory, regularCategories]);
 
   useEffect(() => {
@@ -1836,8 +1924,8 @@ function MenuView({
   }, [selectedCategorySlug, showCategoryLanding]);
 
   useEffect(() => {
-    onNestedChange(Boolean(selectedCategorySlug) && (showCategoryLanding || Boolean(selectedMood || selectedCollection)));
-  }, [onNestedChange, selectedCategorySlug, selectedCollection, selectedMood, showCategoryLanding]);
+    onNestedChange(active && Boolean(selectedCategorySlug) && (showCategoryLanding || Boolean(selectedMood || selectedCollection)));
+  }, [active, onNestedChange, selectedCategorySlug, selectedCollection, selectedMood, showCategoryLanding]);
 
   useEffect(() => {
     if (lastMenuBackSignal.current === menuBackSignal) {
@@ -1859,7 +1947,7 @@ function MenuView({
       manualCategoryScrollUntil.current = Date.now() + 500;
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.delete("category");
-      window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
+      window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}`);
       setSelectedCategorySlug("");
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
       return;
@@ -1872,16 +1960,19 @@ function MenuView({
     setActiveSpotlightIndex(0);
   }, [selectedCategorySlug, activeProducts.length]);
 
+  const hasSelectedCategory = Boolean(selectedCategorySlug);
   useEffect(() => {
-    if (!showNestedCategoryStrip || menuDisplayMode !== "list" || !selectedCategorySlug) {
+    if (!active || !showNestedCategoryStrip || menuDisplayMode !== "list" || !hasSelectedCategory) {
       return;
     }
 
     const categorySections = regularCategories
-      .filter((category) => categoryProductsSource.some((product) => (product.category?.slug ?? product.categorySlug) === category.slug))
+      .filter((category) => productIndex.byCategory.has(category.slug))
       .map((category) => ({ slug: category.slug, id: `category-section-${category.slug}` }));
 
+    let pendingFrame = 0;
     function syncActiveCategoryToScroll() {
+      pendingFrame = 0;
       if (Date.now() < manualCategoryScrollUntil.current) {
         return;
       }
@@ -1898,62 +1989,79 @@ function MenuView({
         }
       }
 
-      if (selectedCategorySlug !== nextSlug) {
-        setSelectedCategorySlug(nextSlug);
-      }
-
-      scrollCategoryChipIntoView(nextSlug);
+      setSelectedCategorySlug(current => current === nextSlug ? current : nextSlug);
+      // The category-change effect scrolls the chip only when it changes.
+      // Repeating scrollIntoView on every scroll frame causes redundant work.
     }
 
-    syncActiveCategoryToScroll();
-    window.addEventListener("scroll", syncActiveCategoryToScroll, { passive: true });
-    window.addEventListener("resize", syncActiveCategoryToScroll);
+    function scheduleCategorySync() {
+      if (!pendingFrame) pendingFrame = window.requestAnimationFrame(syncActiveCategoryToScroll);
+    }
+    scheduleCategorySync();
+    window.addEventListener("scroll", scheduleCategorySync, { passive: true });
+    window.addEventListener("resize", scheduleCategorySync);
 
     return () => {
-      window.removeEventListener("scroll", syncActiveCategoryToScroll);
-      window.removeEventListener("resize", syncActiveCategoryToScroll);
+      window.cancelAnimationFrame(pendingFrame);
+      window.removeEventListener("scroll", scheduleCategorySync);
+      window.removeEventListener("resize", scheduleCategorySync);
     };
-  }, [categoryProductsSource, menuDisplayMode, regularCategories, selectedCategorySlug, showNestedCategoryStrip]);
+  }, [active, productIndex, menuDisplayMode, regularCategories, hasSelectedCategory, showNestedCategoryStrip]);
 
   useEffect(() => {
-    if (!showNestedCategoryStrip || !selectedCategorySlug) {
+    if (!active || !showNestedCategoryStrip || !highlightedCategorySlug) {
       return;
     }
-
-    const frame = scrollCategoryChipIntoView(selectedCategorySlug);
-    return () => window.cancelAnimationFrame(frame);
-  }, [selectedCategorySlug, showNestedCategoryStrip]);
-
-  useEffect(() => {
-    if (!showNestedCategoryStrip || menuDisplayMode !== "large" || !highlightedCategorySlug) {
-      return;
-    }
-
+    // Restoring the saved language can reverse the strip after hydration.
+    // Only the visible selection should request a horizontal scroll.
     const frame = scrollCategoryChipIntoView(highlightedCategorySlug);
     return () => window.cancelAnimationFrame(frame);
-  }, [highlightedCategorySlug, menuDisplayMode, showNestedCategoryStrip]);
+  }, [active, highlightedCategorySlug, language, menuDisplayMode, showNestedCategoryStrip]);
 
   useEffect(() => {
-    if (!selectedCategoryParam || selectedCategoryParam === "all" || selectedMood || selectedCollection || menuDisplayMode !== "list") {
+    if (!active || hasSavedPublicScroll() || !selectedCategoryParam || selectedCategoryParam === "all" || selectedMood || selectedCollection || menuDisplayMode !== "list") {
       return;
     }
 
     manualCategoryScrollUntil.current = Date.now() + 900;
-    const frame = scrollToCategory(selectedCategoryParam);
-    return () => window.cancelAnimationFrame(frame);
-  }, [menuDisplayMode, selectedCategoryParam, selectedCollection, selectedMood]);
+    if (categoryJump.current?.slug !== selectedCategoryParam) scrollToCategory(selectedCategoryParam, "instant");
+  }, [active, menuDisplayMode, selectedCategoryParam, selectedCollection, selectedMood]);
 
-  function scrollToCategory(slug: string) {
+  useEffect(() => () => categoryJump.current?.cancel(), [active, menuDisplayMode]);
+
+  function scrollToCategory(slug: string, behavior: ScrollBehavior = "smooth") {
+    categoryJump.current?.cancel();
     const targetId = menuDisplayMode === "large" || slug === "all" ? "menu-products-start" : `category-section-${slug}`;
-    return window.requestAnimationFrame(() => {
-      const element = document.getElementById(targetId);
-      if (!element) {
-        return;
-      }
-
-      const top = element.getBoundingClientRect().top + window.scrollY - menuSectionScrollOffset(categoryStripRef.current, showNestedCategoryStrip);
-      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-    });
+    const element = document.getElementById(targetId);
+    const list = element?.closest("#menu-products-start");
+    if (!element) return;
+    const controller = new AbortController();
+    let lastTop: number | undefined;
+    function align() {
+      if (controller.signal.aborted || !element?.isConnected) return;
+      const top = Math.max(0, element.getBoundingClientRect().top + window.scrollY - menuSectionScrollOffset(categoryStripRef.current, showNestedCategoryStrip));
+      if (lastTop !== undefined && Math.abs(lastTop - top) < 1) return;
+      window.scrollTo({ top, behavior: lastTop === undefined ? behavior : "instant" });
+      lastTop = top;
+    }
+    const frame = window.requestAnimationFrame(align);
+    // During a long jump, fonts and newly visible variable-height rows can move
+    // the destination. Re-align only on layout change, until the next input.
+    const observer = new ResizeObserver(align);
+    if (list) observer.observe(list);
+    document.fonts.ready.then(align);
+    function cancel() {
+      controller.abort();
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(expiry);
+      categoryJump.current = null;
+    }
+    const expiry = window.setTimeout(cancel, 2500);
+    categoryJump.current = { slug, cancel };
+    for (const event of ["pointerdown", "touchstart", "wheel", "keydown"]) {
+      window.addEventListener(event, cancel, { passive: true, signal: controller.signal });
+    }
   }
 
   function scrollCategoryChipIntoView(slug: string) {
@@ -1966,7 +2074,18 @@ function MenuView({
         return;
       }
 
-      chip.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      // Center only this horizontal scroll container. scrollIntoView can also
+      // scroll its document ancestor, competing with the category/history jump.
+      // Physical viewport coordinates work for both negative RTL and LTR scrollLeft.
+      const chipBounds = chip.getBoundingClientRect();
+      const stripBounds = strip.getBoundingClientRect();
+      const distance = chipBounds.left + chipBounds.width / 2 - stripBounds.left - stripBounds.width / 2;
+      if (menuDisplayMode === "large" && Math.abs(distance) <= 1) {
+        // The chip is centered now, but a smooth scroll to the previous chip may still be pending.
+        strip.scrollTo({ left: strip.scrollLeft, behavior: "instant" });
+      } else if (Math.abs(distance) > 1) {
+        strip.scrollBy({ left: distance, behavior: menuDisplayMode === "large" ? "instant" : "smooth" });
+      }
     });
   }
 
@@ -1980,7 +2099,7 @@ function MenuView({
       if (productListLayout === "single") {
         currentUrl.searchParams.set("display", menuDisplayMode);
       }
-      window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
+      window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}`);
     }
 
     scrollToCategory(slug);
@@ -2021,10 +2140,10 @@ function MenuView({
 
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("display", mode);
-    window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
+    window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}`);
   }
 
-  function openProduct(product: PublicProduct) {
+  const openProduct = useCallback((product: PublicProduct) => {
     if (productListLayout === "double") {
       setSelectedProduct(product);
       return;
@@ -2033,9 +2152,10 @@ function MenuView({
     // The /m/[slug] route is also used by subdomain rewrites. On a direct /m
     // visit, the initial server prop can precede the host-derived state update.
     const hostUsesSubdomainRoutes = isRestaurantSubdomainHost(window.location.host, data.restaurant.slug);
-    const returnHref = `${restaurantPath(data.restaurant.slug, "/menu", hostUsesSubdomainRoutes)}${menuReturnQuery ? `?${menuReturnQuery}` : ""}`;
+    const returnQuery = menuReturnQueryRef.current;
+    const returnHref = `${restaurantPath(data.restaurant.slug, "/menu", hostUsesSubdomainRoutes)}${returnQuery ? `?${returnQuery}` : ""}`;
     navigateTo(productHref(data.restaurant.slug, product, returnHref, hostUsesSubdomainRoutes));
-  }
+  }, [productListLayout, data.restaurant.slug, navigateTo]);
 
   function handleSpotlightTouchStart(event: TouchEvent<HTMLElement>) {
     spotlightTouchStartX.current = event.touches[0]?.clientX ?? null;
@@ -2117,7 +2237,7 @@ function MenuView({
           const position = parseIconPosition(category.imagePosition);
           const productsCount = category.slug === "all"
             ? visibleProducts.length
-            : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
+            : productIndex.byCategory.get(category.slug)?.length ?? 0;
           return (
             <button
               type="button"
@@ -2135,7 +2255,7 @@ function MenuView({
             >
               {category.imageUrl ? (
                 <span className="category-banner-visual" aria-hidden="true">
-                  <img src={category.imageUrl} alt="" />
+                  <PublicImage src={category.imageUrl} alt="" decorative />
               </span>
               ) : null}
               <div className="category-banner-copy">
@@ -2153,64 +2273,48 @@ function MenuView({
     );
   }
 
-  function renderProduct(product: PublicProduct) {
-    const productClassName = `${productListLayout === "double" ? "menu-product-card" : "menu-product-row"} ${productCardVariant ? `card-${productCardVariant}` : ""}`.trim();
-    const quantity = getCartQuantity(product.slug);
-    const networkLines = cart.filter((line): line is NetworkCartItem => line.mode === "NETWORK" && line.productId === product.id);
-    const networkQuantity = networkLines.reduce((sum, line) => sum + line.quantity, 0);
-    const canConfigure = Boolean(product.id) && isNetworkProduct(product) && product.productConfiguration?.orderable === true
-      && whatsappOrderingEnabled && networkCheckoutEnabled && showPrices;
-    const showNetworkControl = canConfigure;
-    const productContent = (
-      <>
-        <span className="menu-product-image-link">
-          <ProductImageMedia product={product} />
-        </span>
-        <div className="menu-product-copy">
-          <b dir="auto">{product.name}</b>
-          <p>{product.description}</p>
-          {showPrices ? (
-            <ProductPrice
-              price={productPrice(product)}
-              currency={product.currency}
-              priceFirst={productListLayout === "double"}
-              startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"}
-              startingAtLabel={t.startingAt}
-            />
-          ) : null}
-        </div>
-      </>
-    );
+  useLayoutEffect(() => {
+    const menu = menuElement.current;
+    if (!menu?.takePendingIncreases || !cartLoaded) return;
+    const buttons = menu.takePendingIncreases();
+    if (!active || !whatsappOrderingEnabled || !buttons.length) return;
+    let count = menuCartCount;
+    for (const button of buttons) {
+      if (!menu.contains(button) || button.disabled) continue;
+      const product = visibleProducts.find(item => item.slug === button.dataset.menuIncrease);
+      if (!product) continue;
+      if (isNetworkProduct(product)) {
+        if (count < 100 && networkCheckoutEnabled && showPrices && product.id && product.productConfiguration?.orderable) {
+          openNetworkConfiguration(product);
+        }
+      } else if (hasLegacyOrderPrice(product)) {
+        addToCart(product);
+        count++;
+      }
+    }
+  }, [active, addToCart, cartLoaded, menuCartCount, networkCheckoutEnabled, openNetworkConfiguration, showPrices, visibleProducts, whatsappOrderingEnabled]);
 
-    return (
-      <article key={`${product.id}-${product.slug}`} className={productClassName} data-cart-mode={isNetworkProduct(product) ? "NETWORK" : "LEGACY"}>
-        <button type="button" className="menu-product-open" onClick={() => openProduct(product)}>
-          {productContent}
-        </button>
-        {showNetworkControl ? (
-          <QuantityControl
-            className="menu-product-quantity"
-            quantity={networkQuantity}
-            onDecrease={() => setManagedNetworkProduct(product)}
-            onIncrease={() => setNewNetworkProduct(product)}
-            label={product.name}
-            increaseDisabled={menuCartCount >= 100}
-          />
-        ) : showRowQuantityControls && hasLegacyOrderPrice(product) ? (
-          <QuantityControl
-            className="menu-product-quantity"
-            quantity={quantity}
-            onDecrease={() => setProductQuantity(product, quantity - 1)}
-            onIncrease={() => addToCart(product)}
-            label={product.name}
-          />
-        ) : null}
-      </article>
-    );
+  function canConfigureFromMenu(product: PublicProduct) {
+    return Boolean(product.id) && isNetworkProduct(product) && product.productConfiguration?.orderable === true
+      && whatsappOrderingEnabled && networkCheckoutEnabled && showPrices;
   }
 
+  function renderProduct(product: PublicProduct) {
+    const network = isNetworkProduct(product);
+    const canConfigure = canConfigureFromMenu(product);
+    return <MenuProductCard key={`${product.id}-${product.slug}`} product={product}
+      productListLayout={productListLayout} productClassName={productClassName} imagePosition={leadingProducts.indexOf(product)}
+      quantity={network ? quantities.network.get(product.id!) ?? 0 : quantities.legacy.get(product.slug) ?? 0}
+      showNetworkControl={canConfigure} showRowQuantityControls={showRowQuantityControls}
+      showPrices={showPrices} startingAtLabel={t.startingAt}
+      increaseDisabled={canConfigure && menuCartCount >= 100}
+      openProduct={openProduct} prefetchConfiguration={prefetchConfiguration}
+      setManagedNetworkProduct={setManagedNetworkProduct} setNewNetworkProduct={openNetworkConfiguration}
+      setProductQuantity={setProductQuantity} addToCart={addToCart} />;
+  }
   return (
-    <main className="public-content">
+    <main ref={menuElement} className="public-content" hidden={!active} style={active ? undefined : { display: "none" }}>
+      {whatsappOrderingEnabled && <script dangerouslySetInnerHTML={{ __html: menuIncreaseBootstrap }} />}
       {!selectedCategorySlug && showCategoryLanding ? renderCategoryLanding() : (
         <>
           {contextTitle && contextProducts.length ? (
@@ -2237,7 +2341,7 @@ function MenuView({
               const isActive = category.slug === highlightedCategorySlug;
               const productsCount = isAllCategory
                 ? visibleProducts.length
-                : categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug).length;
+                : productIndex.byCategory.get(category.slug)?.length ?? 0;
 
               return (
                 <button
@@ -2248,7 +2352,7 @@ function MenuView({
                   onClick={() => selectCategory(category.slug)}
                 >
                   {categoryNavVariant !== "text-tabs" ? <span className="menu-category-icon" style={categoryChipStyle(category)}>
-                    {category.imageUrl ? <img src={category.imageUrl} alt="" aria-hidden="true" /> : <LayoutGrid size={24} />}
+                    {category.imageUrl ? <PublicImage src={category.imageUrl} alt="" decorative sizes="64px" /> : <LayoutGrid size={24} />}
                   </span> : null}
                   <span>{category.name}</span>
                   <small>{productsCount}</small>
@@ -2301,12 +2405,23 @@ function MenuView({
                     <button type="button" className="category-spotlight-description-open" onClick={() => handleSpotlightOpen(spotlightProduct)}>
                       {spotlightProduct.description ? <p title={spotlightProduct.description}>{spotlightProduct.description}</p> : null}
                     </button>
-                    {whatsappOrderingEnabled && !isVertigo && hasLegacyOrderPrice(spotlightProduct) ? (
+                    {!isVertigo && canConfigureFromMenu(spotlightProduct) ? (
+                      <QuantityControl
+                        className="spotlight-quantity"
+                        quantity={quantities.network.get(spotlightProduct.id!) ?? 0}
+                        onDecrease={() => setManagedNetworkProduct(spotlightProduct)}
+                        onIncrease={() => openNetworkConfiguration(spotlightProduct)}
+                        increaseSlug={spotlightProduct.slug}
+                        increaseDisabled={menuCartCount >= 100}
+                        label={spotlightProduct.name}
+                      />
+                    ) : whatsappOrderingEnabled && !isVertigo && hasLegacyOrderPrice(spotlightProduct) ? (
                       <QuantityControl
                         className="spotlight-quantity"
                         quantity={getCartQuantity(spotlightProduct.slug)}
                         onDecrease={() => setProductQuantity(spotlightProduct, getCartQuantity(spotlightProduct.slug) - 1)}
                         onIncrease={() => addToCart(spotlightProduct)}
+                        increaseSlug={spotlightProduct.slug}
                         label={spotlightProduct.name}
                       />
                     ) : null}
@@ -2329,7 +2444,7 @@ function MenuView({
           {menuDisplayMode === "list" ? (
             <section className={`product-list category-product-list-${productListLayout}`} id="menu-products-start">
               {regularCategories.map((category) => {
-                const products = categoryProductsSource.filter((product) => (product.category?.slug ?? product.categorySlug) === category.slug);
+                const products = productIndex.byCategory.get(category.slug) ?? [];
                 if (!products.length) {
                   return null;
                 }
@@ -2348,7 +2463,7 @@ function MenuView({
               {productsWithoutCategory.length ? (
                 <div id="category-section-all-products">
                   <h2 className="category-section-title">
-                    <span>{selectedMood || activeCategory?.name || allCategory?.name || "الكل"}</span>
+                    <span>{selectedMood || allCategory?.name || "الكل"}</span>
                   </h2>
                   <div className={productListLayout === "double" ? "menu-product-grid" : "menu-product-stack"}>
                     {productsWithoutCategory.map(renderProduct)}
@@ -2474,7 +2589,7 @@ function ProductQuickViewModal({
           <X size={14} />
         </button>
         <div className="product-quick-photo">
-          <ProductImageMedia product={product} image={activeImage} />
+          <ProductImageMedia product={product} image={activeImage} fetchPriority="high" />
           {gallery.length ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
           {gallery.length > 1 ? (
             <>
@@ -2514,11 +2629,13 @@ function ProductPrice({
   startingAt?: boolean;
   startingAtLabel?: string;
 }) {
+  const locale = useContext(MenuLanguageContext);
   if (price === null) {
     return <strong className={`product-price ${className}`.trim()}><span>غير متاح</span></strong>;
   }
-  const formatted = displayCurrencyAmount(price, currency);
-  const currencySuffix = ` ${currency}`;
+  const formatted = displayCurrencyAmount(price, currency, locale);
+  const label = currencyDisplayLabel(currency, locale);
+  const currencySuffix = ` ${label}`;
   const hasCurrency = formatted.endsWith(currencySuffix);
   const amount = hasCurrency ? formatted.slice(0, -currencySuffix.length) : formatted;
   return (
@@ -2527,11 +2644,11 @@ function ProductPrice({
       {priceFirst || startingAt ? (
         <>
           <span dir="ltr">{amount}</span>
-          {hasCurrency ? <small>{currency}</small> : null}
+          {hasCurrency ? <small>{label}</small> : null}
         </>
       ) : (
         <>
-          {hasCurrency ? <small>{currency}</small> : null}
+          {hasCurrency ? <small>{label}</small> : null}
           <span>{amount}</span>
         </>
       )}
@@ -2544,6 +2661,8 @@ function QuantityControl({
   onDecrease,
   onIncrease,
   label,
+  compactIcons = false,
+  increaseSlug,
   className = "",
   increaseDisabled = false
 }: {
@@ -2551,17 +2670,19 @@ function QuantityControl({
   onDecrease: () => void;
   onIncrease: () => void;
   label: string;
+  compactIcons?: boolean;
+  increaseSlug?: string;
   className?: string;
   increaseDisabled?: boolean;
 }) {
   return (
     <div className={`quantity-control ${className}`.trim()}>
-      <button type="button" onClick={onIncrease} disabled={increaseDisabled} aria-label={`+ ${label}`}>
-        <Plus size={14} />
+      <button type="button" data-menu-increase={increaseSlug} onClick={onIncrease} disabled={increaseDisabled} aria-label={`+ ${label}`}>
+        {!compactIcons && <Plus size={14} />}
       </button>
       <strong>{quantity}</strong>
       <button type="button" onClick={onDecrease} disabled={quantity <= 0} aria-label={`- ${label}`}>
-        <Minus size={14} />
+        {!compactIcons && <Minus size={14} />}
       </button>
     </div>
   );
@@ -2580,6 +2701,7 @@ function CartView({
   whatsappOrderingEnabled,
   networkWhatsappCheckoutEnabled,
   language,
+  acceptLegacyPrice,
   acceptNetworkPrice,
   retryNetworkLine,
   saveNetworkEdit,
@@ -2599,6 +2721,7 @@ function CartView({
   whatsappOrderingEnabled: boolean;
   networkWhatsappCheckoutEnabled: boolean;
   language: PublicLanguage;
+  acceptLegacyPrice: (lineId: string) => void;
   acceptNetworkPrice: (lineId: string) => Promise<NetworkCartItem | null>;
   retryNetworkLine: (lineId: string) => Promise<NetworkCartItem | null>;
   saveNetworkEdit: (product: PublicProduct, quote: PublicProductQuoteResponse, lineId: string, quantity: number, note: string) => boolean;
@@ -2607,6 +2730,8 @@ function CartView({
   useSubdomainRoutes: boolean;
 }) {
   const [cartStep, setCartStep] = useState<"review" | "confirm">("review");
+  const checkoutShell = useRestaurantShell();
+  useEffect(() => checkoutShell?.holdSnapshot(), [checkoutShell?.holdSnapshot]);
   const [fulfillment, setFulfillment] = useState<FulfillmentType>("pickup");
   const [deliveryArea, setDeliveryArea] = useState("");
   const [deliveryNear, setDeliveryNear] = useState("");
@@ -2649,6 +2774,7 @@ function CartView({
   const outsideCart = data.products.filter((product) => !cartSlugs.has(product.slug));
   const related = (outsideCart.length ? outsideCart : data.products).slice(0, 8);
   const networkItems = cart.filter((item): item is NetworkCartItem => item.mode === "NETWORK");
+  const catalogReview = useMemo(() => cartCatalogReview(cart, data.products), [cart, data.products]);
   const staleLegacyNetwork = cart.some((item) => {
     const product = productBySlug.get(item.slug);
     return item.mode === "LEGACY" && Boolean(product && isNetworkProduct(product));
@@ -2968,6 +3094,11 @@ function CartView({
   }
 
   async function handleCheckoutAction() {
+    if (catalogReview.size) {
+      setCartStep("review");
+      setCheckoutError(language === "ar" ? "بعض الأصناف تغيرت أو لم تعد متوفرة. احذف الأصناف الموضحة وأضفها مجددًا قبل متابعة الطلب." : "Some items changed or are no longer available. Remove and add the marked items again before continuing.");
+      return;
+    }
     if ((hasNetwork && (!useTrustedNetworkCheckout || !showPrices)) || !whatsappOrderingEnabled) {
       setCheckoutError(language === "ar" ? "إرسال هذا الطلب غير متاح حاليًا." : "This checkout is currently unavailable.");
       return;
@@ -3088,11 +3219,19 @@ function CartView({
 
                 return (
                   <article key={item.lineId} className={`cart-page-item ${item.mode === "NETWORK" ? "network-cart-item" : ""} ${item.mode === "NETWORK" && (choiceLabels.length || hasSizeChoice || reviewedLineIds.has(item.lineId)) ? "has-network-details" : ""} ${reviewedLineIds.has(item.lineId) && (item.mode === "LEGACY" || item.status !== "OFFLINE") ? "network-cart-needs-review" : ""}`}>
-                    {imageUrl ? <img src={imageUrl} alt={item.name} /> : (
+                    {imageUrl ? <PublicImage src={imageUrl} alt={item.name} sizes="110px" /> : (
                       <span className="product-image-placeholder" role="img" aria-label={item.name}>
                         <ImageIcon size={24} />
                       </span>
                     )}
+                    {catalogReview.has(item.lineId) ? <p role="alert" className="network-cart-status status-invalid">
+                      {catalogReview.get(item.lineId) === "PRICE_CHANGED" ? <>
+                        {language === "ar" ? "تغيّر سعر الصنف إلى " : "The item price changed to "}
+                        <ProductPrice price={data.products.find(p => p.id === item.productId)!.basePriceExact ?? String(data.products.find(p => p.id === item.productId)!.basePrice)} currency={item.currency} />
+                        <button type="button" onClick={() => acceptLegacyPrice(item.lineId)}>{language === "ar" ? "قبول السعر الجديد" : "Accept new price"}</button>
+                      </> : language === "ar" ? "تم تحديث هذا الصنف أو لم يعد متوفرًا. يرجى حذفه وإضافته مجددًا." : "This item changed or is no longer available. Remove and add it again."}
+                      <button type="button" onClick={() => updateCartItem(item.lineId, 0)}>{language === "ar" ? "حذف الصنف" : "Remove item"}</button>
+                    </p> : null}
                     <div className="cart-page-copy">
                       <b dir="auto">{item.mode === "NETWORK" ? networkCartHeading(item) : item.name}</b>
                       {item.mode === "NETWORK" ? <>
@@ -3223,10 +3362,7 @@ function CartView({
               </label>
             </>
           )}
-          {useTrustedNetworkCheckout ? <button type="button" className="cart-message-preview-open"
-            disabled={trusted.busy || Boolean(trustedDisabledReason)} onClick={() => { setPreviewCopied(false); void trusted.preview(); }}>
-            {language === "ar" ? "معاينة رسالة WhatsApp دون إرسال" : "Preview WhatsApp message without sending"}
-          </button> : null}
+
         </section>
       )}
 
@@ -3254,13 +3390,13 @@ function CartView({
             const amount = item.mode === "NETWORK" ? multiplyMoney(item.acceptedQuote.total, item.quantity)
               : multiplyMoney(item.priceText ?? String(item.price), item.quantity);
             return <div key={item.lineId} className="cart-invoice-line"><dt dir="auto">{item.quantity} × {heading}{suffix}</dt>
-              <dd>{displayCurrencyAmount(amount, item.currency)}</dd></div>;
+              <dd>{displayCurrencyAmount(amount, item.currency, language)}</dd></div>;
           })}
         </dl> : null}
         <dl className="cart-invoice-totals">
           <div>
             <dt>{t.subtotal}</dt>
-            <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")}</dd>
+            <dd>{displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س", language)}</dd>
           </div>
           <div>
               <dt>{t.deliveryFee}</dt>
@@ -3268,14 +3404,14 @@ function CartView({
                 : fulfillment === "pickup" ? language === "ar" ? "لا يوجد" : "None"
                 : displayedFee === null ? language === "ar" ? "تُحدّد حسب المنطقة" : "Determined by area"
                 : displayedFee === "0" ? language === "ar" ? "مجاني" : "Free"
-                : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س")}</dd>
+                : displayCurrencyAmount(displayedFee, data.restaurant.currency ?? "ل.س", language)}</dd>
           </div>
           <div>
             <dt>{t.total}</dt>
-            <dd className={cartStep === "confirm" && displayedOrderTotal === null ? "cart-total-pending" : undefined}>{cartStep === "review" ? displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س")
+            <dd className={cartStep === "confirm" && displayedOrderTotal === null ? "cart-total-pending" : undefined}>{cartStep === "review" ? displayCurrencyAmount(displayedItemsSubtotal, data.restaurant.currency ?? "ل.س", language)
               : displayedOrderTotal === null
               ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
-              : displayCurrencyAmount(displayedOrderTotal, data.restaurant.currency ?? "ل.س")}</dd>
+              : displayCurrencyAmount(displayedOrderTotal, data.restaurant.currency ?? "ل.س", language)}</dd>
           </div>
         </dl>
         </div>
@@ -3320,8 +3456,8 @@ function CartView({
           <p>{language === "ar" ? "تغيّرت بعض الأصناف. راجعها قبل المتابعة؛ لم نغيّر اختياراتك تلقائيًا." : "Some items changed. Review them before continuing; your choices were not changed automatically."}</p>
           <ul>{reviewModalItems.map((item) => <li key={item.lineId}>
             <b dir="auto">{item.name}</b>
-            {item.status === "CHANGED" && item.proposedQuote ? <p>{language === "ar" ? "السعر السابق" : "Previous price"}: {displayCurrencyAmount(multiplyMoney(item.acceptedQuote.total, item.quantity), item.currency)}<br />
-              {language === "ar" ? "السعر الحالي" : "Current price"}: {displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency)}</p>
+            {item.status === "CHANGED" && item.proposedQuote ? <p>{language === "ar" ? "السعر السابق" : "Previous price"}: {displayCurrencyAmount(multiplyMoney(item.acceptedQuote.total, item.quantity), item.currency, language)}<br />
+              {language === "ar" ? "السعر الحالي" : "Current price"}: {displayCurrencyAmount(multiplyMoney(item.proposedQuote.total, item.quantity), item.currency, language)}</p>
               : <p>{item.status === "OFFLINE"
                 ? language === "ar" ? "تعذر الاتصال بالخادم؛ حاول مجددًا." : "Could not reach the server; try again."
                 : networkReviewIssueLabel(item.issues[0]?.code, language)}</p>}
@@ -3359,12 +3495,12 @@ function CartView({
             const previous = requested?.expectedUnitPrice;
             const priceChanged = previous !== undefined && compareMoney(previous, line.unitPrice) !== 0;
             return <li key={line.lineId}><span dir="auto">{line.productName} × {line.quantity}</span>
-              <b>{priceChanged ? <><s>{displayCurrencyAmount(multiplyMoney(previous, line.quantity), trusted.pendingPrice!.draft.currency)}</s><br /></> : null}
-                {displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency)}</b></li>;
+              <b>{priceChanged ? <><s>{displayCurrencyAmount(multiplyMoney(previous, line.quantity), trusted.pendingPrice!.draft.currency, language)}</s><br /></> : null}
+                {displayCurrencyAmount(line.lineTotal, trusted.pendingPrice!.draft.currency, language)}</b></li>;
           })}</ul>
           <strong>{language === "ar" ? "الإجمالي الجديد" : "New total"}: {trusted.pendingPrice.draft.totalAmount === null
             ? language === "ar" ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
-            : displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency)}</strong>
+            : displayCurrencyAmount(trusted.pendingPrice.draft.totalAmount, trusted.pendingPrice.draft.currency, language)}</strong>
           <div className="price-update-actions">
             <button type="button" autoFocus onClick={() => { trusted.dismissUpdatedPrice(); setCartStep("review"); }}>{language === "ar" ? "العودة لمراجعة السلة" : "Review cart"}</button>
             <button type="button" disabled={trusted.busy} onClick={() => void trusted.acceptUpdatedPrice()}>{language === "ar" ? "أوافق وأفتح WhatsApp" : "Accept and open WhatsApp"}</button>
@@ -3509,6 +3645,12 @@ function ProductView({
 }) {
   const searchParams = useSearchParams();
   const editingLineId = searchParams.get("editCart") ?? undefined;
+  const productRouter = useRouter();
+  const productShell = useRestaurantShell();
+  const backRouter = {
+    back: () => productRouter.back(),
+    replace: (href: string) => { if (!productShell?.navigate(href, true)) productRouter.replace(href); }
+  };
   const editingItem = editingLineId
     ? cart.find((item): item is NetworkCartItem => item.mode === "NETWORK" && item.lineId === editingLineId && item.productId === product.id)
     : undefined;
@@ -3527,6 +3669,7 @@ function ProductView({
   const productReturnHref = sourceReturnHref ?? restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes);
   const currentProductHref = productHref(data.restaurant.slug, product, productReturnHref, useSubdomainRoutes);
   const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
   const quantity = getCartQuantity(product.slug);
 
   useEffect(() => {
@@ -3541,25 +3684,12 @@ function ProductView({
 
     const script = document.createElement("script");
     script.type = "module";
-    script.src = "https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js";
+    script.src = "https://unpkg.com/@google/model-viewer@4.4.0/dist/model-viewer.min.js";
+    script.integrity = "sha512-sqFFZexm5fGN74m4exdj9LnS8kwJf+MQDSIUOF2GLXaWRcKFg0t0OEjojfuSgzQ10wqLXRgnFiJk9C77r60UMg==";
+    script.crossOrigin = "anonymous";
     script.dataset.modelViewer = "true";
     document.head.appendChild(script);
   }, [canRenderModel, model3dUrl]);
-
-  useEffect(() => {
-    if (!product?.slug) return;
-    if (!shouldTrackProductView(data.restaurant.slug, product.slug)) return;
-
-    void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"}/public/menus/${data.restaurant.slug}/track`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "PRODUCT_VIEWED",
-        path: `/m/${data.restaurant.slug}/product/${product.slug}`,
-        metadata: { productId: product.id, productSlug: product.slug }
-      })
-    }).catch(() => undefined);
-  }, [data.restaurant.slug, product.id, product.slug]);
 
   async function trackMediaOpen() {
     try {
@@ -3584,16 +3714,19 @@ function ProductView({
   }
 
   function handleGalleryTouchStart(event: TouchEvent<HTMLDivElement>) {
+    if (gallery.length <= 1 || mediaMode !== "image" || (event.target as HTMLElement).closest("button,a")) return;
     touchStartX.current = event.touches[0]?.clientX ?? null;
+    touchStartY.current = event.touches[0]?.clientY ?? null;
   }
 
   function handleGalleryTouchEnd(event: TouchEvent<HTMLDivElement>) {
     if (touchStartX.current === null || mediaMode !== "image") return;
     const endX = event.changedTouches[0]?.clientX ?? touchStartX.current;
     const deltaX = endX - touchStartX.current;
-    touchStartX.current = null;
-    if (Math.abs(deltaX) < 40) return;
-    moveImage(deltaX > 0 ? -1 : 1);
+    const deltaY = (event.changedTouches[0]?.clientY ?? touchStartY.current ?? 0) - (touchStartY.current ?? 0);
+    touchStartX.current = null; touchStartY.current = null;
+    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return;
+    moveImage((deltaX > 0) === (language === "ar") ? 1 : -1);
   }
 
   function openAr() {
@@ -3609,24 +3742,25 @@ function ProductView({
     <main className={`product-detail ${isVertigo ? "vertigo-product-detail" : ""}`.trim()}>
       {isVertigo ? (
         <div className="vertigo-product-header">
-          {data.restaurant.logoUrl ? (
-            <img src={data.restaurant.logoUrl} alt={data.restaurant.name} />
-          ) : (
-            <span className="public-logo-fallback">{data.restaurant.name.charAt(0).toUpperCase()}</span>
-          )}
           <p dir="auto">{data.restaurant.name}</p>
-          <button
+          <button className="public-nav-control"
             type="button"
-            onClick={() => sourceReturnHref ? navigateTo(sourceReturnHref) : navigateBack(productReturnHref, navigateTo)}
-            aria-label="ط§ظ„ط±ط¬ظˆط¹"
+            onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)}
+            aria-label={language === "ar" ? "الرجوع" : "Back"}
           >
-            <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
-              <path d="M9 3.5 15.5 10 9 16.5" />
-            </svg>
+            <PublicBackIcon />
           </button>
         </div>
       ) : null}
-      <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}>
+      <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}
+        onTouchCancel={() => {touchStartX.current=null;touchStartY.current=null;}}
+        tabIndex={mediaMode === "image" && gallery.length > 1 ? 0 : undefined}
+        role={gallery.length > 1 ? "group" : undefined} aria-label={gallery.length > 1 ? t.photos : undefined}
+        onKeyDown={event => {
+          if (mediaMode !== "image" || gallery.length <= 1 || (event.target !== event.currentTarget && !(event.target as HTMLElement).closest(".product-gallery-dots"))) return;
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {event.preventDefault();moveImage((event.key === "ArrowRight") === (language === "ar") ? -1 : 1);}
+          else if (event.key === "Home" || event.key === "End") {event.preventDefault();setActiveImageIndex(event.key === "Home" ? 0 : gallery.length-1);}
+        }}>
         {model3dUrl ? (
           <div className="product-media-tabs" role="group" aria-label={t.photos}>
             {!isVertigo ? (
@@ -3681,49 +3815,37 @@ function ProductView({
             <div className="product-model-stage product-model-fallback">
               <ProductImageMedia product={product} image={activeImage} />
               <a href={model3dUrl} rel="ar">
-                {activeImage ? <img src={activeImage.url} alt="" aria-hidden="true" /> : null}
+                {activeImage ? <PublicImage src={activeImage.url} alt="" decorative /> : null}
                 فتح 3D على الآيفون
               </a>
             </div>
           )
         ) : (
-          <ProductImageMedia product={product} image={activeImage} />
+          <ProductImageMedia product={product} image={activeImage} fetchPriority="high" />
         )}
         <button
           type="button"
-          className="product-back-link"
-          onClick={() => sourceReturnHref ? navigateTo(sourceReturnHref) : navigateBack(productReturnHref, navigateTo)}
+          className="product-back-link public-nav-control"
+          onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)}
           aria-label="الرجوع"
         >
-          <svg className="product-back-arrow-icon" viewBox="0 0 24 20" aria-hidden="true">
-            <path d="M9 3.5 15.5 10 9 16.5" />
-          </svg>
+          <PublicBackIcon />
         </button>
-        {mediaMode === "image" && gallery.length > 1 && !isVertigo ? (
+        {mediaMode === "image" && gallery.length > 1 ? (
           <>
-            <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label="Previous image">
+            <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label={language === "ar" ? "الصورة السابقة" : "Previous image"}>
               <ChevronLeft size={18} />
             </button>
-            <button type="button" className="product-gallery-arrow product-gallery-next" onClick={() => moveImage(1)} aria-label="Next image">
+            <button type="button" className="product-gallery-arrow product-gallery-next" onClick={() => moveImage(1)} aria-label={language === "ar" ? "الصورة التالية" : "Next image"}>
               <ChevronRight size={18} />
             </button>
           </>
         ) : null}
-        {mediaMode === "image" && gallery.length ? <span>{activeImageIndex + 1}/{gallery.length}</span> : null}
+        {mediaMode === "image" && gallery.length > 1 ? <div className="product-gallery-dots" aria-label={t.photos}>
+          {gallery.map((image,index)=><button key={`${image.url}-${index}`} type="button" className={index===activeImageIndex?"active":""}
+            aria-current={index===activeImageIndex?"true":undefined} aria-label={`${t.photo} ${index+1}`} onClick={()=>setActiveImageIndex(index)} />)}
+        </div> : null}
       </div>
-      {isVertigo && mediaMode === "image" && gallery.length > 1 ? (
-        <div className="vertigo-product-dots" aria-label={t.photos}>
-          {gallery.map((image, index) => (
-            <button
-              key={`${image.url}-${index}`}
-              type="button"
-              className={index === activeImageIndex ? "active" : ""}
-              onClick={() => setActiveImageIndex(index)}
-              aria-label={`${t.photo} ${index + 1}`}
-            />
-          ))}
-        </div>
-      ) : null}
       <section className="product-sheet">
         <div className="product-title-row">
           <h1>{product.name}</h1>
@@ -3741,7 +3863,7 @@ function ProductView({
               {ingredients.map((ingredient, index) => (
                 <span className={`ingredient-chip ${ingredient.imageUrl ? "has-image" : "text-only"}`} key={`${ingredient.name}-${index}`}>
                   <div className="ingredient-image-card">
-                    {ingredient.imageUrl ? <img src={ingredient.imageUrl} alt={ingredient.name} /> : null}
+                    {ingredient.imageUrl ? <PublicImage src={ingredient.imageUrl} alt={ingredient.name} sizes="64px" loading="lazy" /> : null}
                   </div>
                   <b>{ingredient.name}</b>
                 </span>
@@ -3763,7 +3885,7 @@ function ProductView({
                 return (
                   <span key={detail.label + "-" + index}>
                     <i aria-hidden="true">
-                      {detail.iconUrl ? <img src={detail.iconUrl} alt="" /> : <DetailIcon size={19} />}
+                      {detail.iconUrl ? <PublicImage src={detail.iconUrl} alt="" decorative sizes="32px" loading="lazy" /> : <DetailIcon size={19} />}
                     </i>
                     <small>{detail.label}</small>
                     <b>{detail.value}</b>
@@ -3872,7 +3994,7 @@ function VertigoRelatedProducts({
             onClick={() => window.scrollTo(0, 0)}
           >
             <div className="vertigo-related-image">
-              <ProductImageMedia product={product} />
+              <ProductImageMedia product={product} sizes="160px" loading="lazy" />
             </div>
             <div className="vertigo-related-copy">
               <b className="vertigo-related-name" dir="auto">{product.name}</b>
@@ -4048,7 +4170,7 @@ function ProductRail({
                 window.scrollTo(0, 0);
               }}
             >
-              <ProductImageMedia product={product} />
+              <ProductImageMedia product={product} sizes="126px" loading="lazy" />
         {showPrices ? <ProductPrice price={productPrice(product)} currency={product.currency} className="rail-price" priceFirst startingAt={product.productConfiguration?.priceDisplay === "STARTING_AT"} startingAtLabel={t.startingAt} /> : null}
         <b>{product.name}</b>
             </Link>
@@ -4071,7 +4193,7 @@ function ProductRail({
   );
 }
 
-function DrawerSocialLinks({
+export function DrawerSocialLinks({
   links,
   onNavigate
 }: {

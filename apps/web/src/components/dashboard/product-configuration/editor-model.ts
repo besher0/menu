@@ -7,6 +7,8 @@ import type {
 } from "@menu/shared";
 import type { EditorNodeRef, ProductConfigurationDraft, ProductConfigurationEnvelope } from "./types";
 
+import { MAX_GROUP_LEVELS } from "@menu/shared";
+
 export type EditableNode = ConfigurationGroup | SizeChoice | OptionChoice;
 
 export function cloneConfiguration(configuration: ProductConfigurationV1): ProductConfigurationV1 {
@@ -70,6 +72,7 @@ export function createGroup(type: "SIZE" | "OPTIONS"): ConfigurationGroup {
       type,
       id: newNodeId("size-group"),
       label: "مجموعة أحجام جديدة",
+    hidePublicLabel: true,
       sizes: [{ id: newNodeId("size"), label: "حجم جديد", price: "0" }]
     };
   }
@@ -77,6 +80,7 @@ export function createGroup(type: "SIZE" | "OPTIONS"): ConfigurationGroup {
     type,
     id: newNodeId("options-group"),
     label: "مجموعة خيارات جديدة",
+    hidePublicLabel: true,
     min: 0,
     max: null,
     includedQuantity: 0,
@@ -94,24 +98,25 @@ export function createOption(): OptionChoice {
 
 function visitGroups(
   groups: ConfigurationGroup[],
-  visitor: (node: EditableNode, ref: EditorNodeRef) => boolean | void
+  visitor: (node: EditableNode, ref: EditorNodeRef, level: number) => boolean | void,
+  level = 1
 ): boolean {
   for (const group of groups) {
-    if (visitor(group, { kind: "group", id: group.id })) return true;
+    if (visitor(group, { kind: "group", id: group.id }, level)) return true;
     const choices = group.type === "SIZE" ? group.sizes : group.options;
     for (const choice of choices) {
-      if (visitor(choice, { kind: group.type === "SIZE" ? "size" : "option", id: choice.id })) return true;
-      if (visitGroups(choice.children ?? [], visitor)) return true;
+      if (visitor(choice, { kind: group.type === "SIZE" ? "size" : "option", id: choice.id }, level)) return true;
+      if (visitGroups(choice.children ?? [], visitor, level + 1)) return true;
     }
   }
   return false;
 }
 
-export function findNode(configuration: ProductConfigurationV1, id: string): { node: EditableNode; ref: EditorNodeRef } | null {
-  let result: { node: EditableNode; ref: EditorNodeRef } | null = null;
-  visitGroups(configuration.groups, (node, ref) => {
+export function findNode(configuration: ProductConfigurationV1, id: string): { node: EditableNode; ref: EditorNodeRef; level: number } | null {
+  let result: { node: EditableNode; ref: EditorNodeRef; level: number } | null = null;
+  visitGroups(configuration.groups, (node, ref, level) => {
     if (node.id !== id) return false;
-    result = { node, ref };
+    result = { node, ref, level };
     return true;
   });
   return result;
@@ -153,7 +158,9 @@ export function appendRootGroup(configuration: ProductConfigurationV1, type: "SI
   return { ...configuration, groups: [...configuration.groups, createGroup(type)] };
 }
 
-export function appendChildGroup(configuration: ProductConfigurationV1, choiceId: string, type: "SIZE" | "OPTIONS") {
+export function appendChildGroup(configuration: ProductConfigurationV1, choiceId: string, type: "SIZE" | "OPTIONS", parentLevel = 0) {
+  const choice = findNode(configuration, choiceId);
+  if (!choice || choice.ref.kind === "group" || parentLevel + choice.level >= MAX_GROUP_LEVELS) return configuration;
   return updateNode(configuration, choiceId, (node) => ({
     ...node,
     children: [...("children" in node && node.children ? node.children : []), createGroup(type)]

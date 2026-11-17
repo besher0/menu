@@ -3,7 +3,7 @@ import { issueAcceptanceToken, parseNetworkOrderRequest, sha256, verifyAcceptanc
 import { NetworkOrdersService } from "./network-orders.service";
 import { NetworkOrderLoopbackGuard } from "./network-orders.controller";
 
-const selection = { schemaVersion: 1, productId: "pizza", configurationRevision: 1,
+const selection = { schemaVersion: 2, productId: "pizza", configurationRevision: 1,
   groups: [{ type: "SIZE", groupId: "sizes", sizeChoiceId: "medium" }] };
 const draft = { locale: "ar", items: [{ productId: "pizza", quantity: 2, selection }] };
 

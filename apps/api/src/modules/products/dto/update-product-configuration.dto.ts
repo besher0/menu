@@ -1,6 +1,5 @@
 import { Type } from "class-transformer";
 import { IsInt, IsObject, Min } from "class-validator";
-import { ProductConfigurationV1 } from "@menu/shared";
 
 export class UpdateProductConfigurationDto {
   @Type(() => Number)
@@ -9,5 +8,6 @@ export class UpdateProductConfigurationDto {
   expectedVersion: number;
 
   @IsObject()
-  configuration: ProductConfigurationV1;
+  // This retired write endpoint always returns 410; it never interprets a tree.
+  configuration: unknown;
 }

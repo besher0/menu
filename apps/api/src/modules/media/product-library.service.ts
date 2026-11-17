@@ -129,6 +129,7 @@ export class ProductLibraryService {
           adminNameNormalized: this.normalizeAdminName(adminName),
           displayName,
           value: this.cleanOptional(dto.value),
+          valueType: dto.valueType ?? "VALUE",
           icon: this.cleanOptional(dto.icon) ?? "utensils",
           iconUrl: this.cleanOptional(dto.iconUrl),
           isActive: dto.isActive ?? true
@@ -153,6 +154,7 @@ export class ProductLibraryService {
           ...(adminName ? { adminName, adminNameNormalized: this.normalizeAdminName(adminName) } : {}),
           ...(displayName ? { displayName } : {}),
           ...(dto.value !== undefined ? { value: this.cleanOptional(dto.value) } : {}),
+          ...(dto.valueType !== undefined ? { valueType: dto.valueType } : {}),
           ...(dto.icon !== undefined ? { icon: this.cleanOptional(dto.icon) ?? "utensils" } : {}),
           ...(dto.iconUrl !== undefined ? { iconUrl: this.cleanOptional(dto.iconUrl) } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {})

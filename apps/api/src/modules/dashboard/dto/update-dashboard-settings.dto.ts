@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 export class DashboardOpeningHourDto {
@@ -65,6 +65,7 @@ export class UpdateDashboardSettingsDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   description?: string;
 
   @IsOptional()
@@ -77,7 +78,21 @@ export class UpdateDashboardSettingsDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   address?: string;
+
+  @IsOptional()
+  @IsIn(["DASHBOARD", "WHATSAPP"])
+  feedbackMode?: "DASHBOARD" | "WHATSAPP";
+
+  @IsOptional() @IsString() @MaxLength(2048)
+  googleMapsUrl?: string;
+
+  @IsOptional() @IsNumber() @Min(-90) @Max(90)
+  latitude?: number | null;
+
+  @IsOptional() @IsNumber() @Min(-180) @Max(180)
+  longitude?: number | null;
 
   @IsOptional()
   @IsString()

@@ -158,7 +158,10 @@ export class AdminService {
       }
     }
 
-    const ownerPassword = dto.ownerPassword ?? "password123";
+    const ownerPassword = dto.ownerPassword;
+    if (!ownerPassword || ownerPassword.length < 12 || Buffer.byteLength(ownerPassword) > 72) {
+      throw new BadRequestException("Owner password must be at least 12 characters and at most 72 bytes");
+    }
     const passwordHash = await bcrypt.hash(ownerPassword, 10);
     const plan = await this.prisma.subscriptionPlan.findUnique({
       where: { key: dto.planKey ?? "BASIC" }
@@ -256,8 +259,7 @@ export class AdminService {
           publicUrl: publicRestaurantUrl(restaurant.slug),
           owner: {
             id: owner.id,
-            email: owner.email,
-            defaultPassword: dto.ownerPassword ? undefined : ownerPassword
+            email: owner.email
           }
         };
       }, {

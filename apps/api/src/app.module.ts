@@ -1,5 +1,8 @@
+import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { validateProductionConfig } from "./common/security/production-config";
+import { signingKey } from "./common/security/jwt-key";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { AppController } from "./app.controller";
 import { AdminModule } from "./modules/admin/admin.module";
@@ -18,11 +21,19 @@ import { SyncModule } from "./modules/sync/sync.module";
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    JwtModule.register({
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: (env) => { validateProductionConfig(env); return env; }
+    }),
+    JwtModule.registerAsync({
       global: true,
-      secret: process.env.JWT_SECRET ?? "dev-secret",
-      signOptions: { expiresIn: "7d" }
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: signingKey(config.get<string>("JWT_SECRET")),
+        signOptions: { expiresIn: "7d", algorithm: "HS256" },
+        verifyOptions: { algorithms: ["HS256"] }
+      })
     }),
     PrismaModule,
     FeatureFlagsModule,
@@ -30,6 +41,7 @@ import { SyncModule } from "./modules/sync/sync.module";
     BuilderModule,
     AdminModule,
     DashboardModule,
+    FeedbackModule,
     MediaModule,
     ProductsModule,
     PublicMenuModule,

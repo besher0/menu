@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 import {
-  collectDependencyEdges,
+  collectDependencyEdgesV2 as collectDependencyEdges,
   type FeatureKey,
+  ProductConfigurationV2,
   ProductConfigurationV1,
-  validateConfiguration,
-  validateConfigurationCurrency
+  validateConfigurationV2 as validateConfiguration,
+  validateConfiguration as rejectRetiredConfiguration,
+  validateGroupLevelsV2 as validateGroupLevels,
+  resolveConfigurationContextV2,
+  validateConfigurationCurrencyV2 as validateConfigurationCurrency
 } from "@menu/shared";
 import { Prisma, PrismaClient } from "@prisma/client";
 
@@ -36,9 +40,11 @@ export type PersistProductConfigurationInput = {
   restaurantId: string;
   productId: string;
   expectedVersion: number;
-  configuration: ProductConfigurationV1;
+  configuration: ProductConfigurationV2;
   disablePublicOrdering?: boolean;
   requiredCapabilityKey?: FeatureKey;
+  /** Only for a row initialized inside the caller's current transaction. Never exposed in a DTO. */
+  newProduct?: boolean;
 };
 
 type DependencyPair = {
@@ -84,8 +90,14 @@ export function findDependencyCycle(edges: readonly DependencyPair[]): string[] 
   return null;
 }
 
-export async function persistProductConfiguration(
-  prisma: PrismaClient,
+/** Historical sample/backfill tools remain fail-closed; real writes use Unified Editor CAS. */
+export async function persistProductConfiguration(prisma: PrismaClient, input: Omit<PersistProductConfigurationInput, "configuration"> & { configuration: ProductConfigurationV1 }) {
+  throw new ProductConfigurationValidationError(rejectRetiredConfiguration(input.configuration));
+}
+
+/** Caller owns the Serializable transaction, product edit CAS and retry policy. */
+export async function persistProductConfigurationInTransaction(
+  transaction: Prisma.TransactionClient,
   input: PersistProductConfigurationInput
 ) {
   if (input.configuration.productId !== input.productId) {
@@ -102,7 +114,7 @@ export async function persistProductConfiguration(
   const edges = collectDependencyEdges(input.configuration);
   const uniqueSourceIds = [...new Set(edges.map((edge) => edge.sourceProductId))];
 
-  return prisma.$transaction(async (transaction) => {
+
     const restaurant = await transaction.restaurant.findUnique({
       where: { id: input.restaurantId }, select: { currency: true }
     });
@@ -138,7 +150,7 @@ export async function persistProductConfiguration(
       select: { configurationVersion: true }
     });
     if (!owner) throw new ProductConfigurationConflictError("Product was not found in the requested restaurant");
-    if (owner.configurationVersion !== input.expectedVersion) {
+    if (owner.configurationVersion !== input.expectedVersion + (input.newProduct ? 1 : 0)) {
       throw new ProductConfigurationConflictError(
         `Configuration version conflict: expected ${input.expectedVersion}, found ${owner.configurationVersion}`
       );
@@ -196,11 +208,49 @@ export async function persistProductConfiguration(
       throw new ProductConfigurationConflictError(`Linked product cycle detected: ${cycle.join(" -> ")}`);
     }
 
+    // Check both the edited product and its consumers under the same serializable snapshot.
+    const graph = [...existingEdges, ...edges];
+    if (graph.some(edge => edge.productId === input.productId || edge.sourceProductId === input.productId)) {
+      const affected = new Set([input.productId]);
+      const consumers = new Map<string, string[]>();
+      const dependencies = new Map<string, string[]>();
+      for (const edge of graph) {
+        const parents = consumers.get(edge.sourceProductId) ?? [];
+        parents.push(edge.productId);
+        consumers.set(edge.sourceProductId, parents);
+        const targets = dependencies.get(edge.productId) ?? [];
+        targets.push(edge.sourceProductId);
+        dependencies.set(edge.productId, targets);
+      }
+      for (const id of affected) for (const parent of consumers.get(id) ?? []) affected.add(parent);
+      const needed = new Set(affected);
+      for (const id of needed) for (const child of dependencies.get(id) ?? []) needed.add(child);
+      const rows = await transaction.product.findMany({
+        where: { restaurantId: input.restaurantId, id: { in: [...needed] }, deletedAt: null },
+        select: { id: true, configurationTree: true }
+      });
+      const trees = new Map(rows.map(item => [item.id, item.configurationTree as unknown as ProductConfigurationV2 | null]));
+      trees.set(input.productId, input.configuration);
+      const linkedProducts = new Map(rows.map(item => [item.id, {
+        productId: item.id, catalogId: input.restaurantId,
+        // CUSTOM may link an ordinary product; its explicit local tree supplies structure.
+        configuration: trees.get(item.id) ?? { schemaVersion: 2 as const, productId: item.id, revision: 1, basePrice: "0", groups: [] }
+      }]));
+      for (const id of affected) {
+        const tree = trees.get(id);
+        if (!tree) continue;
+        const issues = validateGroupLevels(tree, sourceId => trees.get(sourceId) ?? undefined);
+        if (issues.length) throw new ProductConfigurationValidationError(issues);
+        const resolved = resolveConfigurationContextV2(tree, { catalogId: input.restaurantId, currency: restaurant.currency, linkedProducts });
+        if (resolved.issues.length) throw new ProductConfigurationValidationError(resolved.issues);
+      }
+    }
+
     const updated = await transaction.product.updateMany({
       where: {
         id: input.productId,
         restaurantId: input.restaurantId,
-        configurationVersion: input.expectedVersion,
+        configurationVersion: input.expectedVersion + (input.newProduct ? 1 : 0),
         deletedAt: null
       },
       data: {
@@ -240,5 +290,5 @@ export async function persistProductConfiguration(
       configurationVersion: input.configuration.revision,
       dependencyCount: edges.length
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
 }

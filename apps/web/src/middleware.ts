@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isDemoPreviewRoute } from "@/lib/demo-preview-routes";
 import {
   hostnameFromHostHeader,
   INTERNAL_RESTAURANT_REWRITE_HEADER,
@@ -19,6 +20,11 @@ export function middleware(request: NextRequest) {
   requestHeaders.delete(INTERNAL_RESTAURANT_REWRITE_HEADER);
   requestHeaders.delete(INTERNAL_RESTAURANT_SLUG_HEADER);
   const { pathname, search } = request.nextUrl;
+
+  if (isDemoPreviewRoute(process.env.ORDERSAWA_DEMO_PREVIEW,
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host"), pathname)) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
 
   if (pathname === "/m" || pathname.startsWith("/m/")) {
     if (process.env.NODE_ENV !== "production") {
@@ -112,6 +118,7 @@ function shouldBypass(pathname: string) {
     pathname === "/favicon.ico" ||
     pathname === "/manifest.webmanifest" ||
     pathname === "/sw.js" ||
+    pathname === "/offline" ||
     PUBLIC_FILE_PATTERN.test(pathname)
   );
 }

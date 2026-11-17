@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calculatePrice, sumMoney, type PriceLine } from "@menu/shared";
-import { includedQuantityDemo } from "../dashboard/product-configuration/demos";
+import { calculatePriceV2 as calculatePrice, sumMoney, type PriceLine } from "@menu/shared";
+const includedQuantityDemo = (productId:string,revision:number) => ({schemaVersion:2 as const,productId,revision,basePrice:"100",groups:[{
+ type:"OPTIONS" as const,id:"demo-included-toppings",label:"Extras",min:2,max:5,includedQuantity:2,options:[
+ {id:"demo-included-mushroom",label:"مشروم",price:"30",maxQuantity:3},{id:"demo-included-cheese",label:"جبنة",price:"15",maxQuantity:3},{id:"demo-included-meat",label:"لحم",price:"50",maxQuantity:3}]}]});
 import { summarizeConfigurationPriceLines } from "./product-configurator-summary";
 
 const size: PriceLine = { kind: "SIZE", path: "$selection.groups.sizes", nodeId: "small", label: "صغير", amount: "100", chargedAmount: "100", included: false };
@@ -31,14 +33,14 @@ describe("customer price summary presentation", () => {
 
   it("keeps real included-unit charges as zero and reconciles the summary with the Shared quote", () => {
     const configuration = includedQuantityDemo("included", 1);
-    const selection = { schemaVersion: 1 as const, productId: "included", configurationRevision: 1, groups: [{
+    const selection = { schemaVersion: 2 as const, productId: "included", configurationRevision: 1, groups: [{
       type: "OPTIONS" as const, groupId: "demo-included-toppings", instances: [
         { instanceId: "m", optionId: "demo-included-mushroom" },
         { instanceId: "c", optionId: "demo-included-cheese" },
         { instanceId: "l", optionId: "demo-included-meat" }
       ]
     }] };
-    const quote = calculatePrice(configuration, selection, { catalogId: "demo", linkedProducts: new Map() });
+    const quote = calculatePrice(configuration, selection, { catalogId: "demo", currency: "SYP", linkedProducts: new Map() });
     expect(quote.valid).toBe(true);
     expect(quote.total).toBe("115");
     const rows = summarizeConfigurationPriceLines(quote.lines, "بيتزا");
