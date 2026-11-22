@@ -1,0 +1,2 @@
+# Release acceptance verifies the historical bytes recorded in V1_CASE_DISPOSITION.json.
+tests/archive/configuration-v1/*.spec.ts.txt -text

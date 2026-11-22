@@ -26,7 +26,7 @@ pwfile=out/'one-time-password';pwfile.write_text(pw)
 started=False
 try:
  run('initdb',[exe('initdb'),'-D',data,'-U','fixture','-A','scram-sha-256','--pwfile',pwfile,'--locale=C','--encoding=UTF8']);pwfile.unlink()
- run('start',[exe('pg_ctl'),'-D',data,'-l',out/'pg.log','-w','start','-o',f'-h 127.0.0.1 -p {port}']);started=True
+ run('start',[exe('pg_ctl'),'-D',data,'-l',out/'pg.log','-w','start','-o',f'-h 127.0.0.1 -p {port} -c unix_socket_directories=']);started=True
  run('role',base+['-c',"CREATE ROLE staging_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '"+pw+"'"])
  run('database',base+['-c','CREATE DATABASE ordersawa_staging OWNER staging_app'])
  uri=f'postgresql://staging_app:{pw}@127.0.0.1:{port}/ordersawa_staging'

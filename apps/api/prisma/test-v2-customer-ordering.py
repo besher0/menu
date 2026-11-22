@@ -29,7 +29,7 @@ def call(name,cmd,cwd=s,timeout=120):
 try:
  if call('initdb',[exe('initdb'),'-D',data,'-U','qa_owner','-A','scram-sha-256','--pwfile',pwfile,'--encoding=UTF8','--locale=C']):sys.exit(1)
  pwfile.unlink()
- if call('pg-start',[exe('pg_ctl'),'-D',data,'-l',data/'server.log','-w','start','-o',f'-h 127.0.0.1 -p {port}']):sys.exit(1)
+ if call('pg-start',[exe('pg_ctl'),'-D',data,'-l',data/'server.log','-w','start','-o',f'-h 127.0.0.1 -p {port} -c unix_socket_directories=']):sys.exit(1)
  started=True
  if call('create-db',[exe('psql'),'-X','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',port,'-U','qa_owner','-d','postgres','-c','CREATE DATABASE '+db]):sys.exit(1)
  uri=f'postgresql://qa_owner:{pw}@127.0.0.1:{port}/{db}'

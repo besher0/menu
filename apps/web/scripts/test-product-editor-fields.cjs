@@ -45,7 +45,7 @@ async function main(){
   page.on('framenavigated',f=>{if(f===page.mainFrame())navigationEvidence.push({url:f.url(),at:Date.now()})});page.on('requestfailed',r=>navigationEvidence.push({failed:r.url(),reason:r.failure()?.errorText}));page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.method()==='PUT')writes.push(r.url());if(r.method()==='POST'&&r.url().endsWith('/media/upload'))uploads.push(r.url())});
   let discard=true;page.on('dialog',d=>discard?d.accept():d.dismiss());
   if(width===1280){
-   for(const [route,visible] of [['/dashboard','زيارات اليوم'],['/dashboard/products','الأصناف'],['/dashboard/banners','البنرات'],['/dashboard/settings','ساعات العمل']]){
+   for(const [route,visible] of [['/dashboard','زيارات المنيو'],['/dashboard/products','الأصناف'],['/dashboard/banners','البنرات'],['/dashboard/settings','ساعات العمل']]){
     const response=await page.goto(origin+route,{waitUntil:'networkidle'});assert.equal(response.status(),200);
     assert((await page.locator('body').innerText()).includes(visible),route);
     assert(!(await page.locator('body').innerText()).includes('+8 %'));

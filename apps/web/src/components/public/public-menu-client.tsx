@@ -11,7 +11,7 @@ import { useRestaurantShell } from "./restaurant-shell-context";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, createElement, memo, useContext, type CSSProperties, type PointerEvent, type TouchEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Pencil, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
-import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars, type PublicWhatsappLineError, type PublicWhatsappPriceChange } from "@/lib/api";
+import { PublicCategory, PublicMenuData, PublicProduct, cssVars, type PublicWhatsappLineError, type PublicWhatsappPriceChange } from "@/lib/api";
 import { getPublicProductConfiguration, getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
 import { clientUuid } from "@/lib/client-uuid";
 import { bannerSection, compareMoney, currencyDisplayLabel, multiplyMoney, sumMoney } from "@menu/shared";
@@ -43,16 +43,18 @@ import {
 import { cartDisplayedTotal, useTrustedWhatsappCheckout } from "./trusted-whatsapp-checkout";
 import { invoiceDragHeight, shouldExpandInvoice } from "./invoice-sheet-motion";
 import { leaveTrackedProduct, trackVisibleView } from "./view-tracking";
-import { commitPublicNavigation, hasSavedPublicScroll, rememberPublicNavigation, returnFromPublicProduct } from "./public-history";
+import { productMealDetails } from "./product-meal-details";
+import { commitPublicNavigation, hasSavedPublicScroll, replaceMenuQuery, saveMenuPosition, rememberPublicNavigation, returnFromPublicProduct } from "./public-history";
 import { indexMenuProducts, indexMenuQuantities } from "./menu-render-model";
 
 type PublicLanguage = "ar" | "en";
+type ThumbnailSelection = { key: string; url: string };
+const ThumbnailContext = createContext<{ restaurant: string; selection: { current: ThumbnailSelection | null } } | null>(null);
 const MenuLanguageContext = createContext<PublicLanguage>("ar");
 type CategoryProductListLayout = "single" | "double";
 type MenuDisplayMode = "large" | "list";
 type ProductMediaMode = "image" | "3d";
 type NormalizedIngredient = { name: string; imageUrl?: string | null };
-type NormalizedMealDetail = { label: string; value: string; icon: string; iconUrl?: string | null };
 type FulfillmentType = "pickup" | "delivery";
 type PublicThemeUiSettings = NonNullable<PublicMenuData["theme"]["publicUi"]> & {
   whatsappOrderingEnabled?: boolean;
@@ -369,31 +371,6 @@ function mealDetailIcon(iconKey?: string | null): LucideIcon {
   return icons[iconKey || ""] ?? Utensils;
 }
 
-function normalizeConfiguredMealDetails(details?: PublicMealDetail[]) {
-  return (details ?? [])
-    .map((detail) => ({
-      label: (detail.displayName || detail.label)?.trim() ?? "",
-      value: detail.value?.trim() ?? "",
-      icon: detail.icon?.trim() || "utensils",
-      iconUrl: detail.iconUrl?.trim() ?? ""
-    }))
-    .filter((detail) => detail.label || detail.value);
-}
-
-function productMealDetails(product: PublicProduct, t: PublicTranslations): NormalizedMealDetail[] {
-  if (Array.isArray(product.nutrition?.details)) {
-    return normalizeConfiguredMealDetails(product.nutrition.details);
-  }
-
-  const protein = product.nutrition?.protein ?? t.chicken;
-  return [
-    { label: t.approximateWeight, value: product.nutrition?.weight ?? "200 mg", icon: "scale" },
-    { label: t.meatType, value: protein, icon: protein.toLowerCase().includes("لحم") ? "beef" : "drumstick" },
-    { label: t.breadType, value: product.nutrition?.breadType ?? t.plate, icon: "wheat" },
-    { label: t.spiceLevel, value: product.nutrition?.spice ?? t.medium, icon: "flame" }
-  ];
-}
-
 function menuSectionScrollOffset(strip: HTMLElement | null, showNestedCategoryStrip: boolean) {
   if (!showNestedCategoryStrip) {
     return 16;
@@ -469,7 +446,7 @@ function ProductImageMedia({
   fetchPriority,
   preserveIntrinsicSize
 }: {
-  product: Pick<PublicProduct, "name" | "imageUrl" | "images">;
+  product: Pick<PublicProduct, "slug" | "name" | "imageUrl" | "images">;
   image?: { url?: string | null; altText?: string | null } | null;
   decorative?: boolean;
   sizes?: string;
@@ -477,12 +454,16 @@ function ProductImageMedia({
   fetchPriority?: "high" | "low" | "auto";
   preserveIntrinsicSize?: boolean;
 }) {
+  const thumbnails = useContext(ThumbnailContext);
   const imageUrl = image?.url?.trim() || productImage(product) || "";
 
   if (imageUrl) {
     const source = preserveIntrinsicSize ? product.images?.find(entry => entry.url === imageUrl) : undefined;
     const originalDimensions = source?.width && source.height ? { width: source.width, height: source.height } : undefined;
-    return <PublicImage src={imageUrl} alt={image?.altText || product.name} decorative={decorative} sizes={sizes}
+    const key = JSON.stringify([thumbnails?.restaurant, product.slug, imageUrl]);
+    const selected = thumbnails?.selection.current;
+    return <PublicImage key={key} productImageKey={!image ? key : undefined}
+      readyThumbnail={image && fetchPriority === "high" && selected?.key === key ? selected.url : undefined} src={imageUrl} alt={image?.altText || product.name} decorative={decorative} sizes={sizes}
       loading={loading} fetchPriority={fetchPriority} preserveIntrinsicSize={preserveIntrinsicSize} originalDimensions={originalDimensions} />;
   }
 
@@ -668,6 +649,10 @@ export function PublicMenuClient({
   const [openSection, setOpenSection] = useState<"hours" | "about" | "feedback" | null>(null);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
+  const selection = useRef<ThumbnailSelection | null>(null);
+  const thumbnails = useMemo(() => ({ restaurant: data.restaurant.slug, selection }), [data.restaurant.slug]);
+  const [homeVisited, setHomeVisited] = useState(view === "home");
+  useEffect(() => { if (view === "home") setHomeVisited(true); }, [view]);
   const [menuVisited, setMenuVisited] = useState(view === "menu");
   const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(initialUseSubdomainRoutes);
   const storageKey = `cart:${data.restaurant.slug}:main`;
@@ -691,11 +676,58 @@ export function PublicMenuClient({
   }, [shell, data.restaurant.slug, router]);
   useLayoutEffect(() => {
     const scroll = commitPublicNavigation(data.restaurant.slug);
+    if (view === "menu") {
+      // A fresh category link is aligned by MenuView. A saved history entry
+      // takes precedence. Wait for content height if the SSR list is still growing.
+      let settledTimer = 0;
+      const capture = () => {
+        window.clearTimeout(settledTimer);
+        saveMenuPosition(data.restaurant.slug, window.scrollY);
+      };
+      const onScroll = () => {
+        window.clearTimeout(settledTimer);
+        settledTimer = window.setTimeout(capture, 120);
+      };
+      window.addEventListener("scroll", onScroll, { passive: true });
+      window.addEventListener("scrollend", capture);
+      const onVisibility = () => { if (document.visibilityState === "hidden") capture(); };
+      window.addEventListener("pagehide", capture);
+      document.addEventListener("visibilitychange", onVisibility);
+      const controller = new AbortController();
+      let observer: ResizeObserver | undefined;
+      const nativeRestoration = history.scrollRestoration;
+      const stop = () => { observer?.disconnect(); controller.abort(); };
+      if (scroll !== undefined) {
+        // This entry has an exact offset. Native load-time restoration could
+        // otherwise replay the preceding reload's position after hydration.
+        history.scrollRestoration = "manual";
+        const restore = () => {
+          if (Math.abs(window.scrollY - scroll) > 1) window.scrollTo({ top: scroll, behavior: "instant" });
+          if (Math.abs(window.scrollY - scroll) <= 1) observer?.disconnect();
+        };
+        observer = new ResizeObserver(restore);
+        observer.observe(document.body);
+        if (document.readyState !== "complete") {
+          window.addEventListener("pageshow", restore, { once: true, signal: controller.signal });
+        }
+        for (const event of ["pointerdown", "touchstart", "wheel", "keydown"]) {
+          window.addEventListener(event, stop, { passive: true, signal: controller.signal });
+        }
+        restore();
+      }
+      return () => {
+        stop();
+        if (scroll !== undefined) history.scrollRestoration = nativeRestoration;
+        window.clearTimeout(settledTimer);
+        window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("scrollend", capture);
+        window.removeEventListener("pagehide", capture);
+        document.removeEventListener("visibilitychange", onVisibility);
+      };
+    }
     let second = 0;
     const first = window.requestAnimationFrame(() => {
       second = window.requestAnimationFrame(() => {
-        const category = view === "menu" && new URLSearchParams(location.search).get("category");
-        if (scroll === undefined && category && document.getElementById(`category-section-${category}`)) return;
         window.scrollTo({ top: scroll ?? 0, behavior: "instant" });
       });
     });
@@ -878,7 +910,7 @@ export function PublicMenuClient({
   }, [drawerOpen]);
 
   useEffect(() => {
-    if (activeView !== "product" || hasSavedPublicScroll()) {
+    if (activeView !== "product" || hasSavedPublicScroll(data.restaurant.slug)) {
       return;
     }
 
@@ -1122,10 +1154,17 @@ export function PublicMenuClient({
 
   return (
     <MenuLanguageContext.Provider value={language}>
+    <ThumbnailContext.Provider value={thumbnails}>
     <div
       className={`public-screen view-${activeView} template-${templateKey} footer-${bottomNavVariant} ${showPrices ? "" : "prices-hidden"} ${showBottomNav ? "" : "no-bottom-nav"} ${activeView === "menu" && menuNested ? "menu-nested" : ""}`}
       onClickCapture={(event) => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const card = event.target instanceof Element ? event.target.closest("a,button") : null;
+        if (card) {
+          const img = card.querySelector<HTMLImageElement>("img[data-product-image-key]");
+          selection.current = img?.dataset.productImageKey && img.srcset && img.currentSrc && img.complete && img.naturalWidth > 0
+            ? { key: img.dataset.productImageKey, url: img.currentSrc } : null;
+        }
         const link = event.target instanceof Element ? event.target.closest("a") : null;
         if (!link || link.hasAttribute("download") || link.target && link.target !== "_self") return;
         const url = new URL(link.href, window.location.href);
@@ -1194,9 +1233,10 @@ export function PublicMenuClient({
           useSubdomainRoutes={useSubdomainRoutes}
         />
       ) : null}
-      {activeView === "home" ? (
-        <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} whatsappOrderingEnabled={whatsappOrderingEnabled} useSubdomainRoutes={useSubdomainRoutes} />
-      ) : activeView === "product" && activeProduct ? (
+      {hasHomeSections && (activeView === "home" || homeVisited) ? (
+        <HomeView key={data.restaurant.slug} active={activeView === "home"} data={data} addToCart={addToCart} t={t} showPrices={showPrices} whatsappOrderingEnabled={whatsappOrderingEnabled} useSubdomainRoutes={useSubdomainRoutes} />
+      ) : null}
+      {activeView === "product" && activeProduct ? (
         <ProductView
           key={activeProduct.id ?? activeProduct.slug}
           data={data}
@@ -1293,11 +1333,13 @@ export function PublicMenuClient({
         </aside>
       ) : null}
     </div>
+    </ThumbnailContext.Provider>
     </MenuLanguageContext.Provider>
   );
 }
 
 function HomeView({
+  active,
   data,
   addToCart,
   t,
@@ -1305,6 +1347,7 @@ function HomeView({
   whatsappOrderingEnabled,
   useSubdomainRoutes
 }: {
+  active: boolean;
   data: PublicMenuData;
   addToCart: (product: PublicProduct) => void;
   t: PublicTranslations;
@@ -1312,6 +1355,25 @@ function HomeView({
   whatsappOrderingEnabled: boolean;
   useSubdomainRoutes: boolean;
 }) {
+  const home = useRef<HTMLElement>(null);
+  const visibleSlots = useRef(new Set<string>());
+  useEffect(() => {
+    const root = home.current;
+    if (!active || !root) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        const slot = (entry.target as HTMLElement).dataset.homeSlot;
+        if (slot && !entry.isIntersecting) visibleSlots.current.delete(slot);
+      }
+      for (const entry of entries) {
+        const slot = (entry.target as HTMLElement).dataset.homeSlot;
+        if (slot && entry.isIntersecting && visibleSlots.current.size < 6) visibleSlots.current.add(slot);
+      }
+    });
+    visibleSlots.current.clear();
+    root.querySelectorAll("[data-home-slot]").forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  }, [active, data]);
   const featured = data.products.filter(isFeatured);
   const popular = data.products.filter(isPopular);
   const newProducts = data.products.filter(isNew).slice(0, 10);
@@ -1371,7 +1433,7 @@ function HomeView({
   }, [bannerSlides.length]);
 
   useEffect(() => {
-    if (bannerSlides.length <= 1) {
+    if (!active || bannerSlides.length <= 1) {
       return;
     }
 
@@ -1380,7 +1442,9 @@ function HomeView({
     }, BANNER_AUTO_ADVANCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [activeBanner, bannerSlides.length]);
+  }, [active, activeBanner, bannerSlides.length]);
+
+  useEffect(() => { if (!active) setActiveBanner(0); }, [active]);
 
   function moveBanner(direction: -1 | 1) {
     if (bannerSlides.length <= 1) {
@@ -1413,8 +1477,10 @@ function HomeView({
   }
 
   return (
-    <main className="public-content">
-      {isVertigo ? (
+    <main ref={home} className="public-content" hidden={!active} aria-hidden={active ? undefined : true}
+      inert={!active}
+      style={active ? undefined : { display: "none" }}>
+      {active && isVertigo ? (
         <section className="vertigo-home-hero">
           {heroImageUrl ? <PublicImage src={heroImageUrl} alt={data.restaurant.name} fetchPriority="high" /> : null}
           {shouldShowVertigoHeroCopy ? (
@@ -1426,7 +1492,7 @@ function HomeView({
         </section>
       ) : null}
 
-      {shouldShowMoodStrip ? (
+      {active && shouldShowMoodStrip ? (
         <section className="mood-strip">
           <h1>
             <Flame size={18} />
@@ -1456,7 +1522,7 @@ function HomeView({
         </section>
       ) : null}
 
-      <section
+      {active && <section
         className={heroPromoClassName}
         onTouchStart={handleBannerTouchStart}
         onTouchEnd={handleBannerTouchEnd}
@@ -1512,12 +1578,12 @@ function HomeView({
             ) : null}
           </>
         ) : null}
-      </section>
+      </section>}
 
       {isVertigo && featuredCardVariant === "featured-overlay-large" ? (
         <VertigoFeaturedProducts
           title={featuredSection?.settings?.title || "الأصناف المميزة"}
-          products={featured.length ? featured : popular}
+          products={active ? (featured.length ? featured : popular) : []}
           restaurantSlug={data.restaurant.slug}
           showPrices={showPrices}
           returnHref={homeReturnHref}
@@ -1527,7 +1593,8 @@ function HomeView({
       ) : (
       <ProductRail
         title={t.mostPopular}
-        products={popular}
+        active={active}
+        products={active ? popular : popular.filter(p => visibleSlots.current.has("rail:" + p.slug))}
         restaurantSlug={data.restaurant.slug}
         t={t}
         fillPlaceholders={false}
@@ -1546,9 +1613,9 @@ function HomeView({
           </h2>
         </div>
         <div>
-          {newProducts.map((product, index) => {
+          {(active ? newProducts : newProducts.filter(p => visibleSlots.current.has("wide:" + p.slug))).map((product, index) => {
             return product ? (
-            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref, useSubdomainRoutes)} className="wide-product">
+            <Link key={`${product.id}-${product.slug}`} href={productHref(data.restaurant.slug, product, homeReturnHref, useSubdomainRoutes)} className="wide-product" data-home-slot={"wide:" + product.slug}>
               <ProductImageMedia product={product} sizes="201px" loading="lazy" />
               <b>{product.name}</b>
               <span>{t.newTaste}</span>
@@ -1773,7 +1840,8 @@ function MenuView({
   const spotlightPointerStartY = useRef<number | null>(null);
   const spotlightPointerId = useRef<number | null>(null);
   const spotlightDragMoved = useRef(false);
-  const manualCategoryScrollUntil = useRef(0);
+  const writtenMenuHref = useRef("");
+  const pendingCategoryClick = useRef("");
   const categoryStripRef = useRef<HTMLElement | null>(null);
   const categoryJump = useRef<{ slug: string; cancel: () => void } | null>(null);
   const [menuDisplayMode, setMenuDisplayMode] = useState<MenuDisplayMode>(selectedDisplayParam);
@@ -1942,10 +2010,11 @@ function MenuView({
     }
 
     if (showCategoryLanding) {
-      manualCategoryScrollUntil.current = Date.now() + 500;
+      categoryJump.current?.cancel();
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.delete("category");
-      window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}`);
+      replaceMenuQuery(currentUrl, data.restaurant.slug);
+      writtenMenuHref.current = currentUrl.href;
       setSelectedCategorySlug("");
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
       return;
@@ -1971,7 +2040,7 @@ function MenuView({
     let pendingFrame = 0;
     function syncActiveCategoryToScroll() {
       pendingFrame = 0;
-      if (Date.now() < manualCategoryScrollUntil.current) {
+      if (categoryJump.current || pendingCategoryClick.current) {
         return;
       }
 
@@ -1988,6 +2057,15 @@ function MenuView({
       }
 
       setSelectedCategorySlug(current => current === nextSlug ? current : nextSlug);
+      if (!selectedMood && !selectedCollection) {
+        const url = new URL(location.href);
+        // An explicit "all" keeps the customer inside the list on landing-card menus.
+        if ((url.searchParams.get("category") || "all") !== nextSlug) {
+          url.searchParams.set("category", nextSlug);
+          replaceMenuQuery(url, data.restaurant.slug);
+          writtenMenuHref.current = url.href;
+        }
+      }
       // The category-change effect scrolls the chip only when it changes.
       // Repeating scrollIntoView on every scroll frame causes redundant work.
     }
@@ -2004,7 +2082,7 @@ function MenuView({
       window.removeEventListener("scroll", scheduleCategorySync);
       window.removeEventListener("resize", scheduleCategorySync);
     };
-  }, [active, productIndex, menuDisplayMode, regularCategories, hasSelectedCategory, showNestedCategoryStrip]);
+  }, [active, productIndex, menuDisplayMode, regularCategories, hasSelectedCategory, showNestedCategoryStrip, selectedMood, selectedCollection, data.restaurant.slug]);
 
   useEffect(() => {
     if (!active || !showNestedCategoryStrip || !highlightedCategorySlug) {
@@ -2016,16 +2094,20 @@ function MenuView({
     return () => window.cancelAnimationFrame(frame);
   }, [active, highlightedCategorySlug, language, menuDisplayMode, showNestedCategoryStrip]);
 
-  useEffect(() => {
-    if (!active || hasSavedPublicScroll() || !selectedCategoryParam || selectedCategoryParam === "all" || selectedMood || selectedCollection || menuDisplayMode !== "list") {
+  useLayoutEffect(() => {
+    if (!active) { writtenMenuHref.current = ""; return; }
+    if (pendingCategoryClick.current) {
+      const slug = pendingCategoryClick.current;
+      pendingCategoryClick.current = "";
+      scrollToCategory(slug);
       return;
     }
-
-    manualCategoryScrollUntil.current = Date.now() + 900;
+    if (writtenMenuHref.current === location.href || hasSavedPublicScroll(data.restaurant.slug)
+        || !selectedCategoryParam || selectedCategoryParam === "all" || selectedMood || selectedCollection || menuDisplayMode !== "list") return;
     if (categoryJump.current?.slug !== selectedCategoryParam) scrollToCategory(selectedCategoryParam, "instant");
-  }, [active, menuDisplayMode, selectedCategoryParam, selectedCollection, selectedMood]);
+  }, [active, hasSelectedCategory, menuDisplayMode, selectedCategoryParam, selectedCollection, selectedMood, data.restaurant.slug]);
 
-  useEffect(() => () => categoryJump.current?.cancel(), [active, menuDisplayMode]);
+  useLayoutEffect(() => () => categoryJump.current?.cancel(), [active, menuDisplayMode]);
 
   function scrollToCategory(slug: string, behavior: ScrollBehavior = "smooth") {
     categoryJump.current?.cancel();
@@ -2088,7 +2170,6 @@ function MenuView({
   }
 
   function selectCategory(slug: string) {
-    manualCategoryScrollUntil.current = Date.now() + 900;
     setSelectedCategorySlug(slug);
 
     if (!selectedMood && !selectedCollection) {
@@ -2097,10 +2178,12 @@ function MenuView({
       if (productListLayout === "single") {
         currentUrl.searchParams.set("display", menuDisplayMode);
       }
-      window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}`);
+      replaceMenuQuery(currentUrl, data.restaurant.slug);
+      writtenMenuHref.current = currentUrl.href;
     }
 
-    scrollToCategory(slug);
+    if (hasSelectedCategory) scrollToCategory(slug);
+    else pendingCategoryClick.current = slug;
   }
 
   function moveSpotlightPrevious() {
@@ -2138,7 +2221,8 @@ function MenuView({
 
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("display", mode);
-    window.history.replaceState(window.history.state, "", `${currentUrl.pathname}${currentUrl.search}`);
+    replaceMenuQuery(currentUrl, data.restaurant.slug);
+    writtenMenuHref.current = currentUrl.href;
   }
 
   const openProduct = useCallback((product: PublicProduct) => {
@@ -3656,7 +3740,7 @@ function ProductView({
   const related = getRelatedProducts(data.products, product);
   const isVertigo = publicTemplate(data) === "vertigo";
   const ingredients = productIngredients(product);
-  const mealDetails = productMealDetails(product, t);
+  const mealDetails = productMealDetails(product.nutrition, t);
   const model3dUrl = product.media?.model3dUrl ?? null;
   const model3dFormat = product.media?.model3dFormat?.toUpperCase() ?? null;
   const canRenderModel = Boolean(model3dUrl && model3dFormat !== "USDZ");
@@ -3997,6 +4081,7 @@ function VertigoRelatedProducts({
 }
 
 function ProductRail({
+  active = true,
   title,
   recommendation = false,
   products,
@@ -4012,6 +4097,7 @@ function ProductRail({
   returnHref,
   useSubdomainRoutes
 }: {
+  active?: boolean;
   title: string;
   recommendation?: boolean;
   products: PublicProduct[];
@@ -4068,13 +4154,13 @@ function ProductRail({
 
   useEffect(() => {
     const rail = railRef.current;
-    if (!rail) return;
+    if (!active || !rail) return;
 
     const frame = window.requestAnimationFrame(() => {
       setRailScrollPosition(rail, 0);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [railProductSignature]);
+  }, [active, railProductSignature]);
 
   if (!products.length && !fillPlaceholders) {
     return null;
@@ -4140,7 +4226,7 @@ function ProductRail({
         {railSlots.map((_, index) => {
           const product = products[index];
           return product ? (
-          <article key={`${product.id}-${product.slug}`} className={`rail-product ${onAddToCart || networkConfigureEnabled ? "rail-product-cartable" : ""}`}>
+          <article key={`${product.id}-${product.slug}`} data-home-slot={"rail:" + product.slug} className={`rail-product ${onAddToCart || networkConfigureEnabled ? "rail-product-cartable" : ""}`}>
             {badgeLabel ? <span className="rail-product-badge">{badgeLabel}</span> : null}
             <Link
               href={productHref(restaurantSlug, product, returnHref, useSubdomainRoutes)}

@@ -876,36 +876,37 @@ export class PublicMenuService {
   }
 
   private serializeNutrition(nutrition: Prisma.JsonValue | null) {
-    if (!nutrition || typeof nutrition !== "object" || Array.isArray(nutrition)) {
-      return nutrition ?? null;
-    }
+    if (Array.isArray(nutrition)) return this.serializeMealDetailRows(nutrition);
+    if (!nutrition || typeof nutrition !== "object") return null;
 
-    const record = { ...(nutrition as Record<string, Prisma.JsonValue>) };
-    if (Array.isArray(record.details)) {
-      record.details = record.details.map((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-        const source = item as Record<string, Prisma.JsonValue>;
-        const displayName = typeof source.displayName === "string" && source.displayName.trim()
-          ? source.displayName.trim()
-          : typeof source.label === "string"
-            ? source.label.trim()
-            : "";
-        const detail: Record<string, Prisma.JsonValue> = {
-          label: displayName,
-          displayName,
-          value: typeof source.value === "string" ? source.value : "",
-          icon: typeof source.icon === "string" && source.icon.trim() ? source.icon : "utensils"
-        };
-        if (typeof detail.iconUrl === "string") {
-          detail.iconUrl = this.publicAssetUrl(detail.iconUrl) ?? "";
-        } else if (typeof source.iconUrl === "string") {
-          detail.iconUrl = this.publicAssetUrl(source.iconUrl) ?? "";
-        }
-        return detail;
-      }) as Prisma.JsonArray;
+    const result: Record<string, Prisma.JsonValue> = {};
+    for (const key of ["calories", "weight", "protein", "breadType", "spice"]) {
+      const value = nutrition[key];
+      if (typeof value === "string" || typeof value === "number") result[key] = value;
     }
+    if (Array.isArray(nutrition.details)) {
+      result.details = this.serializeMealDetailRows(nutrition.details);
+    }
+    return result;
+  }
 
-    return record;
+  private serializeMealDetailRows(rows: Prisma.JsonArray): Prisma.JsonArray {
+    const details: Prisma.JsonArray = [];
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const displayName = (typeof row.displayName === "string" && row.displayName.trim())
+        || (typeof row.label === "string" ? row.label.trim() : "");
+      const detail: Prisma.JsonObject = {
+        label: displayName,
+        displayName,
+        value: typeof row.value === "string" || typeof row.value === "number" ? String(row.value) : "",
+        icon: typeof row.icon === "string" && row.icon.trim() ? row.icon : "utensils"
+      };
+      if (row.valueType === "PRESENCE") detail.valueType = "PRESENCE";
+      if (typeof row.iconUrl === "string") detail.iconUrl = this.publicAssetUrl(row.iconUrl) ?? "";
+      details.push(detail);
+    }
+    return details;
   }
 
   private serializePublicIngredients(ingredients: Prisma.JsonValue | null) {

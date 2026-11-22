@@ -16,12 +16,7 @@ async function seedPlans() {
   for (const plan of planMeta) {
     const savedPlan = await prisma.subscriptionPlan.upsert({
       where: { key: plan.key },
-      update: {
-        name: plan.name,
-        priceMonthly: plan.priceMonthly,
-        priceYearly: plan.priceYearly,
-        isActive: true
-      },
+      update: {},
       create: {
         key: plan.key,
         name: plan.name,
@@ -34,10 +29,7 @@ async function seedPlans() {
     for (const feature of PLAN_FEATURES[plan.key] ?? []) {
       await prisma.subscriptionFeature.upsert({
         where: { planId_key: { planId: savedPlan.id, key: feature.key } },
-        update: {
-          enabled: feature.enabled,
-          limit: feature.limit ?? null
-        },
+        update: {},
         create: {
           planId: savedPlan.id,
           key: feature.key,
@@ -50,6 +42,8 @@ async function seedPlans() {
 }
 
 async function seedRestaurant() {
+  const exists = await prisma.restaurant.findUnique({ where: { slug: ABO_MALEK_RESTAURANT.slug }, select: { id: true } });
+  if (exists) return;
   // An existing identity retains its password and authority. New demo accounts
   // start with independent random passwords; provision access with the reset tool.
   const demoPasswordHash = () => bcrypt.hash(randomBytes(32).toString("hex"), 12);

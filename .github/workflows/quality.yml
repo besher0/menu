@@ -30,6 +30,7 @@ jobs:
           npm install --global npm@11.17.0 --no-audit --no-fund
           npm ci --no-audit --no-fund
           npm ls --all > "$RUNNER_TEMP/ordersawa-tree.txt"
+          npm audit --audit-level=high --registry=https://registry.npmjs.org
           npm run prisma:generate
       - name: Compile and typecheck application and API tests
         run: |

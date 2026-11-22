@@ -31,7 +31,12 @@ def run(name,args,cwd=s):
   r=subprocess.run(list(map(str,args)),cwd=cwd,env=env,stdin=subprocess.DEVNULL,stdout=output,stderr=output,timeout=1200)
  results[name]=r.returncode;(b/'checks.json').write_text(json.dumps(results,indent=2),'utf8')
  print(name,r.returncode,flush=True)
- if r.returncode:raise SystemExit(r.returncode)
+ if r.returncode:
+  # The individual fixture logs stay private. Only surface named substep exit codes in CI.
+  import re
+  for line in (b/(name+'.log')).read_text('utf8',errors='replace').splitlines():
+   if re.fullmatch(r'[a-z][a-z0-9-]{0,64} -?[0-9]{1,10}',line):print(line,flush=True)
+  raise SystemExit(r.returncode)
 for name,folder in [('shared','packages/shared'),('api-unit','apps/api'),('web','apps/web')]:
  report=b/(name+'.json');args=[node,s/'node_modules/vitest/vitest.mjs','run','--reporter=json','--outputFile',report]
  if name=='api-unit':args+=['--exclude','**/*.integration.spec.ts']

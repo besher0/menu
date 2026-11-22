@@ -35,6 +35,7 @@ export type PublicIngredient = string | {
 };
 
 export type PublicMealDetail = {
+  valueType?: "PRESENCE";
   label: string;
   displayName?: string;
   value: string;

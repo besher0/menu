@@ -40,30 +40,33 @@ export class BuilderService {
   }
 
   async updateSection(restaurantId: string, id: string, dto: UpdateSectionDto) {
-    const section = await this.prisma.menuSection.findFirst({
-      where: { id, page: { menu: { restaurantId } } },
-      select: { id: true, settings: true }
-    });
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Restaurant" WHERE id = ${restaurantId} FOR UPDATE`;
+      const section = await tx.menuSection.findFirst({
+        where: { id, page: { menu: { restaurantId } } },
+        select: { id: true, settings: true }
+      });
 
-    if (!section) {
-      throw new NotFoundException("Section not found");
-    }
-
-    const existingSettings = this.asJsonObject(section.settings);
-    const settingsPatch = dto.settingsPatch ? this.asJsonObject(dto.settingsPatch as Prisma.JsonValue) : null;
-    const nextSettings = settingsPatch
-      ? this.mergeJsonObjects(existingSettings, settingsPatch)
-      : dto.settings
-        ? this.asJsonObject(dto.settings as Prisma.JsonValue)
-        : null;
-
-    return this.prisma.menuSection.update({
-      where: { id },
-      data: {
-        ...(nextSettings ? { settings: nextSettings as Prisma.InputJsonValue } : {}),
-        ...(typeof dto.isActive === "boolean" ? { isActive: dto.isActive } : {}),
-        ...(typeof dto.sortOrder === "number" ? { sortOrder: dto.sortOrder } : {})
+      if (!section) {
+        throw new NotFoundException("Section not found");
       }
+
+      const existingSettings = this.asJsonObject(section.settings);
+      const settingsPatch = dto.settingsPatch ? this.asJsonObject(dto.settingsPatch as Prisma.JsonValue) : null;
+      const nextSettings = settingsPatch
+        ? this.mergeJsonObjects(existingSettings, settingsPatch)
+        : dto.settings
+          ? this.mergeJsonObjects(existingSettings, this.asJsonObject(dto.settings as Prisma.JsonValue))
+          : null;
+
+      return tx.menuSection.update({
+        where: { id },
+        data: {
+          ...(nextSettings ? { settings: nextSettings as Prisma.InputJsonValue } : {}),
+          ...(typeof dto.isActive === "boolean" ? { isActive: dto.isActive } : {}),
+          ...(typeof dto.sortOrder === "number" ? { sortOrder: dto.sortOrder } : {})
+        }
+      });
     });
   }
 

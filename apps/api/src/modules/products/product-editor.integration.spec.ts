@@ -166,6 +166,40 @@ describe.skipIf(!url)("Unified editor / disposable PostgreSQL + real authenticat
   }, 30_000);
   afterAll(async () => { await app?.close(); await prisma.$disconnect(); });
 
+  it("meal data integrity through Dashboard save, reload, public serialization and clearing", async () => {
+    const id = "meal-proof"; expect((await put(id, draft("Meal proof"))).status).toBe(200);
+    await prisma.product.update({where:{id},data:{nutrition:{weight:"350 g"}}});
+    const a = await existing(id);expect(a.product.mealDetails.map(d=>d.value)).toEqual(["350 g"]);
+    await prisma.mealDetailLibraryItem.update({where:{id:"editor-presence"},data:{icon:"heart",iconUrl:"/assets/leaf.png"}});
+    a.product.mealDetails=[{libraryId:"editor-presence",label:"old",value:"",icon:"heart"},
+      {libraryId:"editor-detail",label:"old",value:"420 g",icon:"scale"}];
+    expect((await put(id,a)).status).toBe(200);
+    const b=await existing(id);expect(b.product.mealDetails.map(d=>d.value)).toEqual(["","420 g"]);
+    const service=new PublicMenuService(prisma as never,flags,{get:()=>undefined} as never);
+    const read=async()=>JSON.parse(JSON.stringify((await service.products("editor-r1")).find(p=>p.id===id)?.nutrition));
+    let data=await read();expect(data.details[0]).toMatchObject({valueType:"PRESENCE",displayName:"Spicy",icon:"heart"});expect(data.details[0].iconUrl).toContain("/assets/leaf.png");expect(data.details[1].value).toBe("420 g");
+    b.product.mealDetails=[];expect((await put(id,b)).status).toBe(200);
+    expect((await existing(id)).product.mealDetails).toEqual([]);
+    const row=await prisma.product.findUniqueOrThrow({where:{id}});expect(row.nutrition).toMatchObject({weight:"350 g",details:[]});
+    expect((await read()).details).toEqual([]);
+  });
+  it("keeps private meal metadata in storage and projects only customer fields", async () => {
+    const id = "meal-visibility";
+    expect((await put(id, draft("Meal visibility"))).status).toBe(200);
+    const service = new PublicMenuService(prisma as never, flags, { get: () => undefined } as never);
+    const detail = { label: "Weight", value: "300 g", adminName: "internal", libraryId: "private-id" };
+    const publicDetail = { label: "Weight", displayName: "Weight", value: "300 g", icon: "utensils" };
+    for (const [nutrition, expected] of [
+      [[detail], [publicDetail]],
+      [{ calories: "200", details: [detail], otherMetadata: "private" }, { calories: "200", details: [publicDetail] }]
+    ] as const) {
+      await prisma.product.update({ where: { id }, data: { nutrition } });
+      const products = await service.products("editor-r1");
+      expect(products.find(p => p.id === id)?.nutrition).toEqual(expected);
+      expect((await prisma.product.findUniqueOrThrow({ where: { id } })).nutrition).toEqual(nutrition);
+    }
+  });
+
   it("restores the complete owner Dashboard routes with real role-scoped API responses", async () => {
     const call=async(path:string,method="GET",body?:unknown,token=owner,tenant="editor-r1")=>fetch(origin+path,{method,headers:{authorization:"Bearer "+token,"x-restaurant-id":tenant,"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
     for(const route of ["overview","products","categories","banners","settings","analytics","branches"]){

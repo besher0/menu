@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { BuilderService } from "./builder.service";
 
 function createService(prisma: Record<string, any>) {
-  return new BuilderService(prisma as any, { canUseFeature: vi.fn(), assertFeature: vi.fn() } as any);
+  const transaction = { ...prisma, $queryRaw: vi.fn() };
+  return new BuilderService({ ...prisma, $transaction: (write: (tx: typeof transaction) => unknown) => write(transaction) } as any, { canUseFeature: vi.fn(), assertFeature: vi.fn() } as any);
 }
 
 describe("BuilderService persistence", () => {

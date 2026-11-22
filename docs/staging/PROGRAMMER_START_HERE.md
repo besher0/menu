@@ -2,7 +2,7 @@
 
 هذه تعليمات سيرفر **Staging مستقل**. لا تنفذها على Production أو Preview الحالية. اقرأ قرار الإصدار في الحزمة أولًا: **BLOCKED يعني STOP قبل النشر**. لا يشير نجاح التجربة المحلية إلى نجاح سيرفر خارجي.
 
-الإصدار يستخدم NestJS 11.2.10 وExpress 5.2.1. قرار Private Staging مشروط فقط وفق PRIVATE_STAGING_EXCEPTION.md؛ Full audit ما زال FAIL وProduction BLOCKED. اقرأ الشروط وتاريخ الانتهاء، ووثق تقييد الوصول قبل أي نشر مصرح به منفصل. لا تثبّت Nest 12 أو تتجاوز peers.
+تبدأ مراجعة المرشح الحالي من [دليل المبرمج](../../PROGRAMMER_START_HERE.md) وتقرير الاعتماد المرافق لنسختك. يسجل PRIVATE_STAGING_EXCEPTION.md قرارًا مؤرخًا بشأن استثناء سابق. تحقّق من حالة النشرات ومن حكم Production الخاص بالإصدار المراد نشره.
 
 ## REQUIRED_FROM_SERVER_OWNER
 

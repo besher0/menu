@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { DashboardService } from "./dashboard.service";
 
 function createService(prisma: Record<string, any>) {
-  return new DashboardService(prisma as any, { assertFeature: vi.fn().mockResolvedValue(undefined) } as any);
+  const db = { ...prisma, $queryRaw: vi.fn().mockResolvedValue([]), $transaction: (run: (tx: unknown) => unknown) => run(db) };
+  return new DashboardService({ ...db, ...prisma } as any, { assertFeature: vi.fn().mockResolvedValue(undefined) } as any);
 }
 
 describe("DashboardService settings persistence", () => {
@@ -21,7 +22,8 @@ describe("DashboardService settings persistence", () => {
         findUnique: vi.fn().mockResolvedValue({
           settings: {
             dashboardSettings: { splashScreen, phone: "123" },
-            customKey: "keep"
+            customKey: "keep",
+            colors: { border: "#123456" }
           }
         }),
         upsert: vi.fn().mockResolvedValue({})
@@ -40,7 +42,7 @@ describe("DashboardService settings persistence", () => {
     expect(prisma.restaurantThemeSettings.upsert.mock.calls[0][0].update.settings).toEqual({
       dashboardSettings: { splashScreen, phone: "123" },
       customKey: "keep",
-      colors: { primary: "#e51f2a" }
+      colors: { primary: "#e51f2a", border: "#123456" }
     });
   });
 
@@ -140,5 +142,26 @@ describe("DashboardService linked-product category protection", () => {
     await expect(createService(prisma).deleteCategory("restaurant-1", "category-1"))
       .rejects.toBeInstanceOf(ConflictException);
     expect(prisma.category.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("DashboardService legacy banner identity", () => {
+  it("returns stable, distinct IDs for legacy rows without writing during a read", async () => {
+    const items = [
+      { imageUrl: "/banner.png", targetProductId: "kept-in-storage" },
+      { imageUrl: "/banner.png" },
+      { imageUrl: "/existing.png", id: "saved-id" }
+    ];
+    const section = { type: "HERO", isActive: true, settings: { adBanners: items } };
+    const service = createService({
+      menu: { findMany: vi.fn().mockResolvedValue([{ slug: "main-menu", pages: [{ isHome: true, sections: [section] }] }]) },
+      menuSection: { findFirst: vi.fn().mockResolvedValue(section) }
+    });
+    const first = await service.banners("tenant");
+    expect(await service.banners("tenant")).toEqual(first);
+    expect(new Set(first.map(row => row.id)).size).toBe(3);
+    expect(first[2].id).toBe("saved-id");
+    expect(items[0]).not.toHaveProperty("id");
+    expect(first[0]).not.toHaveProperty("targetProductId");
   });
 });

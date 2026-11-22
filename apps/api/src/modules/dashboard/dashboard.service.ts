@@ -5,7 +5,7 @@ import { feedbackMode, restaurantMapsUrl, googleMapsShareUrl } from "@menu/share
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { bannerSection, defaultSectionSettings } from "@menu/shared";
 import { Prisma } from "@prisma/client";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { resolveTxt } from "dns/promises";
 import { slugify } from "../../common/slugify";
 import { FeatureFlagsService } from "../feature-flags/feature-flags.service";
@@ -552,30 +552,41 @@ export class DashboardService {
     });
   }
 
+  private editRestaurant<T>(restaurantId: string, write: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Restaurant" WHERE id = ${restaurantId} FOR UPDATE`;
+      return write(tx);
+    });
+  }
+
   async updateTheme(restaurantId: string, dto: UpdateThemeDto) {
     await this.featureFlags.assertFeature(restaurantId, "CUSTOM_THEMES");
-    const existing = await this.prisma.restaurantThemeSettings.findUnique({
-      where: { restaurantId }
-    });
-    const existingSettings = this.asJsonObject(existing?.settings);
-    const themeSettings = this.themeOwnedSettings(dto.settings);
-    const nextSettings = {
-      ...existingSettings,
-      ...themeSettings
-    };
+    return this.editRestaurant(restaurantId, async tx => {
+      const existing = await tx.restaurantThemeSettings.findUnique({
+        where: { restaurantId }
+      });
+      const existingSettings = this.asJsonObject(existing?.settings);
+      const themeSettings = this.themeOwnedSettings(dto.settings);
+      const nextSettings = {
+        ...existingSettings,
+        ...Object.fromEntries(Object.entries(themeSettings).map(([group, fields]) => [
+          group, { ...this.asJsonObject(existingSettings[group]), ...this.asJsonObject(fields as Prisma.JsonValue) }
+        ]))
+      };
 
-    return this.prisma.restaurantThemeSettings.upsert({
-      where: { restaurantId },
-      create: {
-        restaurantId,
-        settings: nextSettings as Prisma.InputJsonObject,
-        customCss: dto.customCss
-      },
-      update: {
-        settings: nextSettings as Prisma.InputJsonObject,
-        customCss: dto.customCss
-      },
-      include: { theme: true }
+      return tx.restaurantThemeSettings.upsert({
+        where: { restaurantId },
+        create: {
+          restaurantId,
+          settings: nextSettings as Prisma.InputJsonObject,
+          customCss: dto.customCss
+        },
+        update: {
+          settings: nextSettings as Prisma.InputJsonObject,
+          customCss: dto.customCss
+        },
+        include: { theme: true }
+      });
     });
   }
 
@@ -616,62 +627,69 @@ export class DashboardService {
   }
 
   async createBanner(restaurantId: string, dto: UpsertDashboardBannerDto) {
-    const section = await this.ensureHeroSection(restaurantId);
-    const current = this.extractBanners(section.settings);
-    const banner: DashboardBanner = {
-      id: randomBytes(8).toString("hex"),
-      title: dto.title,
-      subtitle: dto.subtitle,
-      imageUrl: dto.imageUrl,
-      targetUrl: dto.targetUrl,
-      badge: dto.badge,
-      isActive: dto.isActive ?? true,
-      sortOrder: dto.sortOrder ?? current.length
-    };
+    return this.editRestaurant(restaurantId, async tx => {
+      const section = await this.ensureHeroSection(restaurantId, tx);
+      const current = this.extractBanners(section.settings);
+      const banner: DashboardBanner = {
+        id: randomBytes(8).toString("hex"),
+        title: dto.title,
+        subtitle: dto.subtitle,
+        imageUrl: dto.imageUrl,
+        targetUrl: dto.targetUrl,
+        badge: dto.badge,
+        isActive: dto.isActive ?? true,
+        sortOrder: dto.sortOrder ?? current.length
+      };
 
-    return this.saveHeroBanners(section.id, [...current, banner]);
+      return this.saveHeroBanners(tx, section.id, [...current, banner]);
+    });
   }
 
   async updateBanner(restaurantId: string, id: string, dto: UpsertDashboardBannerDto) {
-    const section = await this.findBannerSection(restaurantId);
-    if (!section) throw new NotFoundException("Banner not found");
-    const current = this.extractBanners(section.settings);
+    return this.editRestaurant(restaurantId, async tx => {
+      const section = await this.findBannerSection(restaurantId, tx);
+      if (!section) throw new NotFoundException("Banner not found");
+      const current = this.extractBanners(section.settings);
 
-    if (!current.some((banner) => banner.id === id)) {
-      throw new NotFoundException("Banner not found");
-    }
+      if (!current.some((banner) => banner.id === id)) {
+        throw new NotFoundException("Banner not found");
+      }
 
-    const next = current.map((banner) =>
-      banner.id === id
-        ? {
-            ...banner,
-            title: dto.title,
-            subtitle: dto.subtitle,
-            imageUrl: dto.imageUrl,
-            targetUrl: dto.targetUrl,
-            badge: dto.badge,
-            isActive: dto.isActive ?? banner.isActive,
-            sortOrder: dto.sortOrder ?? banner.sortOrder
-          }
-        : banner
-    );
+      const next = current.map((banner) =>
+        banner.id === id
+          ? {
+              ...banner,
+              title: dto.title ?? banner.title,
+              subtitle: dto.subtitle ?? banner.subtitle,
+              imageUrl: dto.imageUrl,
+              targetUrl: dto.targetUrl ?? banner.targetUrl,
+              badge: dto.badge ?? banner.badge,
+              isActive: dto.isActive ?? banner.isActive,
+              sortOrder: dto.sortOrder ?? banner.sortOrder
+            }
+          : banner
+      );
 
-    return this.saveHeroBanners(section.id, next);
+      return this.saveHeroBanners(tx, section.id, next);
+    });
   }
 
   async deleteBanner(restaurantId: string, id: string) {
-    const section = await this.findBannerSection(restaurantId);
-    if (!section) throw new NotFoundException("Banner not found");
-    const current = this.extractBanners(section.settings);
+    return this.editRestaurant(restaurantId, async tx => {
+      const section = await this.findBannerSection(restaurantId, tx);
+      if (!section) throw new NotFoundException("Banner not found");
+      const current = this.extractBanners(section.settings);
 
-    if (!current.some((banner) => banner.id === id)) {
-      throw new NotFoundException("Banner not found");
-    }
+      if (!current.some((banner) => banner.id === id)) {
+        throw new NotFoundException("Banner not found");
+      }
 
-    return this.saveHeroBanners(
-      section.id,
-      current.filter((banner) => banner.id !== id)
-    );
+      return this.saveHeroBanners(
+        tx,
+        section.id,
+        current.filter((banner) => banner.id !== id)
+      );
+    });
   }
 
   async settings(restaurantId: string, includeAdminControls = false) {
@@ -732,121 +750,100 @@ export class DashboardService {
   }
 
   async updateSettings(restaurantId: string, dto: UpdateDashboardSettingsDto, allowAdminSettings = false) {
-    const current = await this.prisma.restaurant.findUniqueOrThrow({
-      where: { id: restaurantId },
-      include: {
-        branches: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, take: 1 },
-        themeSettings: true
-      }
-    });
-    const branch = current.branches[0] ?? null;
-    if (dto.googleMapsUrl?.trim() && !googleMapsShareUrl(dto.googleMapsUrl)) throw new BadRequestException("Invalid Google Maps URL");
-    const changesLocation = dto.latitude !== undefined || dto.longitude !== undefined;
-    const latitude = dto.latitude !== undefined ? dto.latitude : branch?.latitude;
-    const longitude = dto.longitude !== undefined ? dto.longitude : branch?.longitude;
-    if (changesLocation && (latitude != null || longitude != null) && (!branch || !restaurantMapsUrl(latitude, longitude))) {
-      throw new BadRequestException("Provide a valid latitude and longitude together");
-    }
-    const existingSettings = this.asJsonObject(current.themeSettings?.settings);
-    const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
-    const deliveryFee = dto.deliveryFee === undefined
-      ? readDeliveryFee(existingDashboardSettings, dto.currency ?? current.currency)
-      : parseDeliveryFeeInput(dto.deliveryFee, dto.currency ?? current.currency);
-
-    const nextRestaurantSlug = allowAdminSettings && dto.slug !== undefined
-      ? await this.uniqueRestaurantSlug(restaurantId, dto.slug)
-      : undefined;
-
-    await this.prisma.restaurant.update({
-      where: { id: restaurantId },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(nextRestaurantSlug !== undefined ? { slug: nextRestaurantSlug } : {}),
-        ...(dto.type !== undefined ? { type: dto.type } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.city !== undefined ? { city: dto.city } : {}),
-        ...(dto.country !== undefined ? { country: dto.country } : {}),
-        ...(dto.whatsappPhone !== undefined ? { whatsappPhone: dto.whatsappPhone } : {}),
-        ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
-        ...(dto.currency !== undefined ? { currency: dto.currency } : {})
-      }
-    });
-
-    if (branch && (dto.address !== undefined || changesLocation)) {
-      await this.prisma.branch.update({
-        where: { id: branch.id },
-        data: { ...(dto.address !== undefined ? {address: dto.address} : {}), ...(changesLocation ? {latitude,longitude} : {}) }
+    await this.editRestaurant(restaurantId, async tx => {
+      const current = await tx.restaurant.findUniqueOrThrow({
+        where: { id: restaurantId },
+        include: {
+          branches: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, take: 1 },
+          themeSettings: true
+        }
       });
-    }
+      const branch = current.branches[0] ?? null;
+      if (dto.googleMapsUrl?.trim() && !googleMapsShareUrl(dto.googleMapsUrl)) throw new BadRequestException("Invalid Google Maps URL");
+      const changesLocation = dto.latitude !== undefined || dto.longitude !== undefined;
+      const latitude = dto.latitude !== undefined ? dto.latitude : branch?.latitude;
+      const longitude = dto.longitude !== undefined ? dto.longitude : branch?.longitude;
+      if (changesLocation && (latitude != null || longitude != null) && (!branch || !restaurantMapsUrl(latitude, longitude))) {
+        throw new BadRequestException("Provide a valid latitude and longitude together");
+      }
+      const existingSettings = this.asJsonObject(current.themeSettings?.settings);
+      const existingDashboardSettings = this.dashboardSettingsFromTheme(existingSettings);
+      const deliveryFee = dto.deliveryFee === undefined
+        ? readDeliveryFee(existingDashboardSettings, dto.currency ?? current.currency)
+        : parseDeliveryFeeInput(dto.deliveryFee, dto.currency ?? current.currency);
 
-    if (branch && dto.openingHours) {
-      await this.prisma.$transaction([
-        this.prisma.branchOpeningHour.deleteMany({ where: { branchId: branch.id } }),
-        ...dto.openingHours.map((hour) =>
-          this.prisma.branchOpeningHour.create({
-            data: {
-              branchId: branch.id,
-              day: hour.day,
-              opensAt: hour.opensAt,
-              closesAt: hour.closesAt,
-              isClosed: hour.isClosed ?? false
-            }
-          })
-        )
-      ]);
-    }
+      const nextRestaurantSlug = allowAdminSettings && dto.slug !== undefined
+        ? await this.uniqueRestaurantSlug(restaurantId, dto.slug, tx)
+        : undefined;
 
-    const nextDashboardSettings = {
-      ...existingDashboardSettings,
-      feedbackMode: feedbackMode(dto.feedbackMode ?? existingDashboardSettings.feedbackMode),
-      googleMapsUrl: dto.googleMapsUrl !== undefined ? googleMapsShareUrl(dto.googleMapsUrl) ?? "" : existingDashboardSettings.googleMapsUrl ?? "",
-      ...(dto.phone !== undefined ? { phone: dto.phone } : { phone: existingDashboardSettings.phone ?? "" }),
-      ...(dto.email !== undefined ? { email: dto.email } : { email: existingDashboardSettings.email ?? "" }),
-      ...(dto.instagramUrl !== undefined ? { instagramUrl: dto.instagramUrl } : { instagramUrl: existingDashboardSettings.instagramUrl ?? "" }),
-      ...(dto.facebookUrl !== undefined ? { facebookUrl: dto.facebookUrl } : { facebookUrl: existingDashboardSettings.facebookUrl ?? "" }),
-      ...(dto.tiktokUrl !== undefined ? { tiktokUrl: dto.tiktokUrl } : { tiktokUrl: existingDashboardSettings.tiktokUrl ?? "" }),
-      ...(dto.whatsappUrl !== undefined ? { whatsappUrl: dto.whatsappUrl } : { whatsappUrl: existingDashboardSettings.whatsappUrl ?? "" }),
-      ...(dto.showPrices !== undefined ? { showPrices: dto.showPrices } : { showPrices: existingDashboardSettings.showPrices ?? true }),
-      deliveryFee,
-      ...(dto.productOpenMode !== undefined
-        ? { productOpenMode: this.normalizeProductOpenMode(dto.productOpenMode) }
-        : { productOpenMode: this.normalizeProductOpenMode(existingDashboardSettings.productOpenMode) }),
-      ...(allowAdminSettings && dto.splashScreen !== undefined
-        ? {
-            splashScreen: this.normalizeSplashScreenSettings(dto.splashScreen, existingDashboardSettings.splashScreen)
-          }
-        : existingDashboardSettings.splashScreen !== undefined
-          ? { splashScreen: this.normalizeSplashScreenSettings(existingDashboardSettings.splashScreen) }
-          : {})
-    };
-
-    await this.prisma.restaurantThemeSettings.upsert({
-      where: { restaurantId },
-      create: {
-        restaurantId,
-        settings: {
-          ...existingSettings,
-          dashboardSettings: nextDashboardSettings
+      await tx.restaurant.update({
+        where: { id: restaurantId },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(nextRestaurantSlug !== undefined ? { slug: nextRestaurantSlug } : {}),
+          ...(dto.type !== undefined ? { type: dto.type } : {}),
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.city !== undefined ? { city: dto.city } : {}),
+          ...(dto.country !== undefined ? { country: dto.country } : {}),
+          ...(dto.whatsappPhone !== undefined ? { whatsappPhone: dto.whatsappPhone } : {}),
+          ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
+          ...(dto.currency !== undefined ? { currency: dto.currency } : {})
         }
-      },
-      update: {
-        settings: {
-          ...existingSettings,
-          dashboardSettings: nextDashboardSettings
+      });
+
+      if (branch && (dto.address !== undefined || changesLocation)) {
+        await tx.branch.update({
+          where: { id: branch.id },
+          data: { ...(dto.address !== undefined ? {address: dto.address} : {}), ...(changesLocation ? {latitude,longitude} : {}) }
+        });
+      }
+
+      if (branch && dto.openingHours) {
+        await tx.branchOpeningHour.deleteMany({ where: { branchId: branch.id } });
+        if (dto.openingHours.length) {
+          await tx.branchOpeningHour.createMany({
+            data: dto.openingHours.map(hour => ({
+              branchId: branch.id, day: hour.day, opensAt: hour.opensAt,
+              closesAt: hour.closesAt, isClosed: hour.isClosed ?? false
+            }))
+          });
         }
       }
-    });
 
+      const patch: Record<string, Prisma.InputJsonValue | null> = {};
+      for (const field of ["phone", "email", "instagramUrl", "facebookUrl", "tiktokUrl", "whatsappUrl", "showPrices"] as const) {
+        if (dto[field] !== undefined) patch[field] = dto[field];
+      }
+      if (dto.feedbackMode !== undefined) patch.feedbackMode = feedbackMode(dto.feedbackMode);
+      if (dto.googleMapsUrl !== undefined) patch.googleMapsUrl = googleMapsShareUrl(dto.googleMapsUrl) ?? "";
+      if (dto.deliveryFee !== undefined) patch.deliveryFee = deliveryFee;
+      if (dto.productOpenMode !== undefined) patch.productOpenMode = this.normalizeProductOpenMode(dto.productOpenMode);
+      if (allowAdminSettings && dto.splashScreen !== undefined) {
+        patch.splashScreen = {
+          ...this.asJsonObject(existingDashboardSettings.splashScreen),
+          ...this.normalizeSplashScreenSettings(dto.splashScreen, existingDashboardSettings.splashScreen)
+        };
+      }
+      if (Object.keys(patch).length) {
+        const settings = {
+          ...existingSettings,
+          dashboardSettings: { ...existingDashboardSettings, ...patch }
+        };
+        await tx.restaurantThemeSettings.upsert({
+          where: { restaurantId }, create: { restaurantId, settings }, update: { settings }
+        });
+      }
+    });
     return this.settings(restaurantId, allowAdminSettings);
   }
 
-  private async uniqueRestaurantSlug(restaurantId: string, input: string) {
+  private async uniqueRestaurantSlug(restaurantId: string, input: string, tx: Prisma.TransactionClient) {
     const slug = slugify(input);
     if (!slug) {
       throw new BadRequestException("Restaurant slug is required");
     }
 
-    const existing = await this.prisma.restaurant.findUnique({
+    const existing = await tx.restaurant.findUnique({
       where: { slug },
       select: { id: true }
     });
@@ -884,8 +881,8 @@ export class DashboardService {
     }
   }
 
-  private async findBannerSection(restaurantId: string) {
-    const menus = await this.prisma.menu.findMany({
+  private async findBannerSection(restaurantId: string, tx: Prisma.TransactionClient = this.prisma) {
+    const menus = await tx.menu.findMany({
       where: { restaurantId, status: "PUBLISHED" },
       orderBy: { createdAt: "asc" },
       select: {
@@ -901,17 +898,17 @@ export class DashboardService {
       }
     });
     // Preserve editing of an unpublished main menu when there is no published source.
-    return bannerSection(menus) ?? this.prisma.menuSection.findFirst({
+    return bannerSection(menus) ?? tx.menuSection.findFirst({
       where: { type: "HERO", page: { isHome: true, menu: { restaurantId, slug: "main-menu" } } },
       orderBy: [{ page: { sortOrder: "asc" } }, { sortOrder: "asc" }]
     });
   }
 
-  private async ensureHeroSection(restaurantId: string) {
-    const existing = await this.findBannerSection(restaurantId);
+  private async ensureHeroSection(restaurantId: string, tx: Prisma.TransactionClient) {
+    const existing = await this.findBannerSection(restaurantId, tx);
     if (existing) return existing;
 
-    const menu = await this.prisma.menu.upsert({
+    const menu = await tx.menu.upsert({
       where: { restaurantId_slug: { restaurantId, slug: "main-menu" } },
       create: {
         restaurantId,
@@ -931,7 +928,7 @@ export class DashboardService {
     let page = menu.pages[0];
 
     if (!page) {
-      page = await this.prisma.menuPage.create({
+      page = await tx.menuPage.create({
         data: {
           menuId: menu.id,
           title: "الرئيسية",
@@ -946,7 +943,7 @@ export class DashboardService {
 
     return (
       page.sections[0] ??
-      (await this.prisma.menuSection.create({
+      (await tx.menuSection.create({
         data: {
           pageId: page.id,
           type: "HERO",
@@ -956,6 +953,12 @@ export class DashboardService {
         }
       }))
     );
+  }
+
+  private bannerId(banner: Record<string, any>, index: number): string {
+    if (typeof banner.id === "string" && banner.id) return banner.id;
+    const digest = createHash("sha256").update(JSON.stringify([index, banner.imageUrl])).digest("hex");
+    return `legacy-${digest.slice(0, 32)}`;
   }
 
   private extractBanners(settings: Prisma.JsonValue): DashboardBanner[] {
@@ -971,7 +974,7 @@ export class DashboardService {
         }
 
         return {
-          id: typeof banner.id === "string" ? banner.id : randomBytes(8).toString("hex"),
+          id: this.bannerId(banner, index),
           title: typeof banner.title === "string" ? banner.title : "",
           subtitle: typeof banner.subtitle === "string" ? banner.subtitle : "",
           imageUrl,
@@ -987,8 +990,8 @@ export class DashboardService {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  private async saveHeroBanners(sectionId: string, banners: DashboardBanner[]) {
-    const section = await this.prisma.menuSection.findUniqueOrThrow({
+  private async saveHeroBanners(tx: Prisma.TransactionClient, sectionId: string, banners: DashboardBanner[]) {
+    const section = await tx.menuSection.findUniqueOrThrow({
       where: { id: sectionId },
       include: { page: true }
     });
@@ -997,20 +1000,15 @@ export class DashboardService {
       .map((banner, index) => ({ ...banner, sortOrder: banner.sortOrder ?? index }))
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
-    await this.prisma.$transaction([
-      this.prisma.menu.update({ where: { id: section.page.menuId }, data: { status: "PUBLISHED" } }),
-      this.prisma.menuPage.update({ where: { id: section.pageId }, data: { status: "PUBLISHED" } }),
-      this.prisma.menuSection.update({
-        where: { id: sectionId },
-        data: {
-          isActive: true,
-          settings: {
-            ...settings,
-            adBanners: normalized
-          } as Prisma.InputJsonObject
-        }
-      })
-    ]);
+    const previous = new Map<string, Record<string, any>>();
+    for (const [index, entry] of (Array.isArray(settings.adBanners) ? settings.adBanners : []).entries()) {
+      if (typeof entry?.imageUrl === "string") previous.set(this.bannerId(entry, index), entry);
+    }
+    const stored = normalized.map(banner => ({ ...previous.get(banner.id), ...banner }));
+    await tx.menuSection.update({
+      where: { id: sectionId },
+      data: { settings: { ...settings, adBanners: stored } as Prisma.InputJsonObject }
+    });
 
     return normalized;
   }

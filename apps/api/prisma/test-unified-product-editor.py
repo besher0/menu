@@ -53,7 +53,7 @@ started=False
 try:
  if call('initdb',[pgexe('initdb'),'-D',data,'-U','qa_owner','-A','scram-sha-256','--pwfile',pwfile,'--encoding=UTF8','--locale=C']):sys.exit(1)
  pwfile.unlink()
- if call('pg-start',[pgexe('pg_ctl'),'-D',data,'-l',data/'server.log','-w','start','-o',f'-h 127.0.0.1 -p {port}']):sys.exit(1)
+ if call('pg-start',[pgexe('pg_ctl'),'-D',data,'-l',data/'server.log','-w','start','-o',f'-h 127.0.0.1 -p {port} -c unix_socket_directories=']):sys.exit(1)
  started=True
  base=[pgexe('psql'),'-X','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',port,'-U','qa_owner']
  if call('create-db',base+['-d','postgres','-c','CREATE DATABASE '+dbname]):sys.exit(1)
