@@ -3811,7 +3811,7 @@ function ProductView({
         ) : (
           <ProductImageMedia product={product} image={activeImage} fetchPriority="high" />
         )}
-        <PublicBackButton locale={language} onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)} className="product-back-link" />
+        {!isVertigo && <PublicBackButton locale={language} onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)} />}
         {mediaMode === "image" && gallery.length > 1 ? (
           <>
             <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label={language === "ar" ? "الصورة السابقة" : "Previous image"}>

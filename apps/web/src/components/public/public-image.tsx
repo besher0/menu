@@ -1,13 +1,14 @@
 "use client";
 
 import { getImageProps } from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Image as ImageIcon } from "lucide-react";
 import { canOptimizePublicImage, safePublicImageSource } from "./public-image-model";
 
 const bundledRatios: Record<string, [number, number]> = JSON.parse(process.env.PUBLIC_BUNDLED_IMAGE_RATIOS ?? "{}");
 
 type Props = {
+  fallback?: ReactElement;
   src?: string | null; alt: string; className?: string; decorative?: boolean;
   sizes?: string; loading?: "lazy" | "eager"; fetchPriority?: "high" | "low" | "auto";
   preserveIntrinsicSize?: boolean;
@@ -20,7 +21,7 @@ export function PublicImage({ src: input, ...props }: Props) {
   return <PublicImageSource key={src} src={src} {...props} />;
 }
 
-function PublicImageSource({ src, alt, className, decorative, sizes = "(max-width: 430px) 100vw, 430px", loading = "eager", fetchPriority = "auto", preserveIntrinsicSize = false, originalDimensions }: Props) {
+function PublicImageSource({ src, alt, className, decorative, fallback, sizes = "(max-width: 430px) 100vw, 430px", loading = "eager", fetchPriority = "auto", preserveIntrinsicSize = false, originalDimensions }: Props) {
   const [failure, setFailure] = useState<"none" | "original" | "missing">("none");
   const element = useRef<HTMLImageElement>(null);
   // Preserve the original ratio across thumbnail resampling in intrinsic-height rows.
@@ -35,7 +36,7 @@ function PublicImageSource({ src, alt, className, decorative, sizes = "(max-widt
       setFailure(optimized ? "original" : "missing");
     }
   }, [src, optimized, failure]);
-  if (!src || failure === "missing") return <span className={`product-image-placeholder ${className ?? ""}`} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : alt}><ImageIcon size={24} /></span>;
+  if (!src || failure === "missing") return fallback ?? <span className={`product-image-placeholder ${className ?? ""}`} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : alt}><ImageIcon size={24} /></span>;
   const image = optimized ? getImageProps({ src, alt, width: 1600, height: 1600, sizes, quality: 75 }).props : { src, srcSet: undefined, sizes: undefined };
   // Only delivery attributes are reused. Synthetic dimensions from getImageProps
   // MUST NOT override existing theme/intrinsic geometry or crop the source.

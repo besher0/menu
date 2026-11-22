@@ -1,4 +1,3 @@
-import { formatWhatsappOrderTime } from "../orders/whatsapp-order-time";
 import { FeedbackService } from "../feedback/feedback.service";
 import { FeedbackIpGuard, PublicFeedbackController, DashboardFeedbackController } from "../feedback/feedback.module";
 import "reflect-metadata";
@@ -360,7 +359,8 @@ describe.skipIf(!url)("V2 customer ordering / fresh PostgreSQL + authenticated r
   expect(await prisma.order.count()).toBe(before);
   const confirmed=await confirm(req,p.body.acceptanceToken);expect(confirmed.status).toBe(200);
   const row=await prisma.order.findUniqueOrThrow({where:{id:confirmed.body.orderId}});
-  expect(row.whatsappMessage).toContain(formatWhatsappOrderTime(row.createdAt, 'Asia/Damascus', req.locale === 'en' ? 'en' : 'ar'));
+  expect(row.createdAt).toBeInstanceOf(Date);
+  expect(row.whatsappMessage).not.toMatch(/(?:الوقت|Time):/);
   expect(JSON.stringify(row.cartSnapshot)).toContain('Synthetic area');expect(row.whatsappMessage).toContain('Synthetic note');
  });
 

@@ -1,0 +1,79 @@
+.public-screen {
+  --public-logo-size: 44px;
+  --public-control-size: 42px;
+}
+
+.public-header-logo,
+.public-back-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.public-header-logo {
+  width: var(--public-logo-size);
+  height: var(--public-logo-size);
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.public-header-logo > :is(img, span) {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 2px solid color-mix(in srgb, var(--color-secondary) 68%, #fff);
+  border-radius: inherit;
+  object-fit: cover;
+  object-position: center;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-secondary) 22%, transparent);
+}
+
+.public-header-logo-fallback {
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--color-secondary) 85%, #fff), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 82%, #fff), var(--color-secondary));
+}
+
+.public-back-button {
+  width: var(--public-control-size);
+  height: var(--public-control-size);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface, #fff);
+  color: var(--color-secondary);
+  box-shadow: 0 8px 20px rgb(16 24 40 / 14%);
+}
+
+.public-back-icon {
+  display: block;
+  width: 24px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.public-back-button[dir="ltr"] .public-back-icon {
+  transform: rotate(180deg);
+}
+
+:is(.public-back-button, .public-header-logo):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+:is(.public-back-button, .public-header-logo):hover {
+  filter: brightness(.97);
+}
+
+:is(.public-back-button, .public-header-logo):active {
+  opacity: .8;
+}

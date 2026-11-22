@@ -1,5 +1,3 @@
-import { formatWhatsappOrderTime } from "../orders/whatsapp-order-time";
-import { marketTimeZone } from "../../common/market-time-zone";
 import { feedbackMode, googleMapsShareUrl } from "@menu/shared";
 import { publicUploadUrl } from "../../common/public-upload-url";
 import { checkoutSigningKey } from "../../common/security/production-config";
@@ -503,7 +501,6 @@ export class PublicMenuService {
     const orderNumber = await reserveDailyWhatsappOrderNumber(tx, restaurant.id);
     const createdAt = new Date();
     const message = this.buildWhatsappMessage({
-      createdAt, timeZone: marketTimeZone(restaurant.country, restaurant.currency),
       restaurantName: restaurant.name,
       branchName: branch?.name,
       orderNumber,
@@ -1054,8 +1051,6 @@ export class PublicMenuService {
   }
 
   private buildWhatsappMessage(input: {
-    createdAt: Date;
-    timeZone: string;
     restaurantName: string;
     branchName?: string;
     orderNumber: string;
@@ -1114,11 +1109,10 @@ export class PublicMenuService {
       input.fulfillmentType === "delivery" && input.deliveryArea ? `المنطقة: ${isolateWhatsappText(input.deliveryArea)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${isolateWhatsappText(input.deliveryNear)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryBeside ? `العنوان: ${isolateWhatsappText(input.deliveryBeside)}` : null,
-      input.fulfillmentType === "pickup" && input.pickupTime ? `🕒 وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null,
-      `الوقت: ${formatWhatsappOrderTime(input.createdAt, input.timeZone, "ar")}`
+      input.fulfillmentType === "pickup" && input.pickupTime ? `🕒 وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null
     ];
 
-    return formatWhatsappMessageLines(lines, "ar");
+    return formatWhatsappMessageLines(lines, "ar").replace(/\n+$/, "");
   }
 
   private async nextDailyOrderSequence(restaurantId: string) {

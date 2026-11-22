@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatNetworkOrderWhatsappMessage } from "../orders/network-order-whatsapp-formatter";
 import { buildNetworkWhatsappDemo } from "../orders/network-order-whatsapp-demo";
 import { formatTrustedWhatsappDraft } from "./public-whatsapp-checkout.service";
 
@@ -22,6 +23,20 @@ function demoDraft(kind: "pizza" | "combo", locale: "ar" | "en"): Draft {
 }
 
 describe("trusted public WhatsApp message presentation", () => {
+  it.each(["ar", "en"] as const)("omits the order timestamp across message paths in %s", (locale) => {
+    const draft = demoDraft("pizza", locale);
+    draft.details = { fulfillmentType: "pickup" };
+    const snapshot = buildNetworkWhatsappDemo("pizza", locale);
+    const messages = [formatNetworkOrderWhatsappMessage(snapshot)];
+    for (const mode of ["NETWORK", "LEGACY"] as const) {
+      draft.items[0].mode = mode;
+      messages.push(formatTrustedWhatsappDraft(draft), formatTrustedWhatsappDraft(draft, "003"));
+    }
+    for (const message of messages) {
+      expect(message).not.toMatch(/(?:الوقت|Time):|\n$/);
+    }
+  });
+
   it("shows actual Arabic size, included and nested choices, then exact total", () => {
     const message = formatTrustedWhatsappDraft(demoDraft("pizza", "ar"));
     expect(message).toContain("2 × \u2068بيتزا مارغريتا\u2069 — \u2068كبير\u2069");

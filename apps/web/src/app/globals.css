@@ -5137,18 +5137,7 @@ body:has(.public-page)::-webkit-scrollbar {
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: 44px 1fr 38px;
   margin-bottom: 18px;
-}
-
-.public-header img,
-.public-header .public-logo-fallback {
-  border: 2px solid color-mix(in srgb, var(--color-secondary) 68%, #fff);
-  border-radius: 50%;
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-secondary) 22%, transparent);
-  height: 38px;
-  object-fit: cover;
-  width: 38px;
 }
 
 .public-header p {
@@ -5177,8 +5166,7 @@ body:has(.public-page)::-webkit-scrollbar {
   white-space: nowrap;
 }
 
-.public-header button,
-.public-header a {
+.public-header .public-nav-control {
   align-items: center;
   background: transparent;
   border: 0;
@@ -5209,7 +5197,6 @@ body:has(.public-page)::-webkit-scrollbar {
 
 .template-vertigo.view-home .public-header {
   direction: ltr;
-  grid-template-columns: 52px 1fr 42px;
   left: 24px;
   margin: 0;
   position: absolute;
@@ -5218,15 +5205,13 @@ body:has(.public-page)::-webkit-scrollbar {
   z-index: 5;
 }
 
-.template-vertigo.view-home .public-header > button:first-child {
+.template-vertigo.view-home .public-header > button:where(.public-nav-control):first-child {
   align-items: center;
   background: transparent;
   border: 0;
   box-shadow: none;
   color: #ffffff;
   display: flex;
-  grid-column: 3;
-  grid-row: 1;
   height: 24px;
   justify-self: end;
   justify-content: center;
@@ -5235,11 +5220,11 @@ body:has(.public-page)::-webkit-scrollbar {
   width: 24px;
 }
 
-.template-vertigo.view-home .public-header > button:first-child svg {
+.template-vertigo.view-home .public-header > button:where(.public-nav-control):first-child svg {
   display: none;
 }
 
-.template-vertigo.view-home .public-header > button:first-child::before {
+.template-vertigo.view-home .public-header > button:where(.public-nav-control):first-child::before {
   background:
     linear-gradient(currentColor, currentColor) right 0 top 0 / 22px 2px no-repeat,
     linear-gradient(currentColor, currentColor) right 0 center / 18px 2px no-repeat,
@@ -5251,19 +5236,6 @@ body:has(.public-page)::-webkit-scrollbar {
   width: 24px;
 }
 
-.template-vertigo.view-home .public-header img,
-.template-vertigo.view-home .public-logo-fallback {
-  background: #ffffff;
-  border: 0;
-  border-radius: 999px;
-  box-shadow: 0 10px 24px rgb(0 0 0 / 18%);
-  grid-column: 1;
-  grid-row: 1;
-  height: 52px;
-  justify-self: start;
-  width: 52px;
-}
-
 .template-vertigo.view-home .public-header-title,
 .template-vertigo.view-home .public-header-title .restaurant-name {
   color: #ffffff;
@@ -5273,48 +5245,6 @@ body:has(.public-page)::-webkit-scrollbar {
   grid-column: 2;
   grid-row: 1;
   text-shadow: 0 2px 12px rgb(0 0 0 / 46%);
-}
-
-.public-screen.view-cart .public-header > button:first-child,
-.public-screen:not(.menu-nested) .public-header > a:first-child {
-  background: white;
-  border: 1px solid rgb(16 24 40 / 5%);
-  border-radius: 20px;
-  box-shadow: 0 8px 20px rgb(16 24 40 / 14%);
-  box-sizing: border-box;
-  color: var(--color-secondary);
-  gap: 10.96px;
-  height: 32px;
-  opacity: 1;
-  padding: 12.88px;
-  position: relative;
-  width: 32px;
-}
-
-.public-screen.view-cart .public-header > button:first-child svg,
-.public-screen:not(.menu-nested) .public-header > a:first-child svg {
-  display: none;
-}
-
-.public-screen.view-cart .public-header > button:first-child::before,
-.public-screen:not(.menu-nested) .public-header > a:first-child::before {
-  border-bottom: 2.2px solid currentColor;
-  border-left: 2.2px solid currentColor;
-  content: "";
-  flex: 0 0 auto;
-  height: 8px;
-  transform: rotate(45deg);
-  width: 8px;
-}
-
-.public-screen.view-cart .public-header > button:first-child::before {
-  transform: rotate(-135deg);
-}
-
-
-
-.public-screen:not(.menu-nested) .public-header > a:first-child::before {
-  transform: rotate(-135deg);
 }
 
 .public-content {
@@ -7326,8 +7256,6 @@ body:has(.public-page)::-webkit-scrollbar {
   width: 100%;
 }
 
-.product-photo > a,
-.product-photo > .product-back-link,
 .product-photo > span:not(.product-image-placeholder) {
   align-items: center;
   background: white;
@@ -7338,27 +7266,6 @@ body:has(.public-page)::-webkit-scrollbar {
   position: absolute;
   top: 16px;
   width: 36px;
-}
-
-.product-photo > a,
-.product-photo > .product-back-link {
-  border: 1px solid rgb(16 24 40 / 5%);
-  box-shadow: 0 8px 20px rgb(16 24 40 / 14%);
-  color: var(--color-secondary);
-  height: 42px;
-  left: auto;
-  right: 16px;
-  width: 42px;
-}
-
-.product-back-arrow-icon {
-  fill: none;
-  height: 20px;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.2;
-  width: 24px;
 }
 
 .product-photo > span:not(.product-image-placeholder) {
@@ -8046,24 +7953,7 @@ body:has(.public-page)::-webkit-scrollbar {
   direction: ltr;
   display: grid;
   gap: 12px;
-  grid-template-columns: 42px minmax(0, 1fr) 36px;
   padding: 2px 16px 12px;
-}
-
-.vertigo-product-header img,
-.vertigo-product-header .public-logo-fallback {
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #e7e7e7;
-  border-radius: 999px;
-  color: #111111;
-  display: flex;
-  font-size: 18px;
-  font-weight: 400;
-  height: 42px;
-  justify-content: center;
-  object-fit: cover;
-  width: 42px;
 }
 
 .vertigo-product-header p {
@@ -8076,19 +7966,6 @@ body:has(.public-page)::-webkit-scrollbar {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.vertigo-product-header button {
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #d8d8d8;
-  border-radius: 999px;
-  color: #111111;
-  display: flex;
-  height: 32px;
-  justify-content: center;
-  padding: 0;
-  width: 32px;
 }
 
 .vertigo-product-detail .product-photo {
@@ -8104,10 +7981,6 @@ body:has(.public-page)::-webkit-scrollbar {
 .vertigo-product-detail .product-model-fallback > img,
 .vertigo-product-detail .product-model-fallback > .product-image-placeholder {
   object-fit: cover;
-}
-
-.vertigo-product-detail .product-photo > .product-back-link {
-  display: none;
 }
 
 .vertigo-product-detail .product-photo > span:not(.product-image-placeholder) {
@@ -12116,10 +11989,6 @@ body {
   .checkout-steps b,
   .cart-confirm-form input,
   .public-header .public-header-menu-button,
-  .public-screen.menu-nested .public-header > button:first-child,
-  .public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
-  .public-screen.view-cart .public-header > button:first-child,
-  .public-screen:not(.menu-nested) .public-header > a:first-child,
   .menu-view-switch
 ) {
   background-color: var(--color-surface);
@@ -12141,10 +12010,6 @@ body {
   .checkout-steps b,
   .cart-confirm-form input,
   .public-header .public-header-menu-button,
-  .public-screen.menu-nested .public-header > button:first-child,
-  .public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
-  .public-screen.view-cart .public-header > button:first-child,
-  .public-screen:not(.menu-nested) .public-header > a:first-child,
   .menu-view-switch
 ) {
   border-color: var(--color-border);
@@ -12222,14 +12087,6 @@ body {
 
 .public-screen .menu-category-chip {
   color: var(--color-muted);
-}
-
-.public-screen.menu-nested .public-header > button:first-child,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
-.public-screen.view-cart .public-header > button:first-child,
-.public-screen:not(.menu-nested) .public-header > a:first-child {
-  background-color: var(--color-surface);
-  border-color: var(--color-border);
 }
 
 .restaurant-empty b {
@@ -13108,41 +12965,24 @@ body {
 @keyframes drawer-content-in {from{opacity:.6}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.drawer-section-content{animation:none}.drawer-chevron{transition:none}}
 
-/* Match menu navigation controls to the product back control. */
-.public-screen.view-menu .public-header {grid-template-columns:44px minmax(0,1fr) 44px;}
-.public-screen.view-menu .public-header > button:first-child:not(.public-header-menu-button) {width:42px;height:42px;border-radius:50%;padding:0;justify-content:center;}
-.public-screen.view-menu .public-header > img,
-.public-screen.view-menu .public-header > .public-logo-fallback {width:44px;height:44px;}
 .public-drawer[dir="ltr"] {box-shadow:16px 0 44px rgb(16 24 40 / 30%);}
 
 /* Public page navigation contract. Drawer branding is intentionally independent. */
-.public-screen {--public-control-size:42px;--public-logo-size:44px;--public-header-edge:16px;--public-header-top:calc(12px + env(safe-area-inset-top,0px));}
+.public-screen {--public-header-edge:16px;--public-header-top:calc(12px + env(safe-area-inset-top,0px));}
 .public-screen:not(.view-product) {padding-top:var(--public-header-top);}
 .public-screen .public-header,
 .public-screen .vertigo-product-header {grid-template-columns:var(--public-logo-size) minmax(0,1fr) var(--public-logo-size);align-items:center;min-height:var(--public-logo-size);}
 .public-screen .public-header {padding:0;}
-.public-screen.view-cart .public-header > .public-nav-control:first-child,
 .public-screen .public-header > .public-nav-control:first-child,
 .public-screen .public-nav-control {box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:var(--public-control-size);height:var(--public-control-size);min-width:var(--public-control-size);padding:0;border-radius:50%;touch-action:manipulation;}
-.public-screen .public-nav-control:not(.public-header-menu-button):not(:has(.lucide-menu)) {background:var(--color-surface,#fff);border:1px solid var(--color-border);box-shadow:0 8px 20px rgb(16 24 40 / 14%);color:var(--color-secondary);}
 .public-screen .public-nav-control::before {content:none!important;}
-.public-screen .public-header .public-nav-control .public-back-icon,
-.public-screen .public-nav-control .public-back-icon {display:block!important;width:24px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
-.public-screen[dir="ltr"] .public-back-icon {transform:rotate(180deg);}
-.public-screen .public-header-logo {box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:var(--public-logo-size);height:var(--public-logo-size);min-width:var(--public-logo-size);padding:0;border:0;background:transparent;box-shadow:none;cursor:pointer;touch-action:manipulation;}
-.public-screen .public-header-logo img,
-.public-screen .public-header-logo .public-logo-fallback {box-sizing:border-box;width:var(--public-logo-size);height:var(--public-logo-size);object-fit:contain;border-radius:50%;}
-.public-screen .public-nav-control:focus-visible,
-.public-screen .public-header-logo:focus-visible {outline:2px solid var(--color-primary);outline-offset:3px;}
+.public-screen .public-nav-control:focus-visible {outline:2px solid var(--color-primary);outline-offset:3px;}
 .public-screen .public-nav-control:hover {filter:brightness(.97);}
 .public-screen .public-nav-control:active {filter:brightness(.94);}
-.public-screen .product-photo > .public-nav-control {top:calc(var(--public-header-top) + (var(--public-logo-size) - var(--public-control-size))/2);right:auto;left:auto;inset-inline-start:var(--public-header-edge);z-index:3;}
-.public-screen .product-photo > .public-header-logo {position:absolute;top:var(--public-header-top);inset-inline-end:var(--public-header-edge);z-index:3;}
+.public-screen .product-photo > .public-back-button {position:absolute;top:calc(var(--public-header-top) + (var(--public-logo-size) - var(--public-control-size))/2);right:auto;left:auto;inset-inline-start:var(--public-header-edge);z-index:3;}
 .public-screen .vertigo-product-header {padding:var(--public-header-top) var(--public-header-edge) 12px;}
-.public-screen .vertigo-product-header .public-nav-control {grid-column:1;grid-row:1;}
-.public-screen .vertigo-product-header .public-header-logo {grid-column:3;grid-row:1;}
+.public-screen .vertigo-product-header .public-back-button {grid-column:1;grid-row:1;}
 .public-screen .vertigo-product-header p {grid-column:2;grid-row:1;}
-.public-screen .vertigo-product-detail .product-photo > .product-back-link {display:none;}
 
 /* Existing AR/EN actions, one moving visual indicator. */
 .public-drawer .drawer-language-control {position:relative;isolation:isolate;box-sizing:border-box;flex:0 0 125px;width:125px;height:42px;padding:3px;gap:0;border:0;border-radius:999px;background:#f4f4f5;direction:ltr;}
@@ -13167,12 +13007,10 @@ body {
 @media(hover:hover) and (pointer:fine){.product-photo > button.product-gallery-arrow{display:flex;}.product-photo:hover > button.product-gallery-arrow,.product-photo:focus-within > button.product-gallery-arrow{opacity:1;pointer-events:auto;}}
 @media(prefers-reduced-motion:reduce){.product-gallery-dots button,.product-photo > button.product-gallery-arrow{transition:none;}}
 
-.public-screen .public-header > .public-nav-control:first-child {grid-column:1;grid-row:1;}
+.public-screen .public-header > :is(.public-nav-control,.public-back-button):first-child {grid-column:1;grid-row:1;}
 .public-screen .public-header > .public-header-logo {grid-column:3;grid-row:1;}
 .public-screen .public-header > p {grid-column:2;grid-row:1;}
 .public-screen.template-vertigo.view-home .public-header {top:var(--public-header-top);left:var(--public-header-edge);right:var(--public-header-edge);direction:inherit;}
-.public-screen .public-header .public-header-logo img,
-.public-screen .public-header-logo img {width:var(--public-logo-size);height:var(--public-logo-size);object-fit:contain;border:2px solid color-mix(in srgb,var(--color-secondary) 68%,#fff);box-shadow:0 8px 18px color-mix(in srgb,var(--color-secondary) 22%,transparent);}
 
 /* Owner review: retain the original hero height on mobile and desktop. */
 
@@ -13194,30 +13032,6 @@ body {
 .public-drawer .drawer-about-map,.public-drawer .drawer-about-pin {display:flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;height:44px;margin:0;padding:0;background:none;border:0;box-shadow:none;color:var(--color-primary);}
 .public-drawer .drawer-about-map:focus-visible {outline:2px solid var(--color-primary);outline-offset:2px;border-radius:6px;}
 
-/* Interactive identity and location surfaces; preserve their existing hit boxes. */
-.public-screen .public-header .public-header-logo {padding:3px;border:1px solid #e6e8ec;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgb(16 24 40 / 8%);}
-.public-screen .public-header .public-header-logo img,
-.public-screen .public-header .public-header-logo .public-logo-fallback {width:100%;height:100%;min-width:0;object-fit:contain;border:0;box-shadow:none;}
-.public-screen .public-header .public-header-logo img {border-radius:0;}
-.public-screen .public-header .public-header-logo:active {opacity:.8;}
 .public-drawer .drawer-about-map svg,.public-drawer .drawer-about-pin svg {box-sizing:content-box;width:20px;height:20px;padding:9px;border:1px solid #e6e8ec;border-radius:50%;background:#f8f9fa;}
 .public-drawer .drawer-about-map:active {opacity:.75;}
 .public-drawer .drawer-about-map:focus-visible {border-radius:50%;}
-
-
-/* Category header uses the original full-size circular restaurant image. */
-.public-screen.view-menu .public-header .public-header-logo {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.public-screen.view-menu .public-header .public-header-logo :is(img, .public-logo-fallback, .product-image-placeholder) {
-  box-sizing: border-box;
-  width: var(--public-logo-size);
-  height: var(--public-logo-size);
-  border: 2px solid color-mix(in srgb, var(--color-secondary) 68%, #fff);
-  border-radius: 50%;
-  object-fit: cover;
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-secondary) 22%, transparent);
-}

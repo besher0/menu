@@ -871,7 +871,10 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(concurrent[0].body.message).toContain(`طلب جديد رقم ${concurrent[0].body.orderNumber}`);
     expect(await prisma.order.count()).toBe(beforeOrders + 1);
     expect(await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } })).toBe(beforeEvents + 1);
+    const historical = concurrent[0].body.message + "\nالوقت: 2026/11/22، 12:45 م";
+    await prisma.order.update({ where: { id: concurrent[0].body.orderId }, data: { whatsappMessage: historical } });
     const replayed = await confirm(payload, prepared.body.acceptanceToken, undefined, key);
+    expect(replayed.body.message).toBe(historical);
     expect(replayed.body.orderId).toBe(concurrent[0].body.orderId);
     expect(replayed.body.replayed).toBe(true);
     const changed = await confirm({ ...payload, orderNote: "Changed" }, prepared.body.acceptanceToken, undefined, key);
@@ -896,6 +899,8 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
       `mixed-${randomBytes(12).toString("hex")}`);
     expect(mixed.status).toBe(200);
     expect(mixed.body.orderNumber).not.toBe(legacy[0].body.orderNumber);
+    expect(legacy[0].body.message).not.toMatch(/(?:الوقت|Time):/);
+    expect(mixed.body.message).not.toMatch(/(?:الوقت|Time):/);
     expect(mixed.body.message).toContain(`طلب جديد رقم ${mixed.body.orderNumber}`);
     expect(await prisma.order.count()).toBe(beforeOrders + 2);
     expect(await prisma.analyticsEvent.count({ where: { type: "WHATSAPP_ORDER_CLICKED" } })).toBe(beforeEvents + 2);
