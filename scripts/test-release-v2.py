@@ -63,6 +63,6 @@ for report in reports:
    unique[(suite['name'],case['fullName'])]=case['status']
 (b/'unique-integration-count.json').write_text(json.dumps({'passed':len(unique),'failed':0,'skipped':0}),'utf8')
 run('staging',[sys.executable,s/'scripts/test-staging.py'])
-env['CHROME_BIN']=env['V62_BROWSER_EXECUTABLE']
+env.setdefault('CHROME_BIN', env['V62_BROWSER_EXECUTABLE'])
 run('browser-smoke',[sys.executable,s/'scripts/browser-smoke.py'])
 print('V2_RELEASE_ACCEPTANCE_PASS')
