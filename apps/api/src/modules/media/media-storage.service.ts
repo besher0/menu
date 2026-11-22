@@ -314,6 +314,10 @@ export class MediaStorageService {
 
     try {
       const parsed = new URL(url);
+      const api = new URL(this.apiOrigin());
+      const prefix = api.pathname.replace(/\/$/, "") + "/uploads/";
+      if (parsed.origin !== api.origin) return null;
+      if (parsed.pathname.startsWith(prefix)) return "/uploads/" + parsed.pathname.slice(prefix.length);
       return parsed.pathname.startsWith("/uploads/") ? parsed.pathname : null;
     } catch {
       return null;

@@ -53,6 +53,33 @@ describe("Demo upload directory", () => {
     await expect(readFile(staged)).rejects.toMatchObject({code:"ENOENT"});
   });
 
+  it("cleans the generated staging URL and leaves foreign origins alone", async () => {
+    temporary = await mkdtemp(join(tmpdir(), "ordersawa-api-upload-"));
+    vi.stubEnv("ORDERSAWA_DEMO_UPLOADS_DIR", temporary);
+    const service = new MediaStorageService({
+      get: (key: string) => key === "API_ORIGIN" ? "https://staging.example.test/api" : undefined
+    } as unknown as ConfigService);
+    vi.spyOn(service as any, "detectFileType").mockResolvedValue({ ext: "png", mime: "image/png" });
+    const buffer = Buffer.from("disposable upload");
+    const upload = await service.storeBuffer({ buffer, originalFilename: "sample.png", type: "IMAGE" });
+    const file = join(temporary, upload.filename!);
+    expect(upload.url).toBe("https://staging.example.test/api/uploads/" + upload.filename);
+    await service.cleanupStoredUpload({ ...upload, url: upload.url.replace("staging.example.test", "other.example.test") });
+    expect(await readFile(file)).toEqual(buffer);
+    await service.cleanupStoredUpload(upload);
+    await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("makes no provider request when cleaning a copied Cloudinary reference without credentials", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("unexpected provider request"));
+    const service = new MediaStorageService({ get: () => undefined } as unknown as ConfigService);
+    await service.cleanupStoredUpload({
+      provider: "CLOUDINARY", url: "https://res.cloudinary.com/fixture/image/upload/old.png",
+      metadata: { cloudinaryPublicId: "fixture/old" }
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("requires the 3D provider even when the client omits the type or claims IMAGE", async () => {
     temporary = await mkdtemp(join(tmpdir(), "model-provider-test-"));
     vi.stubEnv("ORDERSAWA_DEMO_UPLOADS_DIR", temporary);
