@@ -5275,8 +5275,6 @@ body:has(.public-page)::-webkit-scrollbar {
   text-shadow: 0 2px 12px rgb(0 0 0 / 46%);
 }
 
-.public-screen.menu-nested .public-header > button:first-child,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button),
 .public-screen.view-cart .public-header > button:first-child,
 .public-screen:not(.menu-nested) .public-header > a:first-child {
   background: white;
@@ -5293,15 +5291,11 @@ body:has(.public-page)::-webkit-scrollbar {
   width: 32px;
 }
 
-.public-screen.menu-nested .public-header > button:first-child svg,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button) svg,
 .public-screen.view-cart .public-header > button:first-child svg,
 .public-screen:not(.menu-nested) .public-header > a:first-child svg {
   display: none;
 }
 
-.public-screen.menu-nested .public-header > button:first-child::before,
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button)::before,
 .public-screen.view-cart .public-header > button:first-child::before,
 .public-screen:not(.menu-nested) .public-header > a:first-child::before {
   border-bottom: 2.2px solid currentColor;
@@ -5317,13 +5311,7 @@ body:has(.public-page)::-webkit-scrollbar {
   transform: rotate(-135deg);
 }
 
-.public-screen.view-menu:not(.menu-nested) .public-header > button:first-child:not(.public-header-menu-button)::before {
-  transform: rotate(-135deg);
-}
 
-.public-screen.menu-nested .public-header > button:first-child::before {
-  transform: rotate(-135deg);
-}
 
 .public-screen:not(.menu-nested) .public-header > a:first-child::before {
   transform: rotate(-135deg);
@@ -13215,3 +13203,21 @@ body {
 .public-drawer .drawer-about-map svg,.public-drawer .drawer-about-pin svg {box-sizing:content-box;width:20px;height:20px;padding:9px;border:1px solid #e6e8ec;border-radius:50%;background:#f8f9fa;}
 .public-drawer .drawer-about-map:active {opacity:.75;}
 .public-drawer .drawer-about-map:focus-visible {border-radius:50%;}
+
+
+/* Category header uses the original full-size circular restaurant image. */
+.public-screen.view-menu .public-header .public-header-logo {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.public-screen.view-menu .public-header .public-header-logo :is(img, .public-logo-fallback, .product-image-placeholder) {
+  box-sizing: border-box;
+  width: var(--public-logo-size);
+  height: var(--public-logo-size);
+  border: 2px solid color-mix(in srgb, var(--color-secondary) 68%, #fff);
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-secondary) 22%, transparent);
+}

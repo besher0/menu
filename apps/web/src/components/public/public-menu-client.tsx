@@ -5,7 +5,7 @@ import { publicAboutInfo } from "./public-feedback-model";
 
 import Link from "./restaurant-link";
 import { sidebarSocialLinks } from "./sidebar-social-links";
-import { PublicBackIcon, PublicHeaderLogo } from "./public-header-controls";
+import { PublicBackButton, PublicHeaderLogo } from "./public-header-controls";
 import { PublicImage } from "./public-image";
 import { useRestaurantShell } from "./restaurant-shell-context";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -1141,21 +1141,15 @@ export function PublicMenuClient({
     >
       {activeView !== "product" ? <header className="public-header">
         {activeView === "cart" ? (
-          <button className="public-nav-control" onClick={() => navigateBack(publicPath(), navigateTo)} aria-label="الرجوع">
-            <PublicBackIcon />
-          </button>
+          <PublicBackButton locale={language} onClick={() => navigateBack(publicPath(), navigateTo)} />
         ) : activeView === "menu" && menuNested ? (
-          <button className="public-nav-control" onClick={requestMenuBack} aria-label="الرجوع">
-            <PublicBackIcon />
-          </button>
+          <PublicBackButton locale={language} onClick={requestMenuBack} />
         ) : isSingleMenuPage ? (
           <button className="public-header-menu-button public-nav-control" onClick={openDrawer} aria-label={t.menu}>
             <Menu size={24} />
           </button>
         ) : activeView === "menu" ? (
-          <button className="public-nav-control" onClick={goToRestaurantHome} aria-label="الرجوع">
-            <PublicBackIcon />
-          </button>
+          <PublicBackButton locale={language} onClick={goToRestaurantHome} />
         ) : (
           <button className="public-nav-control" onClick={openDrawer} aria-label={t.menu}>
             <Menu size={24} />
@@ -3743,13 +3737,7 @@ function ProductView({
       {isVertigo ? (
         <div className="vertigo-product-header">
           <p dir="auto">{data.restaurant.name}</p>
-          <button className="public-nav-control"
-            type="button"
-            onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)}
-            aria-label={language === "ar" ? "الرجوع" : "Back"}
-          >
-            <PublicBackIcon />
-          </button>
+          <PublicBackButton locale={language} onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)} />
         </div>
       ) : null}
       <div className="product-photo" onTouchStart={handleGalleryTouchStart} onTouchEnd={handleGalleryTouchEnd}
@@ -3823,14 +3811,7 @@ function ProductView({
         ) : (
           <ProductImageMedia product={product} image={activeImage} fetchPriority="high" />
         )}
-        <button
-          type="button"
-          className="product-back-link public-nav-control"
-          onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)}
-          aria-label="الرجوع"
-        >
-          <PublicBackIcon />
-        </button>
+        <PublicBackButton locale={language} onClick={() => returnFromPublicProduct(data.restaurant.slug, productReturnHref, backRouter)} className="product-back-link" />
         {mediaMode === "image" && gallery.length > 1 ? (
           <>
             <button type="button" className="product-gallery-arrow product-gallery-prev" onClick={() => moveImage(-1)} aria-label={language === "ar" ? "الصورة السابقة" : "Previous image"}>

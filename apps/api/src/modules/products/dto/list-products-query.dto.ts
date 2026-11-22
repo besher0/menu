@@ -3,6 +3,10 @@ import { IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
 
 export class ListProductsQueryDto {
   @IsOptional()
+  @IsIn(["missingImage", "unavailable"])
+  review?: "missingImage" | "unavailable";
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

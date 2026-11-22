@@ -17,8 +17,8 @@ type Overview = {
   feedback: { id: string; stars: number; comment?: string; createdAt: string }[] | null;
 };
 
-function ProductLink({ product }: { product: Product }) {
-  return <Link href={`/dashboard/products/${encodeURIComponent(product.id)}/edit`}><bdi>{product.name}</bdi></Link>;
+function ProductLink({ product, review }: { product: Product; review?: string }) {
+  return <Link href={`/dashboard/products/${encodeURIComponent(product.id)}/edit${review ? "?review=" + review : ""}`}><bdi>{product.name}</bdi></Link>;
 }
 
 export function MerchantHome({ rankingOnly = false }: { rankingOnly?: boolean }) {
@@ -74,8 +74,9 @@ export function MerchantHome({ rankingOnly = false }: { rankingOnly?: boolean })
       <div className="mh-panels">
       {!rankingOnly && <article><h2>{t("يحتاج مراجعة","Needs review")}</h2>
         {data.unavailable.count + data.missingImage.count === 0 && <p>{t("جميع الأصناف متوفرة ولها صور.","All products are available and have images.")}</p>}
-        {([ [t("أصناف غير متوفرة","Unavailable products"),data.unavailable], [t("أصناف بدون صور","Products without images"),data.missingImage] ] as const).map(([title,group]) =>
-          group.count > 0 && <section key={title}><h3>{title} · {group.count}</h3>{group.items.map(product => <div className="mh-row" key={product.id}><ProductLink product={product}/></div>)}</section>)}</article>}
+        {([ [t("أصناف غير متوفرة","Unavailable products"),data.unavailable,"unavailable"], [t("أصناف بدون صور","Products without images"),data.missingImage,"missingImage"] ] as const).map(([title,group,review]) =>
+          group.count > 0 && <section key={title}><div className="mh-title"><h3>{title} · {group.count}</h3>
+            {group.count > group.items.length && <Link href={`/dashboard/products?review=${review}`} aria-label={t("عرض الكل", "View all") + " — " + title}>{t("عرض الكل", "View all")}</Link>}</div>{group.items.map(product => <div className="mh-row" key={product.id}><ProductLink product={product} review={review}/></div>)}</section>)}</article>}
       <article><div className="mh-title"><h2>{top}</h2>{!rankingOnly && <Link href={`/dashboard/analytics?view=products&days=${days}`}>{t("عرض الكل","View all")}</Link>}</div>
         {data.lists.topViewedProducts.map(product => <div className="mh-row" key={product.id}>
           {product.imageUrl && <img alt="" width="36" height="36" src={product.imageUrl.startsWith("/uploads/") ? API_URL + product.imageUrl : product.imageUrl}/>}

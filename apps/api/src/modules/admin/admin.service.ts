@@ -1,3 +1,4 @@
+import { isReservedCategoryName } from "../../common/system-category";
 import { BadRequestException, ConflictException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ABO_MALEK_THEME, FEATURE_KEYS, PublicTemplateKey, VERTIGO_THEME } from "@menu/shared";
 import { Prisma } from "@prisma/client";
@@ -531,9 +532,10 @@ export class AdminService {
       }
     });
 
-    if (source.categories.length) {
+    const categories = source.categories.filter(category => category.slug === "all" || !isReservedCategoryName(category.name));
+    if (categories.length) {
       await tx.category.createMany({
-        data: source.categories.map((category) => ({
+        data: categories.map((category) => ({
           restaurantId,
           name: category.name,
           slug: category.slug,

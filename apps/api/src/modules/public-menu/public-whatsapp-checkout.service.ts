@@ -1,3 +1,5 @@
+import { formatWhatsappOrderTime } from "../orders/whatsapp-order-time";
+import { marketTimeZone } from "../../common/market-time-zone";
 import { checkoutSigningKey } from "../../common/security/production-config";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
@@ -126,7 +128,7 @@ function groupedMessageLines(items: TrustedLine[]): TrustedLine[] {
 }
 
 /** The message is assembled only from this request's trusted database-backed draft. */
-export function formatTrustedWhatsappDraft(draft: TrustedDraft, orderNumber?: string): string {
+export function formatTrustedWhatsappDraft(draft: TrustedDraft, orderNumber?: string, confirmed?: { at: Date; timeZone: string }): string {
   const ar = draft.locale === "ar";
   const details = formatNetworkOrderDetails({ restaurantName: draft.restaurantName, ...draft.details, orderNote: undefined }, draft.locale);
   const output = [orderNumber
@@ -164,6 +166,7 @@ export function formatTrustedWhatsappDraft(draft: TrustedDraft, orderNumber?: st
     ? ar ? "يُحدّد بعد رسوم التوصيل" : "Pending delivery fee"
     : formatCurrencyAmount(draft.totalAmount, draft.currency, draft.locale)}`);
   output.push("", ...details.footer);
+  if (confirmed) output.push(`${ar ? "الوقت" : "Time"}: ${formatWhatsappOrderTime(confirmed.at, confirmed.timeZone, draft.locale)}`);
   return formatWhatsappMessageLines(output, draft.locale);
 }
 
@@ -427,7 +430,7 @@ export class PublicWhatsappCheckoutService {
     if (alreadyCommitted) return alreadyCommitted;
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT "id" FROM "Restaurant" WHERE "id" = ${restaurant.id} FOR UPDATE`;
+        const [market] = await tx.$queryRaw<Array<{ country: string | null }>>`SELECT "country" FROM "Restaurant" WHERE "id" = ${restaurant.id} FOR UPDATE`;
         const existing = await tx.order.findUnique({ where: { restaurantId_idempotencyKey: {
           restaurantId: restaurant.id, idempotencyKey
         } } });
@@ -454,7 +457,8 @@ export class PublicWhatsappCheckoutService {
             acceptanceToken: issueToken(key, draft.restaurantId, digest) });
         }
         const orderNumber = await reserveDailyWhatsappOrderNumber(tx, draft.restaurantId);
-        const message = formatTrustedWhatsappDraft(draft, orderNumber);
+        const createdAt = new Date();
+        const message = formatTrustedWhatsappDraft(draft, orderNumber, { at: createdAt, timeZone: marketTimeZone(market.country, draft.currency) });
         const whatsappUrl = buildNetworkWhatsappPreviewUrl(draft.whatsappPhone, message);
         const storedDraft = publicDraft(draft);
         const snapshot = JSON.parse(JSON.stringify({ whatsappCheckoutVersion: 1, orderNumber,
@@ -463,7 +467,7 @@ export class PublicWhatsappCheckoutService {
           restaurantId: draft.restaurantId, branchId: draft.branchId,
           customerName: draft.details.customerName, customerPhone: draft.details.customerPhone,
           totalAmount: new Prisma.Decimal(draft.totalAmount ?? draft.itemsSubtotal), currency: draft.currency,
-          status: "PENDING_WHATSAPP", source: "WHATSAPP", whatsappMessage: message, cartSnapshot: snapshot,
+          createdAt, status: "PENDING_WHATSAPP", source: "WHATSAPP", whatsappMessage: message, cartSnapshot: snapshot,
           idempotencyKey, requestHash, acceptanceTokenHash,
           items: { create: draft.items.map((line) => ({
             productId: line.productId, name: line.productName, quantity: line.quantity, note: line.note,

@@ -382,6 +382,42 @@ integration("Stage 6E.2 trusted mixed WhatsApp checkout on disposable PostgreSQL
     expect(await read()).toMatchObject({ unavailable: { count: 0 }, missingImage: { count: 0 } });
   });
 
+  it("paginates all review matches for the tenant and removes resolved issues", async () => {
+    const tenant = "review-pagination";
+    await prisma.restaurant.create({ data: { id: tenant, name: tenant, slug: tenant } });
+    const dashboard = new DashboardService(prisma as unknown as PrismaService, app.get(FeatureFlagsService));
+    const products = new ProductsService(prisma as unknown as PrismaService, app.get(FeatureFlagsService), {} as never, app.get(ConfigService));
+    const ids: string[] = [];
+    for (const count of [0, 1, 3, 48, 107]) {
+      const batch = Array.from({ length: count - ids.length }, (_, i) => {
+        const id = tenant + "-" + (ids.length + i);
+        return { id, restaurantId: tenant, slug: id, name: id, basePrice: 10, isAvailable: false, isActive: true };
+      });
+      if (batch.length) await prisma.product.createMany({ data: batch });
+      ids.push(...batch.map(product => product.id));
+      const overview = await dashboard.overview(tenant, "1");
+      if (!("missingImage" in overview)) throw Error("Missing review details");
+      for (const review of ["missingImage", "unavailable"] as const) {
+        expect(overview[review].count).toBe(count);
+        expect(overview[review].items).toHaveLength(Math.min(3, count));
+        const seen: string[] = [];
+        for (let page = 1; page <= Math.max(1, Math.ceil(count / 10)); page++) {
+          const result = await products.list(tenant, { page, limit: 10, review, sort: "name", search: tenant });
+          expect(result.meta.total).toBe(count);
+          seen.push(...result.data.map(product => product.id));
+        }
+        expect(seen.sort()).toEqual([...ids].sort());
+      }
+    }
+    const image = await prisma.productImage.create({ data: { productId: ids[0], url: "/assets/test.jpg", isActive: false } });
+    expect((await products.list(tenant, { review: "missingImage", limit: 1 })).meta.total).toBe(107);
+    await prisma.productImage.update({ where: { id: image.id }, data: { isActive: true } });
+    expect((await products.list(tenant, { review: "missingImage", limit: 1 })).meta.total).toBe(106);
+    await expect(dashboard.createCategory(tenant, { name: "  اَلْكُلّ ", slug: "other" })).rejects.toThrow("الكل");
+    const category = await dashboard.createCategory(tenant, { name: "لكل الأذواق", slug: "variety" });
+    await expect(dashboard.updateCategory(tenant, category.id, { name: "ＡＬＬ" })).rejects.toThrow("الكل");
+  });
+
   it("uses restaurant-local calendar boundaries across midnight and DST", async () => {
     const tenant = "s6e2-r1";
     const service = new DashboardService(prisma as unknown as PrismaService, app.get(FeatureFlagsService));

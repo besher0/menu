@@ -1,3 +1,6 @@
+import { marketTimeZone } from "../../common/market-time-zone";
+import { productReviewWhere } from "../products/product-review-filter";
+import { isReservedCategoryName } from "../../common/system-category";
 import { feedbackMode, restaurantMapsUrl, googleMapsShareUrl } from "@menu/shared";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { defaultSectionSettings } from "@menu/shared";
@@ -27,21 +30,7 @@ type DashboardBanner = {
   sortOrder: number;
 };
 
-const zones: Record<string, string> = {
-  sy: "Asia/Damascus", syria: "Asia/Damascus", "سوريا": "Asia/Damascus", "سورية": "Asia/Damascus",
-  de: "Europe/Berlin", germany: "Europe/Berlin", "ألمانيا": "Europe/Berlin",
-  tr: "Europe/Istanbul", turkey: "Europe/Istanbul", "تركيا": "Europe/Istanbul",
-  sa: "Asia/Riyadh", "السعودية": "Asia/Riyadh", ae: "Asia/Dubai", "الإمارات": "Asia/Dubai",
-  lb: "Asia/Beirut", "لبنان": "Asia/Beirut", jo: "Asia/Amman", "الأردن": "Asia/Amman"
-};
-const currencyZones: Record<string, string> = {
-  SYP: "Asia/Damascus", "ل.س": "Asia/Damascus", SAR: "Asia/Riyadh", AED: "Asia/Dubai",
-  TRY: "Europe/Istanbul", JOD: "Asia/Amman", LBP: "Asia/Beirut"
-};
-export function marketTimeZone(country: string | null, currency: string) {
-  const key = country?.trim().toLowerCase();
-  return key ? zones[key] ?? "UTC" : currencyZones[currency.trim().toUpperCase()] ?? "UTC";
-}
+export { marketTimeZone } from "../../common/market-time-zone";
 
 @Injectable()
 export class DashboardService {
@@ -142,7 +131,7 @@ export class DashboardService {
     const [visits, views, unavailable, missingImage, feedback] = await Promise.all([
       this.prisma.analyticsEvent.count({ where: { restaurantId, createdAt, type: "MENU_VIEWED" } }),
       this.prisma.analyticsEvent.count({ where: { restaurantId, createdAt, type: "PRODUCT_VIEWED" } }),
-      review({ isAvailable: false }), review({ images: { none: { isActive: true } } }),
+      review(productReviewWhere("unavailable")), review(productReviewWhere("missingImage")),
       showFeedback ? this.prisma.restaurantFeedback.findMany({
         where: { restaurantId }, take: 3, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { id: true, stars: true, comment: true, createdAt: true }
@@ -290,8 +279,7 @@ export class DashboardService {
     const slug = slugify(dto.slug || dto.name);
     const sortOrder = dto.sortOrder === undefined ? await this.nextCategorySortOrder(restaurantId) : Math.max(1, dto.sortOrder);
 
-    if (slug === "all") {
-      await this.ensureAllCategory(restaurantId);
+    if (slug === "all" || isReservedCategoryName(dto.name) || isReservedCategoryName(dto.slug)) {
       throw new BadRequestException("قسم الكل موجود تلقائياً ولا يمكن إنشاء نسخة ثانية منه.");
     }
 
@@ -349,6 +337,9 @@ export class DashboardService {
     }
 
     const isAllCategory = category.slug === "all";
+    if (!isAllCategory && (isReservedCategoryName(dto.name) || isReservedCategoryName(dto.slug) || (dto.slug && slugify(dto.slug) === "all"))) {
+      throw new BadRequestException("اسم قسم الكل محجوز.");
+    }
 
     return this.prisma.category.update({
       where: { id },

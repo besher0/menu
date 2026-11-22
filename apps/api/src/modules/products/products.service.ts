@@ -1,3 +1,4 @@
+import { productReviewWhere } from "./product-review-filter";
 import { publicUploadUrl } from "../../common/public-upload-url";
 import { nextProductSortOrder, productOrderTransaction } from "./product-sort-order";
 import { preparePublicConfigurationCatalog, resolveProductFromCatalog, type PublicProductConfigurationResponse } from "../public-menu/public-product-configuration";
@@ -31,6 +32,7 @@ export class ProductsService {
     const where: Prisma.ProductWhereInput = {
       restaurantId,
       deletedAt: null,
+      ...productReviewWhere(query.review),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.availability === "available" ? { isAvailable: true } : {}),
       ...(query.availability === "unavailable" ? { isAvailable: false } : {}),
@@ -44,6 +46,7 @@ export class ProductsService {
         : {})
     };
     const orderBy = this.productOrderBy(query.sort);
+    orderBy.push({ id: "asc" });
     const [total, products] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({

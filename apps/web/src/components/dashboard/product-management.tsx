@@ -1,4 +1,5 @@
 "use client";
+import {useRouter,useSearchParams} from "next/navigation";
 import Link from "next/link";
 import {useCallback,useEffect,useMemo,useRef,useState,type ReactNode} from "react";
 import {FileSpreadsheet,Upload,Plus} from "lucide-react";
@@ -18,6 +19,11 @@ type Category={id:string;name:string;slug:string};
 export function appendProductPage(current:Product[],incoming:Product[]){const ids=new Set(current.map(x=>x.id));return [...current,...incoming.filter(x=>{if(ids.has(x.id))return false;ids.add(x.id);return true})]}
 
 export function ProductManagement({renderImport}:{renderImport:(props:{onClose:()=>void;onImported:(count:number)=>void})=>ReactNode}){
+ const router=useRouter(), params=useSearchParams();
+ const requested=params.get("review");
+ const review=requested==="missingImage"||requested==="unavailable"?requested:"";
+ const reviewSuffix=review?"?review="+review:"";
+ const english=typeof document!=="undefined" && (document.documentElement.lang.startsWith("en")||document.documentElement.dir==="ltr");
  const [products,setProducts]=useState<Product[]>([]),[meta,setMeta]=useState<Page['meta']>({page:0,pages:1,limit:10,total:0});
  const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[actionError,setActionError]=useState(''),[notice,setNotice]=useState('');
  const [categories,setCategories]=useState<Category[]>([]),[moods,setMoods]=useState<{key:string;label:string}[]>([]),[collapsed,setCollapsed]=useState(new Set<string>());
@@ -28,16 +34,16 @@ export function ProductManagement({renderImport}:{renderImport:(props:{onClose:(
  const session=getBrowserSession(),restaurant=resolveStoredRestaurant(session),admin=session?.user.role==='SUPER_ADMIN';
  const role=session?.memberships.find(x=>x.restaurant.id===restaurant?.id)?.role;
  const canEdit=admin||!!role&&roleHasPermission(role as Parameters<typeof roleHasPermission>[0],'product.update');
- const canOrder=canReorderCatalog()&&!search&&!query&&!loading&&!busy.size&&!ordering;
+ const canOrder=canReorderCatalog()&&!review&&!search&&!query&&!loading&&!busy.size&&!ordering;
  const groups=useMemo(()=>{const map=new Map<string,{id:string;name:string;products:Product[]}>();for(const p of products){const id=p.category?.id??'uncategorized';if(!map.has(id))map.set(id,{id,name:p.category?.name??'بدون قسم',products:[]});map.get(id)!.products.push(p)}return [...map.values()]},[products]);
  const load=useCallback(async(page:number,replace=false)=>{
   if(requestBusy.current||dragActive.current||orderBusy.current)return;requestBusy.current=true;const epoch=generation.current;const abort=new AbortController();controller.current=abort;setLoading(true);setError('');
-  try{const params=new URLSearchParams({page:String(page),limit:'10',sort:'sortOrder',...(query?{search:query}:{})});const result=await apiFetch<Page>('/dashboard/products?'+params,{signal:abort.signal});
+  try{const params=new URLSearchParams({page:String(page),limit:'10',sort:'sortOrder',...(review?{review}:{}),...(query?{search:query}:{})});const result=await apiFetch<Page>('/dashboard/products?'+params,{signal:abort.signal});
    if(epoch!==generation.current||abort.signal.aborted)return;
    setProducts(old=>replace?appendProductPage([],result.data):appendProductPage(old,result.data));setMeta(result.meta);
   }catch(e){if(epoch===generation.current&&!abort.signal.aborted)setError('تعذر تحميل الأصناف. تحقق من الاتصال وأعد المحاولة.');}
   finally{if(epoch===generation.current){requestBusy.current=false;setLoading(false)}}
- },[query,restaurant?.id]);
+ },[query,review,restaurant?.id]);
  useEffect(()=>{if(search===query)return;dragCleanup.current();generation.current++;controller.current?.abort();requestBusy.current=false;setError('');setLoading(true);const t=setTimeout(()=>{if(search.trim()===query)setRefresh(n=>n+1);else setQuery(search.trim())},250);return()=>clearTimeout(t)},[search]);
  useEffect(()=>{dragCleanup.current();generation.current++;controller.current?.abort();requestBusy.current=false;setProducts([]);setMeta({page:0,pages:1,total:0,limit:10});void load(1,true);return()=>{generation.current++;controller.current?.abort();requestBusy.current=false}},[load,refresh]);
  useEffect(()=>{if(!sentinel.current||loading||error||search.trim()!==query||meta.page>=meta.pages)return;const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&!requestBusy.current&&!dragActive.current&&!ordering)void load(snapshot.current.meta.page+1)},{rootMargin:'240px'});observer.observe(sentinel.current);return()=>observer.disconnect()},[load,loading,error,meta,query,search,ordering,dragRevision]);
@@ -100,7 +106,14 @@ export function ProductManagement({renderImport}:{renderImport:(props:{onClose:(
    <Link className="btn primary" href="/dashboard/products/new"><Plus size={20}/>إضافة صنف</Link>
    {admin&&<><button type="button" className="btn" onClick={()=>setImportOpen(true)}><FileSpreadsheet size={20}/>استيراد من Excel</button><button type="button" className="btn" onClick={()=>void exportProducts()} disabled={exporting}><Upload size={20}/>تصدير</button></>}
   </div></header>
-  <div className="toolbar"><label className="search-wrap"><span className="search-icon" aria-hidden>⌕</span><input className="search" aria-label="ابحث عن صنف" placeholder="ابحث عن صنف..." value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
+  <div className="toolbar">
+    <select aria-label={english?"Product filter":"فلتر الأصناف"} value={review} onChange={e=>router.replace("/dashboard/products"+(e.target.value?"?review="+e.target.value:""),{scroll:false})}>
+      <option value="">{english?"All products":"جميع الأصناف"}</option>
+      <option value="missingImage">{english?"Products without images":"أصناف بدون صور"}</option>
+      <option value="unavailable">{english?"Unavailable products":"أصناف غير متوفرة"}</option>
+    </select>
+    {review&&!loading&&<span aria-live="polite">{english?"Results":"النتائج"} · {meta.total}</span>}
+    <label className="search-wrap"><span className="search-icon" aria-hidden>⌕</span><input className="search" aria-label="ابحث عن صنف" placeholder="ابحث عن صنف..." value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
   {actionError&&<p role="alert">{actionError}</p>}{notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error} <button type="button" className="btn small" onClick={()=>void load(meta.page?meta.page+1:1,!meta.page)}>إعادة المحاولة</button></p>}
   <div className="product-groups">{groups.map(group=><section className="product-group-card" key={group.id}>
    <header className="product-group-head"><div className="actions"><button type="button" className="expander" aria-label={'طي أو فتح '+group.name} aria-expanded={!collapsed.has(group.id)} onClick={()=>setCollapsed(old=>{const next=new Set(old);next.has(group.id)?next.delete(group.id):next.add(group.id);return next})}>{collapsed.has(group.id)?'‹':'⌄'}</button><b>{group.name}</b><span className="subtle">({group.products.length})</span></div></header>
@@ -108,12 +121,12 @@ export function ProductManagement({renderImport}:{renderImport:(props:{onClose:(
    <tbody>{group.products.map(p=><tr key={p.id} data-product-row={p.id}>
     <td><div className="product-name-cell"><button type="button" className="product-order-grip" aria-label={'ترتيب '+p.name} disabled={!canOrder} onPointerDown={e=>startDrag(e,p)} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();keyboardMove(p,e.key==='ArrowUp'?-1:1)}}}>☰</button>{p.images?.[0]?.url&&<img className="product-image" src={p.images[0].url} alt=""/>}<input className="quick-input" aria-label={'اسم '+p.name} key={p.id+'-name-'+p.name} defaultValue={p.name} disabled={!canEdit||ordering||busy.has(p.id)} onBlur={e=>{if(e.target.value!==p.name)void quickSave(p,{name:e.target.value})}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){e.currentTarget.value=p.name;e.currentTarget.blur()}}}/></div></td>
     <td><select className="compact-select" aria-label={'قسم '+p.name} value={p.category?.id??''} disabled={!canEdit||ordering||busy.has(p.id)} onChange={e=>void quickSave(p,{categoryId:e.target.value})}><option value="">بدون قسم</option>{categories.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></td>
-    <td className="price-cell">{(p.basePriceEditable??p.configurationMode!=='NETWORK')?<input className="quick-input quick-price" key={p.id+'-price-'+p.basePrice} aria-label={'سعر '+p.name} defaultValue={p.basePrice===null?'':String(p.basePrice)} inputMode="decimal" disabled={!canEdit||ordering||busy.has(p.id)} onBlur={e=>{const value=e.target.value.trim();if(value!==(p.basePrice===null?'':String(p.basePrice)))void quickSave(p,{basePrice:value||null})}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){e.currentTarget.value=p.basePrice===null?'':String(p.basePrice);e.currentTarget.blur()}}}/>:<Link className="price-derived" href={`/dashboard/products/${p.id}/edit`} title="السعر مشتق من شبكة التكوين">{p.configurationPrice?.priceDisplay==="STARTING_AT"?"ابتداءً من ":""}{displayCurrencyAmount(p.configurationPrice?.minimumPrice,p.currency,"ar")}</Link>}</td>
+    <td className="price-cell">{(p.basePriceEditable??p.configurationMode!=='NETWORK')?<input className="quick-input quick-price" key={p.id+'-price-'+p.basePrice} aria-label={'سعر '+p.name} defaultValue={p.basePrice===null?'':String(p.basePrice)} inputMode="decimal" disabled={!canEdit||ordering||busy.has(p.id)} onBlur={e=>{const value=e.target.value.trim();if(value!==(p.basePrice===null?'':String(p.basePrice)))void quickSave(p,{basePrice:value||null})}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){e.currentTarget.value=p.basePrice===null?'':String(p.basePrice);e.currentTarget.blur()}}}/>:<Link className="price-derived" href={`/dashboard/products/${p.id}/edit${reviewSuffix}`} title="السعر مشتق من شبكة التكوين">{p.configurationPrice?.priceDisplay==="STARTING_AT"?"ابتداءً من ":""}{displayCurrencyAmount(p.configurationPrice?.minimumPrice,p.currency,"ar")}</Link>}</td>
     <td><span className="views">{p.views??0}</span></td>
     {!!moods.length&&<td><button type="button" className="quick-mood-trigger" disabled={!canEdit||ordering||busy.has(p.id)} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setMoodPosition({left:Math.max(8,Math.min(innerWidth-278,r.right-270)),top:Math.max(8,Math.min(innerHeight-300,r.bottom+6))});setMoodProduct(p.id);setMoodDraft(p.moodKeys??[])}}><span className="summary">{!p.moodKeys?.length?'بدون اختيار':p.moodKeys.length===1?moods.find(x=>x.key===p.moodKeys[0])?.label??p.moodKeys[0]:`عدة خيارات (${p.moodKeys.length})`}</span><span className="chev">⌄</span></button></td>}
     <td className="check-cell"><input className="feature-check" type="checkbox" aria-label={'الأكثر طلبًا '+p.name} checked={p.isPopular} disabled={!canEdit||ordering||busy.has(p.id)} onChange={e=>void quickSave(p,{isPopular:e.target.checked})}/></td>
     <td className="check-cell"><input className="feature-check" type="checkbox" aria-label={'جديدنا '+p.name} checked={p.isNew} disabled={!canEdit||ordering||busy.has(p.id)} onChange={e=>void quickSave(p,{isNew:e.target.checked})}/></td>
-    <td><div className="actions"><Link className="btn small" href={`/dashboard/products/${p.id}/edit`}>تعديل</Link><button type="button" className="btn danger small" disabled={ordering} onClick={()=>void remove(p)}>حذف</button></div></td>
+    <td><div className="actions"><Link className="btn small" href={`/dashboard/products/${p.id}/edit${reviewSuffix}`}>تعديل</Link><button type="button" className="btn danger small" disabled={ordering} onClick={()=>void remove(p)}>حذف</button></div></td>
    </tr>)}</tbody></table></div>}
   </section>)}</div>
   {loading&&<p role="status" className="empty">جارٍ تحميل الأصناف…</p>}

@@ -1,3 +1,4 @@
+import { formatWhatsappOrderTime } from "../orders/whatsapp-order-time";
 import { FeedbackService } from "../feedback/feedback.service";
 import { FeedbackIpGuard, PublicFeedbackController, DashboardFeedbackController } from "../feedback/feedback.module";
 import "reflect-metadata";
@@ -106,7 +107,7 @@ describe.skipIf(!url)("V2 customer ordering / fresh PostgreSQL + authenticated r
   const count=await prisma.order.count(),key=randomUUID();
   const result=await confirm(req,prepared.body.acceptanceToken,key);expect(result.status,JSON.stringify(result.body)).toBe(200);
   expect(result.body.whatsappUrl).toMatch(/^https:\/\/wa.me\//);expect(result.body.message).toContain("80600");
-  const retry=await confirm(req,prepared.body.acceptanceToken,key);expect(retry.body.orderId).toBe(result.body.orderId);expect(await prisma.order.count()).toBe(count+1);
+  const retry=await confirm(req,prepared.body.acceptanceToken,key);expect(retry.body.orderId).toBe(result.body.orderId);expect(retry.body.message).toBe(result.body.message);expect(await prisma.order.count()).toBe(count+1);
  });
  it('keeps ordinary-only carts on the existing WhatsApp endpoint',async()=>{const r=await prepare(request([ordinary]));expect(r.status).toBe(400);expect(r.body.error).toBe('LEGACY_CHECKOUT_REQUIRED');});
  it('refuses forged snapshot and client total during checkout',async()=>{expect((await prepare(request([{...line(),snapshot:{total:'1'}}]))).status).toBe(400);expect((await prepare({...request(),totalAmount:'1'})).status).toBe(400);});
@@ -359,6 +360,7 @@ describe.skipIf(!url)("V2 customer ordering / fresh PostgreSQL + authenticated r
   expect(await prisma.order.count()).toBe(before);
   const confirmed=await confirm(req,p.body.acceptanceToken);expect(confirmed.status).toBe(200);
   const row=await prisma.order.findUniqueOrThrow({where:{id:confirmed.body.orderId}});
+  expect(row.whatsappMessage).toContain(formatWhatsappOrderTime(row.createdAt, 'Asia/Damascus', req.locale === 'en' ? 'en' : 'ar'));
   expect(JSON.stringify(row.cartSnapshot)).toContain('Synthetic area');expect(row.whatsappMessage).toContain('Synthetic note');
  });
 

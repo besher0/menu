@@ -1,3 +1,5 @@
+import { formatWhatsappOrderTime } from "../orders/whatsapp-order-time";
+import { marketTimeZone } from "../../common/market-time-zone";
 import { feedbackMode, googleMapsShareUrl } from "@menu/shared";
 import { publicUploadUrl } from "../../common/public-upload-url";
 import { checkoutSigningKey } from "../../common/security/production-config";
@@ -499,7 +501,9 @@ export class PublicMenuService {
       ? sumMoney([itemsSubtotal, deliveryFee]) : itemsSubtotal;
     const showPrices = dashboardSettings.showPrices ?? true;
     const orderNumber = await reserveDailyWhatsappOrderNumber(tx, restaurant.id);
+    const createdAt = new Date();
     const message = this.buildWhatsappMessage({
+      createdAt, timeZone: marketTimeZone(restaurant.country, restaurant.currency),
       restaurantName: restaurant.name,
       branchName: branch?.name,
       orderNumber,
@@ -527,7 +531,7 @@ export class PublicMenuService {
         customerPhone: dto.customerPhone,
         totalAmount,
         currency: restaurant.currency,
-        status: "PENDING_WHATSAPP",
+        status: "PENDING_WHATSAPP", createdAt,
         whatsappMessage: message,
         cartSnapshot: { ...dto, orderNumber, whatsappPhone: whatsappPhone.replace(/^\+/, ""),
           itemsSubtotal, deliveryFee, finalTotalKnown: dto.fulfillmentType !== "delivery" || deliveryFee !== null } as unknown as Prisma.InputJsonValue,
@@ -1050,6 +1054,8 @@ export class PublicMenuService {
   }
 
   private buildWhatsappMessage(input: {
+    createdAt: Date;
+    timeZone: string;
     restaurantName: string;
     branchName?: string;
     orderNumber: string;
@@ -1109,7 +1115,7 @@ export class PublicMenuService {
       input.fulfillmentType === "delivery" && input.deliveryNear ? `قريب من: ${isolateWhatsappText(input.deliveryNear)}` : null,
       input.fulfillmentType === "delivery" && input.deliveryBeside ? `العنوان: ${isolateWhatsappText(input.deliveryBeside)}` : null,
       input.fulfillmentType === "pickup" && input.pickupTime ? `🕒 وقت الاستلام: ${isolateWhatsappText(input.pickupTime)}` : null,
-      `الوقت: ${new Date().toLocaleString("ar-SY")}`
+      `الوقت: ${formatWhatsappOrderTime(input.createdAt, input.timeZone, "ar")}`
     ];
 
     return formatWhatsappMessageLines(lines, "ar");

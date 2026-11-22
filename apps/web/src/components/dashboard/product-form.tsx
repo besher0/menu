@@ -687,7 +687,7 @@ export function ProductForm({ productId }: { productId?: string }) {
   function requestClose() {
     if (status === "saving") return;
     if (editor.dirty && !window.confirm("لديك تغييرات غير محفوظة. هل تريد إغلاق المحرر دون حفظها؟")) return;
-    router.replace("/dashboard/products", { scroll: false });
+    router.replace("/dashboard/products" + window.location.search, { scroll: false });
   }
 
   return (
