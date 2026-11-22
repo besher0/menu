@@ -26,6 +26,19 @@ describe('P0 service worker boundaries', () => {
     expect(w.request('/menu', 'navigate', '', { RSC:'1' })).toBeUndefined();
     expect(w.request('/api/quote', 'cors', '', {}, 'POST')).toBeUndefined();
   });
+  it('forwards optimized image requests intact to native HTTP caching', async () => {
+    const w = worker();
+    const path = '/_next/image?url=%2Fassets%2Fpublic%2Fdish.jpg&w=384&q=75';
+    const response = await w.request(path, 'no-cors', 'image', { Accept: 'image/webp' });
+    expect(response?.ok).toBe(true);
+    expect(w.fetcher).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      url: 'https://a.test' + path, destination: 'image', mode: 'no-cors',
+    }));
+    expect(w.caches.open).not.toHaveBeenCalled();
+    expect(w.request(path, 'cors', 'image', { RSC: '1' })).toBeUndefined();
+    expect(w.request(path, 'cors', 'image', {}, 'POST')).toBeUndefined();
+    expect(w.request(path, 'cors', 'script')).toBeUndefined();
+  });
   it('never caches documents and falls back only for offline documents', async () => {
     const w = worker(); await w.request('/menu', 'navigate'); expect(w.caches.open).not.toHaveBeenCalled();
     w.fetcher.mockRejectedValue(new Error('offline'));

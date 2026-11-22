@@ -12,6 +12,11 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   const isRsc = request.headers.has('RSC') || url.searchParams.has('_rsc');
+  // Forward the original request so controlled WebKit pages reuse the HTTP image cache.
+  if (!isRsc && request.destination === 'image' && url.pathname === '/_next/image') {
+    event.respondWith(fetch(request));
+    return;
+  }
   const immutableAsset = url.pathname.startsWith('/_next/static/') && !isRsc
     && ['script', 'style', 'font', 'image'].includes(request.destination);
   if (immutableAsset) {
