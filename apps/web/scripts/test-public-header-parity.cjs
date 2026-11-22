@@ -130,6 +130,8 @@ async function run(browser, locale, width, data) {
     else {
       await page.goto(origin + "/cart", { waitUntil: "domcontentloaded" });
       await page.locator(".public-screen.view-home, .public-screen.view-menu").waitFor();
+      await page.waitForFunction(({ tenant, locale }) => document.querySelector(".public-screen")?.dir === (locale === "ar" ? "rtl" : "ltr") &&
+        localStorage.getItem("language:" + tenant) === locale, { tenant, locale });
       pages.push("cart-disabled");
     }
     const storage = () => page.evaluate(tenant => ["language:" + tenant, "cart:" + tenant + ":main"].map(k => localStorage.getItem(k)), tenant);
