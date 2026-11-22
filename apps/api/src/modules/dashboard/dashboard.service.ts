@@ -3,7 +3,7 @@ import { productReviewWhere } from "../products/product-review-filter";
 import { isReservedCategoryName } from "../../common/system-category";
 import { feedbackMode, restaurantMapsUrl, googleMapsShareUrl } from "@menu/shared";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { defaultSectionSettings } from "@menu/shared";
+import { bannerSection, defaultSectionSettings } from "@menu/shared";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
 import { resolveTxt } from "dns/promises";
@@ -611,8 +611,8 @@ export class DashboardService {
   }
 
   async banners(restaurantId: string) {
-    const section = await this.ensureHeroSection(restaurantId);
-    return this.extractBanners(section.settings);
+    const section = await this.findBannerSection(restaurantId);
+    return section ? this.extractBanners(section.settings) : [];
   }
 
   async createBanner(restaurantId: string, dto: UpsertDashboardBannerDto) {
@@ -633,7 +633,8 @@ export class DashboardService {
   }
 
   async updateBanner(restaurantId: string, id: string, dto: UpsertDashboardBannerDto) {
-    const section = await this.ensureHeroSection(restaurantId);
+    const section = await this.findBannerSection(restaurantId);
+    if (!section) throw new NotFoundException("Banner not found");
     const current = this.extractBanners(section.settings);
 
     if (!current.some((banner) => banner.id === id)) {
@@ -659,7 +660,8 @@ export class DashboardService {
   }
 
   async deleteBanner(restaurantId: string, id: string) {
-    const section = await this.ensureHeroSection(restaurantId);
+    const section = await this.findBannerSection(restaurantId);
+    if (!section) throw new NotFoundException("Banner not found");
     const current = this.extractBanners(section.settings);
 
     if (!current.some((banner) => banner.id === id)) {
@@ -882,7 +884,33 @@ export class DashboardService {
     }
   }
 
+  private async findBannerSection(restaurantId: string) {
+    const menus = await this.prisma.menu.findMany({
+      where: { restaurantId, status: "PUBLISHED" },
+      orderBy: { createdAt: "asc" },
+      select: {
+        slug: true,
+        pages: {
+          where: { isHome: true, status: "PUBLISHED" },
+          orderBy: { sortOrder: "asc" },
+          select: {
+            isHome: true,
+            sections: { where: { type: "HERO" }, orderBy: { sortOrder: "asc" } }
+          }
+        }
+      }
+    });
+    // Preserve editing of an unpublished main menu when there is no published source.
+    return bannerSection(menus) ?? this.prisma.menuSection.findFirst({
+      where: { type: "HERO", page: { isHome: true, menu: { restaurantId, slug: "main-menu" } } },
+      orderBy: [{ page: { sortOrder: "asc" } }, { sortOrder: "asc" }]
+    });
+  }
+
   private async ensureHeroSection(restaurantId: string) {
+    const existing = await this.findBannerSection(restaurantId);
+    if (existing) return existing;
+
     const menu = await this.prisma.menu.upsert({
       where: { restaurantId_slug: { restaurantId, slug: "main-menu" } },
       create: {
@@ -923,7 +951,7 @@ export class DashboardService {
           pageId: page.id,
           type: "HERO",
           sortOrder: 0,
-          settings: defaultSectionSettings("HERO") as Prisma.InputJsonValue,
+          settings: { ...defaultSectionSettings("HERO"), adBanners: [] } as Prisma.InputJsonValue,
           isActive: true
         }
       }))

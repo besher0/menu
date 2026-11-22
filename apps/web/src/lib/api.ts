@@ -200,6 +200,7 @@ export type PublicMenuData = {
   products: PublicProduct[];
   theme: ThemeSettings;
   menus?: Array<{
+    slug?: string;
     pages?: Array<{
       isHome?: boolean;
       sections?: Array<{

@@ -14,7 +14,7 @@ import { ArrowLeft, Beef, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumst
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars, type PublicWhatsappLineError, type PublicWhatsappPriceChange } from "@/lib/api";
 import { getPublicProductConfiguration, getPublicProductQuote, PublicProductQuoteError, type PublicProductQuoteResponse } from "@/lib/api";
 import { clientUuid } from "@/lib/client-uuid";
-import { compareMoney, currencyDisplayLabel, multiplyMoney, sumMoney } from "@menu/shared";
+import { bannerSection, compareMoney, currencyDisplayLabel, multiplyMoney, sumMoney } from "@menu/shared";
 import { displayCurrencyAmount } from "@/lib/currency-display";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 import { ProductConfigurator, preloadProductConfigurator } from "./lazy-product-configurator";
@@ -1347,8 +1347,10 @@ function HomeView({
       })
     : [];
   const shouldShowMoodStrip = Boolean(moodSection && moodItems.length > 0);
-  const adBanners = heroSection?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? [];
-  const bannerSlides = adBanners;
+  const bannerHero = bannerSection(data.menus);
+  const bannerSlides = bannerHero?.isActive !== false
+    ? bannerHero?.settings?.adBanners?.filter((banner) => banner.imageUrl && banner.isActive !== false) ?? []
+    : [];
   const homeReturnHref = restaurantPath(data.restaurant.slug, "/", useSubdomainRoutes);
   const isVertigo = publicTemplate(data) === "vertigo";
   const heroPromoClassName = [
