@@ -5247,6 +5247,11 @@ body:has(.public-page)::-webkit-scrollbar {
   text-shadow: 0 2px 12px rgb(0 0 0 / 46%);
 }
 
+/* Keep route announcements while avoiding WebKit's focus ring around an entire touch-navigated page. */
+.public-page[data-restaurant-shell] main[data-route-focus="pointer"]:focus {
+  outline: none;
+}
+
 .public-content {
   display: grid;
   gap: 16px;

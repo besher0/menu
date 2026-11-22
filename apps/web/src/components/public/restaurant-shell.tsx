@@ -33,6 +33,7 @@ export function RestaurantShell({ initialData, shortRoutes, testEnabled, childre
   const alive = useRef(true);
   const container = useRef<HTMLDivElement>(null);
   const previousPath = useRef(pathname);
+  const lastInputWasPointer = useRef(false);
   const applySnapshot = useCallback((value: PublicMenuData) => {
     // No catalog revision currently covers linked dependencies. Invalidate all
     // eight bounded configurations after a successful catalog refresh instead.
@@ -124,7 +125,12 @@ export function RestaurantShell({ initialData, shortRoutes, testEnabled, childre
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
     const main = container.current?.querySelector<HTMLElement>("main:not([hidden])");
-    if (main) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
+    if (main) {
+      main.tabIndex = -1;
+      if (lastInputWasPointer.current) main.dataset.routeFocus = "pointer";
+      else delete main.dataset.routeFocus;
+      main.focus({ preventScroll: true });
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -155,7 +161,12 @@ export function RestaurantShell({ initialData, shortRoutes, testEnabled, childre
     <button type="button" onClick={() => window.location.reload()}>إعادة تحميل المنيو / Reload menu</button>
   </main>;
   return <RestaurantShellContext.Provider value={context}>
-    <div ref={container} className="public-page" data-restaurant-shell={tenant} data-snapshot-scope={snapshotScope(snapshot)}>
+    <div ref={container} className="public-page" data-restaurant-shell={tenant} data-snapshot-scope={snapshotScope(snapshot)}
+      onPointerDownCapture={() => { lastInputWasPointer.current = true; }}
+      onKeyDownCapture={() => {
+        lastInputWasPointer.current = false;
+        container.current?.querySelector("main[data-route-focus]:focus")?.removeAttribute("data-route-focus");
+      }}>
       {status === "stale" ? <p role="status">تعذر تحديث المنيو؛ الأسعار والتوفر تُراجع عند الطلب. / Menu refresh unavailable; prices are verified at checkout.</p> : null}
       {status === "pending" ? <p role="status">توجد بيانات أحدث؛ ستُعرض بعد مغادرة التكوين أو السلة. / Updated menu available after leaving the configuration or cart.</p> : null}
       <PublicMenuClient data={snapshot} view={route.view} productSlug={route.productSlug} initialUseSubdomainRoutes={shortRoutes} />

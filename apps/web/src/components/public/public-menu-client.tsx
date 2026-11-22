@@ -1469,7 +1469,10 @@ function HomeView({
                 const className = index === activeBanner ? "hero-promo-slide active" : "hero-promo-slide";
                 const content = (
                   <>
-                    <PublicImage src={banner.imageUrl} alt={banner.title || t.todayOffer} />
+                    <PublicImage src={banner.imageUrl} alt={banner.title || t.todayOffer}
+                      sizes="(max-width: 430px) calc(100vw - 32px), 430px"
+                      loading={index === activeBanner || index === 0 ? "eager" : "lazy"}
+                      fetchPriority={index === 0 ? "high" : "low"} />
                     {banner.badge ? <span>{banner.badge}</span> : null}
                   </>
                 );
@@ -1623,8 +1626,7 @@ const MenuProductCard = memo(function MenuProductCard({
         <span className="menu-product-image-link">
           <ProductImageMedia product={product} sizes={productListLayout === "double" ? "(max-width: 430px) 50vw, 215px" : "142px"}
             loading={imagePosition >= 0 ? "eager" : "lazy"}
-            fetchPriority={imagePosition === 0 ? "high" : "auto"}
-            preserveIntrinsicSize={productListLayout === "single" && !productClassName.includes("card-horizontal-contained")} />
+            fetchPriority={imagePosition === 0 ? "high" : "auto"} />
         </span>
         <div className="menu-product-copy">
           <b dir="auto">{product.name}</b>
@@ -2229,7 +2231,7 @@ function MenuView({
   function renderCategoryLanding() {
     return (
       <section className="category-banner-list category-landing-list" id="menu-categories">
-        {orderedCategories.map((category) => {
+        {orderedCategories.map((category, index) => {
           const position = parseIconPosition(category.imagePosition);
           const productsCount = category.slug === "all"
             ? visibleProducts.length
@@ -2251,7 +2253,8 @@ function MenuView({
             >
               {category.imageUrl ? (
                 <span className="category-banner-visual" aria-hidden="true">
-                  <PublicImage src={category.imageUrl} alt="" decorative />
+                  <PublicImage src={category.imageUrl} alt="" decorative sizes="144px"
+                    loading={index < 7 ? "eager" : "lazy"} fetchPriority={index === 0 ? "high" : "auto"} />
               </span>
               ) : null}
               <div className="category-banner-copy">
