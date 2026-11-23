@@ -74,6 +74,17 @@ export function middleware(request: NextRequest) {
     });
   }
 
+  // A restaurant's main URL (including already printed main QR targets) opens branch selection.
+  // Explicit branch QR links remain direct menu links and keep their original destination.
+  if (pathname === "/" && !request.nextUrl.searchParams.has("selectedBranch") && !request.nextUrl.searchParams.has("branch")) {
+    const selectorUrl = request.nextUrl.clone();
+    selectorUrl.protocol = protocol;
+    selectorUrl.hostname = publicHostname;
+    selectorUrl.port = process.env.NODE_ENV === "production" ? "" : request.nextUrl.port;
+    selectorUrl.pathname = "/branches";
+    return NextResponse.redirect(selectorUrl, 307);
+  }
+
   const internalPath =
     pathname === "/"
       ? `/m/${restaurantSlug}`
