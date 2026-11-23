@@ -14,6 +14,7 @@ type Branch = {
   city?: string | null;
   country?: string | null;
   whatsappPhone?: string | null;
+  imageUrl?: string | null;
   isActive: boolean;
 };
 
@@ -27,6 +28,9 @@ export function BranchesClient() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [editImageId, setEditImageId] = useState<string | null>(null);
+  const [editImageUrl, setEditImageUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
 
@@ -68,7 +72,7 @@ export function BranchesClient() {
           "Content-Type": "application/json",
           ...authHeaders()
         },
-        body: JSON.stringify({ name, address, city, whatsappPhone })
+        body: JSON.stringify({ name, address, city, whatsappPhone, imageUrl: imageUrl.trim() || null })
       });
 
       if (!response.ok) {
@@ -82,11 +86,42 @@ export function BranchesClient() {
       setAddress("");
       setCity("");
       setWhatsappPhone("");
+      setImageUrl("");
       setStatus("success");
       setMessage("تم إنشاء الفرع.");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء الفرع.");
+    }
+  }
+
+  async function saveBranchImage(branch: Branch) {
+    setStatus("saving");
+    setMessage("");
+    try {
+      const response = await fetch(`${API_URL}/dashboard/branches/${branch.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          name: branch.name,
+          address: branch.address,
+          city: branch.city,
+          country: branch.country,
+          whatsappPhone: branch.whatsappPhone,
+          imageUrl: editImageUrl.trim() || null,
+          isActive: branch.isActive
+        })
+      });
+      if (!response.ok) throw new Error("تعذر حفظ صورة الفرع.");
+      const payload = (await response.json()) as ApiPayload<Branch> | Branch;
+      const updated = unwrapBranch(payload);
+      setBranches((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setEditImageId(null);
+      setStatus("success");
+      setMessage("تم تحديث صورة الفرع.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر حفظ الصورة.");
     }
   }
 
@@ -147,6 +182,10 @@ export function BranchesClient() {
             <input value={city} onChange={(event) => setCity(event.target.value)} />
           </label>
           <label>
+            <span>رابط صورة واجهة الفرع (من مكتبة الوسائط أو Cloudinary)</span>
+            <input type="url" placeholder="https://..." value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} />
+          </label>
+          <label>
             <span>واتساب الفرع</span>
             <input value={whatsappPhone} onChange={(event) => setWhatsappPhone(event.target.value)} />
           </label>
@@ -168,6 +207,9 @@ export function BranchesClient() {
                   {branch.isActive ? "فعال" : "موقوف"}
                 </span>
               </header>
+              {branch.imageUrl ? (
+                <img src={branch.imageUrl} alt={`صورة ${branch.name}`} loading="lazy" style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: 12 }} />
+              ) : null}
               <div className="branch-meta">
                 <p>
                   <MapPin size={18} />
@@ -175,7 +217,23 @@ export function BranchesClient() {
                 </p>
                 <p>{branch.whatsappPhone ? `WhatsApp: ${branch.whatsappPhone}` : "لا يوجد واتساب خاص"}</p>
               </div>
+              {editImageId === branch.id ? (
+                <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                  <label>
+                    <span>رابط صورة الفرع</span>
+                    <input type="url" placeholder="https://..." value={editImageUrl}
+                      onChange={(event) => setEditImageUrl(event.target.value)} />
+                  </label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" disabled={status === "saving"} onClick={() => void saveBranchImage(branch)}>حفظ الصورة</button>
+                    <button type="button" onClick={() => setEditImageId(null)}>إلغاء</button>
+                  </div>
+                </div>
+              ) : null}
               <footer>
+                <button type="button" onClick={() => { setEditImageId(branch.id); setEditImageUrl(branch.imageUrl ?? ""); }}>
+                  تعديل الصورة
+                </button>
                 <a href={`/dashboard/qr?branch=${branch.slug}`}>
                   <QrCode size={18} />
                   QR
