@@ -21,15 +21,23 @@ export class PublicMenuService {
         slug: true,
         name: true,
         logoUrl: true,
+        heroImageUrl: true,
         branches: {
           where: { isActive: true, deletedAt: null },
           orderBy: { createdAt: "asc" },
-          select: { id: true, slug: true, name: true, address: true, city: true }
+          select: { id: true, slug: true, name: true, address: true, city: true, imageUrl: true }
         }
       }
     });
     if (!restaurant) throw new NotFoundException("Restaurant not found");
-    return { restaurant };
+    return {
+      restaurant: {
+        ...restaurant,
+        logoUrl: this.publicAssetUrl(restaurant.logoUrl),
+        heroImageUrl: this.publicAssetUrl(restaurant.heroImageUrl),
+        branches: restaurant.branches.map((branch) => ({ ...branch, imageUrl: this.publicAssetUrl(branch.imageUrl) }))
+      }
+    };
   }
 
   async menu(restaurantSlug: string, userAgent?: string | string[], trackView = true) {
