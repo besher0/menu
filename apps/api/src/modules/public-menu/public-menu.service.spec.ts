@@ -61,10 +61,11 @@ describe("PublicMenuService branch discovery", () => {
         slug: true,
         name: true,
         logoUrl: true,
+        heroImageUrl: true,
         branches: {
           where: { isActive: true, deletedAt: null },
           orderBy: { createdAt: "asc" },
-          select: { id: true, slug: true, name: true, address: true, city: true }
+          select: { id: true, slug: true, name: true, address: true, city: true, imageUrl: true }
         }
       }
     });
