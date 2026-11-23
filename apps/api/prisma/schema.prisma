@@ -65,6 +65,7 @@ model Branch {
   address       String?
   city          String?
   country       String?
+  imageUrl      String?
   whatsappPhone String?
   latitude      Float?
   longitude     Float?
