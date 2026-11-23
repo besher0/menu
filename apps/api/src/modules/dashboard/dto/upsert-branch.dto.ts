@@ -22,6 +22,10 @@ export class UpsertBranchDto {
 
   @IsOptional()
   @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
   whatsappPhone?: string;
 
   @IsOptional()
