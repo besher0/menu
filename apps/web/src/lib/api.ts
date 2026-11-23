@@ -101,6 +101,7 @@ export type PublicMenuData = {
     showPrices?: boolean;
     productOpenMode?: "MODAL" | "PAGE";
     branches?: Array<{
+      imageUrl?: string | null;
       id: string;
       slug: string;
       name: string;
@@ -216,7 +217,7 @@ export async function getPublicMenu(slug: string, options: { track?: boolean } =
 }
 
 export type PublicBranchesData = {
-  restaurant: Pick<PublicMenuData["restaurant"], "slug" | "name" | "logoUrl" | "branches">;
+  restaurant: Pick<PublicMenuData["restaurant"], "slug" | "name" | "logoUrl" | "heroImageUrl" | "branches">;
 };
 
 export async function getPublicBranches(slug: string): Promise<PublicBranchesData> {
