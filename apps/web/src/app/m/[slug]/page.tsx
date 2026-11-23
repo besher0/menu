@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { getPublicMenuOrNotFound } from "@/lib/public-menu-page";
 import { preferredRestaurantUrl } from "@/lib/public-routes";
 import { PublicMenuClient } from "@/components/public/public-menu-client";
@@ -28,8 +29,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   };
 }
 
-export default async function PublicMenuHome({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PublicMenuHome({ params, searchParams }: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ selectedBranch?: string; branch?: string }>;
+}) {
   const { slug } = await params;
+  const query = await searchParams;
+  // Also support the local /m/:slug URL; production subdomains redirect in middleware.
+  if (!query.selectedBranch && !query.branch) {
+    redirect(`/m/${slug}/branches`);
+  }
   const data = await getPublicMenuOrNotFound(slug, { track: false });
   return (
     <div className="public-page">
