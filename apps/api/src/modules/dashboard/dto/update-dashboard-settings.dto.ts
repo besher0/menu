@@ -113,6 +113,10 @@ export class UpdateDashboardSettingsDto {
 
   @IsOptional()
   @IsString()
+  heroImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
   currency?: string;
 
   @IsOptional()

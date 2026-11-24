@@ -689,6 +689,7 @@ export class DashboardService {
         tiktokUrl: dashboardSettings.tiktokUrl ?? "",
         whatsappUrl: dashboardSettings.whatsappUrl ?? "",
         logoUrl: restaurant.logoUrl,
+        heroImageUrl: restaurant.heroImageUrl,
         currency: restaurant.currency,
         showPrices: dashboardSettings.showPrices ?? true,
         productOpenMode: this.normalizeProductOpenMode(dashboardSettings.productOpenMode),
@@ -732,6 +733,7 @@ export class DashboardService {
         ...(dto.country !== undefined ? { country: dto.country } : {}),
         ...(dto.whatsappPhone !== undefined ? { whatsappPhone: dto.whatsappPhone } : {}),
         ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
+        ...(dto.heroImageUrl !== undefined ? { heroImageUrl: dto.heroImageUrl } : {}),
         ...(dto.currency !== undefined ? { currency: dto.currency } : {})
       }
     });

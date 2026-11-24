@@ -10960,6 +10960,13 @@ body {
   object-fit: contain;
 }
 
+.logo-preview.hero-preview img {
+  width: 100%;
+  height: 188px;
+  max-height: none;
+  object-fit: cover;
+}
+
 .logo-actions {
   display: grid;
   gap: 14px;

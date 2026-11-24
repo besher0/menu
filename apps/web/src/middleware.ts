@@ -81,7 +81,7 @@ export function middleware(request: NextRequest) {
     selectorUrl.protocol = protocol;
     selectorUrl.hostname = publicHostname;
     selectorUrl.port = process.env.NODE_ENV === "production" ? "" : request.nextUrl.port;
-    selectorUrl.pathname = "/branches";
+    selectorUrl.pathname = process.env.NODE_ENV === "production" ? "/branches" : `/m/${restaurantSlug}/branches`;
     return NextResponse.redirect(selectorUrl, 307);
   }
 
