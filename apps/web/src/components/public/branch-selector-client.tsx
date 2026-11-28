@@ -67,16 +67,16 @@ export function BranchSelectorClient({ restaurant }: { restaurant: Restaurant })
               onClick={() => selectBranch(branch.id)}
               aria-label={`تصفح منيو ${branch.name}`}
             >
-              <div className={styles.photo}>
-                {branch.imageUrl || restaurant.heroImageUrl ? (
-                  <img
-                    loading="lazy"
-                    src={branch.imageUrl || restaurant.heroImageUrl || ""}
-                    alt={`واجهة ${branch.name}`}
-                  />
-                ) : (
+              <div
+                className={styles.photo}
+                style={branch.imageUrl || restaurant.heroImageUrl ? {
+                  backgroundImage: `url(${JSON.stringify(branch.imageUrl || restaurant.heroImageUrl)})`
+                } : undefined}
+                aria-hidden="true"
+              >
+                {!branch.imageUrl && !restaurant.heroImageUrl ? (
                   <div className={styles.photoFallback}><Store size={48} aria-hidden="true" /></div>
-                )}
+                ) : null}
               </div>
               <div className={styles.cardInfo}>
                 <h2>{branch.name}</h2>
