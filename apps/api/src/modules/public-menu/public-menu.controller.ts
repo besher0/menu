@@ -20,7 +20,7 @@ export class PublicMenuController {
   }
 
   @Get(":restaurantSlug/branches")
-  @Header("Cache-Control", "public, max-age=0, s-maxage=60, stale-while-revalidate=300")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
   branchOptions(@Param("restaurantSlug") restaurantSlug: string) {
     return this.publicMenuService.branchOptions(restaurantSlug);
   }

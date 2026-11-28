@@ -183,9 +183,9 @@ export function isPublicMenuNotFoundError(error: unknown) {
   return error instanceof PublicMenuApiError && error.kind === "not-found";
 }
 
-async function apiGet<T>(path: string): Promise<T> {
+async function apiGet<T>(path: string, fresh = false): Promise<T> {
   try {
-    const response = await fetch(`${API_URL}${path}`, {
+    const response = await fetch(`${API_URL}${path}`, fresh ? { cache: "no-store" } : {
       next: {
         revalidate: 60,
         tags: ["public-menu"]
@@ -221,7 +221,7 @@ export type PublicBranchesData = {
 };
 
 export async function getPublicBranches(slug: string): Promise<PublicBranchesData> {
-  return apiGet<PublicBranchesData>(`/public/menus/${encodeURIComponent(slug)}/branches`);
+  return apiGet<PublicBranchesData>(`/public/menus/${encodeURIComponent(slug)}/branches`, true);
 }
 
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {

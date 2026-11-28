@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Loader2, MapPin, Plus, QrCode, RefreshCcw, Trash2 } from "lucide-react";
 import { authHeaders } from "@/lib/session";
 
@@ -33,18 +33,24 @@ export function BranchesClient() {
   const [editImageUrl, setEditImageUrl] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error" | "success">("loading");
   const [message, setMessage] = useState("");
+  const [uploading, setUploading] = useState<string | null>(null);
+  const operationLock = useRef(false);
+  const busy = uploading !== null || status === "saving" || status === "loading";
 
   useEffect(() => {
     void loadBranches();
   }, []);
 
   async function loadBranches() {
+    if (operationLock.current) return;
+    operationLock.current = true;
     setStatus("loading");
     setMessage("");
 
     try {
       const response = await fetch(`${API_URL}/dashboard/branches`, {
-        headers: authHeaders()
+        headers: authHeaders(),
+        cache: "no-store"
       });
 
       if (!response.ok) {
@@ -57,11 +63,15 @@ export function BranchesClient() {
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر تحميل الفروع.");
+    } finally {
+      operationLock.current = false;
     }
   }
 
   async function createBranch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (operationLock.current) return;
+    operationLock.current = true;
     setStatus("saving");
     setMessage("");
 
@@ -81,7 +91,9 @@ export function BranchesClient() {
 
       const payload = (await response.json()) as ApiPayload<Branch> | Branch;
       const branch = unwrapBranch(payload);
+      if (!branch?.id) throw new Error("لم يرجع الخادم بيانات الفرع الجديد.");
       setBranches((current) => [branch, ...current]);
+      if (imageUrl && branch.imageUrl !== imageUrl) throw new Error("تم إنشاء الفرع ولكن لم يتم حفظ صورته. عدّل الصورة من بطاقة الفرع.");
       setName("");
       setAddress("");
       setCity("");
@@ -92,10 +104,20 @@ export function BranchesClient() {
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء الفرع.");
+    } finally {
+      operationLock.current = false;
     }
   }
 
   async function saveBranchImage(branch: Branch) {
+    if (operationLock.current || editImageId !== branch.id) return;
+    const desiredUrl = editImageUrl.trim();
+    if (!isImageUrl(desiredUrl)) {
+      setStatus("error");
+      setMessage("اختر صورة وانتظر اكتمال رفعها أولاً.");
+      return;
+    }
+    operationLock.current = true;
     setStatus("saving");
     setMessage("");
     try {
@@ -108,13 +130,16 @@ export function BranchesClient() {
           city: branch.city,
           country: branch.country,
           whatsappPhone: branch.whatsappPhone,
-          imageUrl: editImageUrl.trim() || null,
+          imageUrl: desiredUrl,
           isActive: branch.isActive
         })
       });
       if (!response.ok) throw new Error("تعذر حفظ صورة الفرع.");
       const payload = (await response.json()) as ApiPayload<Branch> | Branch;
       const updated = unwrapBranch(payload);
+      if (updated?.id !== branch.id || updated.imageUrl !== desiredUrl) {
+        throw new Error("لم يؤكد الخادم حفظ رابط الصورة. حاول الحفظ مرة أخرى.");
+      }
       setBranches((current) => current.map((item) => item.id === updated.id ? updated : item));
       setEditImageId(null);
       setStatus("success");
@@ -122,16 +147,16 @@ export function BranchesClient() {
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر حفظ الصورة.");
+    } finally {
+      operationLock.current = false;
     }
   }
 
-  async function uploadBranchImage(event: ChangeEvent<HTMLInputElement>, branchId: string) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  async function uploadImage(file: File, altText: string) {
     const body = new FormData();
     body.append("file", file);
     body.append("type", "IMAGE");
-    body.append("altText", `صورة فرع ${branchId}`);
+    body.append("altText", altText);
     const response = await fetch(`${API_URL}/dashboard/media/upload`, {
       method: "POST",
       headers: authHeaders(),
@@ -139,43 +164,65 @@ export function BranchesClient() {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      setStatus("error");
-      setMessage(payload?.message ?? "تعذر رفع صورة الفرع.");
-      event.target.value = "";
-      return;
+      const message = payload?.message;
+      throw new Error(typeof message === "string" ? message : Array.isArray(message) ? message.join("، ") : "تعذر رفع صورة الفرع.");
     }
-    setEditImageId(branchId);
-    setEditImageUrl(payload?.data?.url ?? payload?.url ?? "");
+    const url = payload?.data?.url ?? payload?.url;
+    if (typeof url !== "string" || !isImageUrl(url)) {
+      throw new Error("لم يرجع الخادم رابط صورة صالحاً بعد الرفع.");
+    }
+    return url.trim();
+  }
+
+  async function uploadBranchImage(event: ChangeEvent<HTMLInputElement>, branchId: string) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file || operationLock.current) return;
+    operationLock.current = true;
+    setUploading(branchId);
+    setEditImageUrl("");
     setStatus("idle");
-    setMessage("تم رفع صورة الفرع. اضغط حفظ الصورة لتثبيتها.");
-    event.target.value = "";
+    setMessage("جاري رفع صورة الفرع...");
+    try {
+      const url = await uploadImage(file, `صورة فرع ${branchId}`);
+      setEditImageId(branchId);
+      setEditImageUrl(url);
+      setMessage("تم رفع صورة الفرع. اضغط حفظ الصورة لتثبيتها.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع صورة الفرع.");
+    } finally {
+      input.value = "";
+      setUploading(null);
+      operationLock.current = false;
+    }
   }
 
   async function uploadNewBranchImage(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const body = new FormData();
-    body.append("file", file);
-    body.append("type", "IMAGE");
-    body.append("altText", name || file.name);
-    const response = await fetch(`${API_URL}/dashboard/media/upload`, {
-      method: "POST",
-      headers: authHeaders(),
-      body
-    });
-    const payload = await response.json().catch(() => null);
-    if (response.ok) {
-      setImageUrl(payload?.data?.url ?? payload?.url ?? "");
-      setStatus("idle");
-      setMessage("تم رفع صورة الفرع.");
-    } else {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file || operationLock.current) return;
+    operationLock.current = true;
+    setUploading("new");
+    setImageUrl("");
+    setStatus("idle");
+    setMessage("جاري رفع صورة الفرع...");
+    try {
+      setImageUrl(await uploadImage(file, name || file.name));
+      setMessage("تم رفع الصورة. اضغط إضافة فرع لحفظها.");
+    } catch (error) {
       setStatus("error");
-      setMessage(payload?.message ?? "تعذر رفع صورة الفرع.");
+      setMessage(error instanceof Error ? error.message : "تعذر رفع صورة الفرع.");
+    } finally {
+      input.value = "";
+      setUploading(null);
+      operationLock.current = false;
     }
-    event.target.value = "";
   }
 
   async function deleteBranch(id: string) {
+    if (operationLock.current) return;
+    operationLock.current = true;
     setStatus("saving");
     setMessage("");
 
@@ -195,6 +242,8 @@ export function BranchesClient() {
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "تعذر حذف الفرع.");
+    } finally {
+      operationLock.current = false;
     }
   }
 
@@ -207,7 +256,7 @@ export function BranchesClient() {
           <p>أضف فروع المطعم، واربط كل فرع برقم واتساب وموقع ورابط QR مستقل.</p>
         </div>
         <div className="builder-actions">
-          <button type="button" onClick={loadBranches} disabled={status === "loading"}>
+          <button type="button" onClick={loadBranches} disabled={busy}>
             {status === "loading" ? <Loader2 className="spin" size={20} /> : <RefreshCcw size={20} />}
             تحديث
           </button>
@@ -236,13 +285,14 @@ export function BranchesClient() {
             {imageUrl ? (
               <img src={imageUrl} alt="معاينة صورة الفرع" style={{ width: "100%", height: 150, objectFit: "cover", borderRadius: 10 }} />
             ) : null}
-            <input accept="image/*" type="file" onChange={(event) => void uploadNewBranchImage(event)} />
+            <input accept="image/*" type="file" disabled={busy} onChange={(event) => void uploadNewBranchImage(event)} />
+            {uploading === "new" ? <span role="status">جاري رفع الصورة...</span> : null}
           </label>
           <label>
             <span>واتساب الفرع</span>
             <input value={whatsappPhone} onChange={(event) => setWhatsappPhone(event.target.value)} />
           </label>
-          <button className="primary-action" type="submit" disabled={status === "saving"}>
+          <button className="primary-action" type="submit" disabled={busy}>
             {status === "saving" ? <Loader2 className="spin" size={20} /> : <Plus size={20} />}
             إضافة فرع
           </button>
@@ -277,23 +327,24 @@ export function BranchesClient() {
                     {editImageUrl ? (
                       <img src={editImageUrl} alt={`معاينة ${branch.name}`} style={{ width: "100%", height: 150, objectFit: "cover", borderRadius: 10 }} />
                     ) : null}
-                    <input accept="image/*" type="file" onChange={(event) => void uploadBranchImage(event, branch.id)} />
+                    <input accept="image/*" type="file" disabled={busy} onChange={(event) => void uploadBranchImage(event, branch.id)} />
+                    {uploading === branch.id ? <span role="status">جاري رفع الصورة...</span> : null}
                   </label>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button type="button" disabled={status === "saving"} onClick={() => void saveBranchImage(branch)}>حفظ الصورة</button>
-                    <button type="button" onClick={() => setEditImageId(null)}>إلغاء</button>
+                    <button type="button" disabled={busy || !isImageUrl(editImageUrl)} onClick={() => void saveBranchImage(branch)}>حفظ الصورة</button>
+                    <button type="button" disabled={busy} onClick={() => setEditImageId(null)}>إلغاء</button>
                   </div>
                 </div>
               ) : null}
               <footer>
-                <button type="button" onClick={() => { setEditImageId(branch.id); setEditImageUrl(branch.imageUrl ?? ""); }}>
+                <button type="button" disabled={busy} onClick={() => { setEditImageId(branch.id); setEditImageUrl(branch.imageUrl ?? ""); }}>
                   تعديل الصورة
                 </button>
                 <a href={`/dashboard/qr?branch=${branch.slug}`}>
                   <QrCode size={18} />
                   QR
                 </a>
-                <button type="button" onClick={() => deleteBranch(branch.id)}>
+                <button type="button" disabled={busy} onClick={() => deleteBranch(branch.id)}>
                   <Trash2 size={18} />
                 </button>
               </footer>
@@ -307,4 +358,13 @@ export function BranchesClient() {
 
 function unwrapBranch(payload: ApiPayload<Branch> | Branch): Branch {
   return (payload as ApiPayload<Branch>).data ?? (payload as Branch);
+}
+
+function isImageUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    return (url.protocol === "https:" || url.protocol === "http:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
 }

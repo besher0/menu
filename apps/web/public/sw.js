@@ -1,4 +1,4 @@
-const CACHE_NAME = "menu-builder-v5";
+const CACHE_NAME = "menu-builder-v6";
 const ASSETS = [
   "/offline",
   "/assets/public/menu-home.png",
@@ -28,6 +28,8 @@ self.addEventListener("fetch", (event) => {
   const isSameOrigin = url.origin === self.location.origin;
   const shouldBypassCache =
     !isSameOrigin ||
+    url.pathname === "/api" ||
+    url.pathname.startsWith("/api/") ||
     url.pathname.startsWith("/admin") ||
     url.pathname.startsWith("/dashboard") ||
     url.pathname.startsWith("/login") ||
@@ -42,12 +44,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/m/") || url.pathname.startsWith("/_next") || url.pathname.startsWith("/assets/")) {
+  if (event.request.mode === "navigate" || url.pathname === "/branches" || url.pathname.startsWith("/m/") || url.pathname.startsWith("/_next") || url.pathname.startsWith("/assets/")) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          if (response.ok && !response.redirected) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
           return response;
         })
         .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/offline")))
