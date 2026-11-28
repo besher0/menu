@@ -115,6 +115,7 @@ type DashboardSettings = {
     tiktokUrl?: string | null;
     whatsappUrl?: string | null;
     logoUrl?: string | null;
+    heroImageUrl?: string | null;
     currency: string;
     showPrices: boolean;
     productOpenMode?: "MODAL" | "PAGE";
@@ -1258,6 +1259,50 @@ function SettingsForm() {
     event.target.value = "";
   }
 
+  async function uploadHeroImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const body = new FormData();
+    body.append("file", file);
+    body.append("type", "IMAGE");
+    body.append("altText", form?.name ?? file.name);
+    const response = await fetch(`${API_URL}/dashboard/media/upload`, { method: "POST", headers: authHeaders(), body });
+    const payload = await response.json().catch(() => null);
+    if (response.ok) {
+      const url = payload?.data?.url ?? payload?.url ?? "";
+      updateField("heroImageUrl", url);
+      try {
+        const next = await apiFetch<DashboardSettings>("/dashboard/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ heroImageUrl: url })
+        });
+        setSettings(next);
+        setMessage("تم رفع وحفظ صورة واجهة المطعم بنجاح.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "تم رفع الصورة لكن تعذر حفظها.");
+      }
+    } else {
+      setMessage(payload?.message ?? "تعذر رفع صورة واجهة المطعم.");
+    }
+    event.target.value = "";
+  }
+
+  async function deleteHeroImage() {
+    updateField("heroImageUrl", "");
+    try {
+      const next = await apiFetch<DashboardSettings>("/dashboard/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ heroImageUrl: "" })
+      });
+      setSettings(next);
+      setMessage("تم حذف صورة واجهة المطعم بنجاح.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "تعذر حذف صورة واجهة المطعم.");
+    }
+  }
+
   async function uploadSplashAsset(event: ChangeEvent<HTMLInputElement>, key: "logoUrl" | "backgroundImageUrl") {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1314,6 +1359,23 @@ function SettingsForm() {
       </button>
       <h1>اعدادات المطعم</h1>
       <section className="settings-grid">
+        <article className="settings-card logo-card">
+          <h2>صورة واجهة المطعم</h2>
+          <div className="logo-preview hero-preview">
+            {form.heroImageUrl ? (
+              <img src={dashboardAssetUrl(form.heroImageUrl)} alt="صورة واجهة المطعم" />
+            ) : (
+              <ImagePlus size={46} />
+            )}
+          </div>
+          <div className="logo-actions">
+            <label>
+              رفع صورة الواجهة
+              <input hidden accept="image/*" type="file" onChange={(event) => void uploadHeroImage(event)} />
+            </label>
+            <button type="button" onClick={() => void deleteHeroImage()}>حذف</button>
+          </div>
+        </article>
         <article className="settings-card logo-card">
           <h2>الشعار</h2>
           <div className="logo-preview">{form.logoUrl ? <img src={dashboardAssetUrl(form.logoUrl)} alt="شعار المطعم" /> : <ImagePlus size={46} />}</div>

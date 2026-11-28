@@ -1,0 +1,37 @@
+name: Branch selector validation
+
+on:
+  push:
+    branches:
+      - feature/multi-branch-qr-system
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test?schema=public
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Build shared package
+        run: npm run build -w @menu/shared
+      - name: API TypeScript
+        run: npm run typecheck -w @menu/api
+      - name: Web TypeScript
+        run: npm run typecheck -w @menu/web
+      - name: API unit tests
+        run: npm run test -w @menu/api
+      - name: Build web
+        run: npm run build -w @menu/web

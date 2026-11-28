@@ -16,6 +16,16 @@ export class QrController {
     return this.qrService.list(request.restaurant!.id, request.restaurant!.slug);
   }
 
+  @Post("branch-selector")
+  createBranchSelector(@Req() request: AppRequest) {
+    return this.qrService.createBranchSelector(request.restaurant!.id, request.restaurant!.slug);
+  }
+
+  @Post("branch-entry/:branchId")
+  createBranchEntry(@Req() request: AppRequest, @Param("branchId") branchId: string) {
+    return this.qrService.createBranchEntry(request.restaurant!.id, request.restaurant!.slug, branchId);
+  }
+
   @Post()
   create(@Req() request: AppRequest, @Body() dto: CreateQrCodeDto) {
     return this.qrService.create(request.restaurant!.id, request.restaurant!.slug, dto);
