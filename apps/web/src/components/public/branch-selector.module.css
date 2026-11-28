@@ -84,16 +84,25 @@
 .card:focus-visible { outline: 3px solid #bc2639; outline-offset: 4px; }
 .card:disabled { opacity: .78; cursor: progress; }
 .photo {
+  position: relative;
   width: 100%;
   height: clamp(210px, 44vw, 260px);
   overflow: hidden;
   background: #f2eee9;
 }
-.photo img {
+.photo > img {
+  position: absolute;
+  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
   object-fit: cover;
+  object-position: center;
 }
 .photoFallback {
   height: 100%;
