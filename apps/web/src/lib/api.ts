@@ -101,7 +101,9 @@ export type PublicMenuData = {
     showPrices?: boolean;
     productOpenMode?: "MODAL" | "PAGE";
     branches?: Array<{
+      imageUrl?: string | null;
       id: string;
+      slug: string;
       name: string;
       address?: string | null;
       city?: string | null;
@@ -212,6 +214,14 @@ async function apiGet<T>(path: string): Promise<T> {
 export async function getPublicMenu(slug: string, options: { track?: boolean } = {}): Promise<PublicMenuData> {
   void options;
   return apiGet<PublicMenuData>(`/public/menus/${encodeURIComponent(slug)}?track=0`);
+}
+
+export type PublicBranchesData = {
+  restaurant: Pick<PublicMenuData["restaurant"], "slug" | "name" | "logoUrl" | "heroImageUrl" | "branches">;
+};
+
+export async function getPublicBranches(slug: string): Promise<PublicBranchesData> {
+  return apiGet<PublicBranchesData>(`/public/menus/${encodeURIComponent(slug)}/branches`);
 }
 
 export function emptyPublicMenu(slug = "restaurant"): PublicMenuData {

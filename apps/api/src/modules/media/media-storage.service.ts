@@ -6,13 +6,21 @@ import { extname, join, resolve } from "path";
 import { readPositiveInt } from "../../common/security/env";
 
 export const uploadMaxBytes = readPositiveInt("MAX_UPLOAD_MB", 75) * 1024 * 1024;
-export const allowedUploadExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".glb", ".gltf", ".usdz"]);
+export const allowedUploadExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg", ".bmp", ".heic", ".heif", ".glb", ".gltf", ".usdz"]);
 export const allowedUploadMimeTypes = new Set([
   "image/jpeg",
+  "image/jpg",
+  "image/pjpeg",
   "image/png",
+  "image/x-png",
   "image/webp",
+  "image/avif",
   "image/gif",
   "image/svg+xml",
+  "image/bmp",
+  "image/x-ms-bmp",
+  "image/heic",
+  "image/heif",
   "model/gltf-binary",
   "model/gltf+json",
   "model/vnd.usdz+zip",
@@ -262,6 +270,11 @@ export class MediaStorageService {
     const extension = extname(filename).toLowerCase();
     if (extension === ".png") return "image/png";
     if (extension === ".webp") return "image/webp";
+    if (extension === ".avif") return "image/avif";
+    if (extension === ".gif") return "image/gif";
+    if (extension === ".bmp") return "image/bmp";
+    if (extension === ".heic") return "image/heic";
+    if (extension === ".heif") return "image/heif";
     if (extension === ".svg") return "image/svg+xml";
     return "image/jpeg";
   }

@@ -74,6 +74,8 @@ export function middleware(request: NextRequest) {
     });
   }
 
+  // The public menu page resolves active branch count server-side.
+
   const internalPath =
     pathname === "/"
       ? `/m/${restaurantSlug}`

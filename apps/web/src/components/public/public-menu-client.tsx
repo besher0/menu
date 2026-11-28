@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import Link, { withSelectedBranch } from "@/components/public/branch-aware-link";
+import branchStyles from "./branch-selector.module.css";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Beef, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 
@@ -654,20 +655,23 @@ export function PublicMenuClient({
   initialUseSubdomainRoutes?: boolean;
 }) {
   const router = useRouter();
+  const selectedBranchId = useSearchParams().get("selectedBranch");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [cartLoaded, setCartLoaded] = useState(false);
+  const [loadedCartKey, setLoadedCartKey] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
-  const [drawerTab, setDrawerTab] = useState<"hours" | null>(null);
+  const [drawerTab, setDrawerTab] = useState<"hours" | "branches" | null>(null);
   const [splashVisible, setSplashVisible] = useState(false);
   const [splashClosing, setSplashClosing] = useState(false);
   const splashClickBlockUntil = useRef(0);
   const [menuNested, setMenuNested] = useState(false);
   const [menuBackSignal, setMenuBackSignal] = useState(0);
   const [useSubdomainRoutes, setUseSubdomainRoutes] = useState(initialUseSubdomainRoutes);
-  const storageKey = `cart:${data.restaurant.slug}:main`;
+  const storageKey = selectedBranchId
+    ? `cart:${data.restaurant.slug}:branch:${selectedBranchId}`
+    : `cart:${data.restaurant.slug}:main`;
   const languageStorageKey = `language:${data.restaurant.slug}`;
   const splashStorageKey = `splash:${data.restaurant.slug}`;
   const products = data.products;
@@ -681,13 +685,19 @@ export function PublicMenuClient({
   const currency = data.restaurant.currency ?? cart[0]?.currency ?? "ل.س";
   const currentLanguageLabel = language === "ar" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English";
   const firstBranch = data.restaurant.branches?.[0];
+  // Only the new selectedBranch parameter activates branch-specific behavior.
+  // Old printed QR codes and legacy ?branch= routes retain their original behavior.
+  const selectedBranch = selectedBranchId
+    ? data.restaurant.branches?.find((branch) => branch.id === selectedBranchId)
+    : undefined;
+  const visibleBranch = selectedBranch ?? firstBranch;
   const publicPath = (pathname = "") => restaurantPath(data.restaurant.slug, pathname, useSubdomainRoutes);
 
   function navigateTo(href: string) {
     window.dispatchEvent(new Event("app:navigation-start"));
-    router.push(href);
+    router.push(withSelectedBranch(href, selectedBranchId));
   }
-  const openingHours = formatOpeningHours(firstBranch?.openingHours, language);
+  const openingHours = formatOpeningHours(visibleBranch?.openingHours, language);
   const allBuilderSections = data.menus?.flatMap((menu) => menu.pages?.flatMap((page) => page.sections ?? []) ?? []) ?? [];
   const hasHomeSections = !data.menus?.length || allBuilderSections.some((section) =>
     ["HERO", "MOOD_STRIP", "FEATURED_PRODUCTS"].includes(section.type) && section.isActive !== false
@@ -713,6 +723,13 @@ export function PublicMenuClient({
   }, [data.restaurant.slug]);
 
   useEffect(() => {
+    // Never silently send a request to a different branch when a branch link is stale.
+    if (selectedBranchId && !selectedBranch) {
+      router.replace(restaurantPath(data.restaurant.slug, "/branches", isRestaurantSubdomainHost(window.location.host, data.restaurant.slug)));
+    }
+  }, [selectedBranchId, selectedBranch, data.restaurant.slug, useSubdomainRoutes, router]);
+
+  useEffect(() => {
     if (!shouldTrackMenuView(data.restaurant.slug)) return;
 
     void fetch(`${PUBLIC_API_BASE_URL}/public/menus/${encodeURIComponent(data.restaurant.slug)}/track`, {
@@ -727,12 +744,12 @@ export function PublicMenuClient({
   }, [data.restaurant.slug, view]);
 
   useEffect(() => {
-    setCartLoaded(false);
+    setLoadedCartKey(null);
 
     if (!whatsappOrderingEnabled) {
       setCart([]);
       window.localStorage.removeItem(storageKey);
-      setCartLoaded(true);
+      setLoadedCartKey(storageKey);
       return;
     }
 
@@ -755,7 +772,7 @@ export function PublicMenuClient({
     } else {
       setCart([]);
     }
-    setCartLoaded(true);
+    setLoadedCartKey(storageKey);
   }, [data.restaurant.currency, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
@@ -766,11 +783,11 @@ export function PublicMenuClient({
   }, [languageStorageKey]);
 
   useEffect(() => {
-    if (!cartLoaded || !whatsappOrderingEnabled) {
+    if (loadedCartKey !== storageKey || !whatsappOrderingEnabled) {
       return;
     }
     window.localStorage.setItem(storageKey, JSON.stringify(cart));
-  }, [cart, cartLoaded, storageKey, whatsappOrderingEnabled]);
+  }, [cart, loadedCartKey, storageKey, whatsappOrderingEnabled]);
 
   useEffect(() => {
     window.localStorage.setItem(languageStorageKey, language);
@@ -964,6 +981,18 @@ export function PublicMenuClient({
     setDrawerTab(null);
   }
 
+  function switchBranch(branchId: string) {
+    if (!data.restaurant.branches?.some((branch) => branch.id === branchId)) return;
+    closeDrawer();
+    if (branchId === selectedBranchId) return;
+    try {
+      window.localStorage.setItem(`ordersawa:last-branch:${data.restaurant.slug}`, branchId);
+    } catch {
+      // Branch switching does not depend on browser storage.
+    }
+    navigateTo(`${publicPath()}?selectedBranch=${encodeURIComponent(branchId)}`);
+  }
+
   function blockPostSplashClick(event: React.SyntheticEvent) {
     if (Date.now() < splashClickBlockUntil.current) {
       event.preventDefault();
@@ -1014,7 +1043,7 @@ export function PublicMenuClient({
     { key: "instagram", label: "Instagram", href: normalizeSocialUrl(data.restaurant.instagramUrl, "instagram.com") },
     { key: "facebook", label: "Facebook", href: normalizeSocialUrl(data.restaurant.facebookUrl, "facebook.com") },
     { key: "tiktok", label: "TikTok", href: normalizeSocialUrl(data.restaurant.tiktokUrl, "tiktok.com") },
-    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone) } : null
+    whatsappOrderingEnabled ? { key: "whatsapp", label: "WhatsApp", href: normalizeWhatsappUrl(selectedBranch?.whatsappPhone ?? data.restaurant.whatsappUrl ?? data.restaurant.whatsappPhone) } : null
   ].filter((item): item is { key: string; label: string; href: string | null } => Boolean(item)).filter((item): item is { key: string; label: string; href: string } => Boolean(item.href));
 
   function normalizeCheckoutDetails(details?: CheckoutDetails): CheckoutDetails | undefined {
@@ -1046,6 +1075,10 @@ export function PublicMenuClient({
   }
 
   async function sendWhatsappOrder(details?: CheckoutDetails) {
+    if (selectedBranchId && !selectedBranch) {
+      setOrderMessage("الفرع المختار غير متاح، يرجى اختيار فرع آخر.");
+      return;
+    }
     if (!whatsappOrderingEnabled || !cart.length || orderSubmitting) {
       return;
     }
@@ -1059,6 +1092,7 @@ export function PublicMenuClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(selectedBranch ? { branchSlug: selectedBranch.slug } : {}),
           fulfillmentType: checkoutDetails?.fulfillmentType,
           deliveryArea: checkoutDetails?.deliveryArea,
           deliveryNear: checkoutDetails?.deliveryNear,
@@ -1082,7 +1116,10 @@ export function PublicMenuClient({
     } catch {
       setOrderMessage(t.orderError);
       const fallbackMessage = `${whatsappMessage}${checkoutDetailsMessage(checkoutDetails)}`;
-      window.open(`https://wa.me/${data.restaurant.whatsappPhone ?? ""}?text=${encodeURIComponent(fallbackMessage)}`, "_blank", "noreferrer");
+      const fallbackPhone = selectedBranch
+        ? selectedBranch.whatsappPhone ?? data.restaurant.whatsappPhone ?? ""
+        : data.restaurant.whatsappPhone ?? "";
+      window.open(`https://wa.me/${fallbackPhone}?text=${encodeURIComponent(fallbackMessage)}`, "_blank", "noreferrer");
     } finally {
       setOrderSubmitting(false);
     }
@@ -1249,6 +1286,36 @@ export function PublicMenuClient({
             <span>{t.language}</span>
             <b>{currentLanguageLabel}</b>
           </button>
+          {(data.restaurant.branches?.length ?? 0) > 1 ? (
+            <>
+              <button
+                type="button"
+                className={drawerTab === "branches" ? "active" : ""}
+                aria-expanded={drawerTab === "branches"}
+                aria-controls="drawer-branch-options"
+                onClick={() => setDrawerTab((current) => current === "branches" ? null : "branches")}
+              >
+                <span>{language === "ar" ? "تغيير الفرع" : "Change branch"}</span>
+                <ChevronDown size={18} style={{ transform: drawerTab === "branches" ? "rotate(180deg)" : undefined }} />
+              </button>
+              {drawerTab === "branches" ? (
+                <div id="drawer-branch-options" className={branchStyles.drawerBranches} role="group" aria-label={language === "ar" ? "الفروع المتاحة" : "Available branches"}>
+                  {data.restaurant.branches?.map((branch) => (
+                    <button
+                      key={branch.id}
+                      type="button"
+                      className={branchStyles.drawerBranch}
+                      aria-current={branch.id === selectedBranchId ? "true" : undefined}
+                      onClick={() => switchBranch(branch.id)}
+                    >
+                      <span className={branchStyles.drawerBranchName}>{branch.name}</span>
+                      {branch.id === selectedBranchId ? <Check size={18} aria-hidden="true" /> : <ChevronLeft size={18} aria-hidden="true" />}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : null}
           <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab((current) => current === "hours" ? null : "hours")}>
             <span>{t.hours}</span>
             <Clock3 size={18} />
