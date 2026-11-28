@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - feature/multi-branch-qr-system
+      - integration/qr-only-main
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
