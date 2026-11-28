@@ -1188,13 +1188,6 @@ export function PublicMenuClient({
         {data.restaurant.logoUrl ? <img src={data.restaurant.logoUrl} alt={data.restaurant.name} /> : <span className="public-logo-fallback" />}
       </header> : null}
 
-      {selectedBranch ? (
-        <div className="os-branch-context" dir="rtl">
-          <span>📍 {selectedBranch.name}</span>
-          <Link href={publicPath("/branches")}>تغيير الفرع</Link>
-        </div>
-      ) : null}
-
       {activeView === "home" ? (
         <HomeView data={data} addToCart={addToCart} t={t} showPrices={showPrices} whatsappOrderingEnabled={whatsappOrderingEnabled} useSubdomainRoutes={useSubdomainRoutes} />
       ) : activeView === "menu" ? (
@@ -1280,6 +1273,15 @@ export function PublicMenuClient({
             <span>{t.language}</span>
             <b>{currentLanguageLabel}</b>
           </button>
+          {(data.restaurant.branches?.length ?? 0) > 1 ? (
+            <button type="button" onClick={() => {
+              closeDrawer();
+              navigateTo(publicPath("/branches"));
+            }}>
+              <span>{language === "ar" ? "تغيير الفرع" : "Change branch"}</span>
+              <ArrowLeft size={18} />
+            </button>
+          ) : null}
           <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab((current) => current === "hours" ? null : "hours")}>
             <span>{t.hours}</span>
             <Clock3 size={18} />
