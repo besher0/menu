@@ -1,9 +1,10 @@
 "use client";
 
 import Link, { withSelectedBranch } from "@/components/public/branch-aware-link";
+import branchStyles from "./branch-selector.module.css";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Beef, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Beef, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Drumstick, Facebook, Flame, Heart, Home, Image as ImageIcon, Instagram, LayoutGrid, List, Loader2, Menu, MessageCircle, Minus, Plus, Rotate3D, Scale, ShoppingBag, ShoppingCart, Sparkles, Star, Trash2, Truck, Utensils, Wheat, X, type LucideIcon } from "lucide-react";
 import { PublicCategory, PublicMealDetail, PublicMenuData, PublicProduct, cssVars } from "@/lib/api";
 import { isRestaurantSubdomainHost, restaurantPath } from "@/lib/public-routes";
 
@@ -661,7 +662,7 @@ export function PublicMenuClient({
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderMessage, setOrderMessage] = useState<string | null>(null);
   const [language, setLanguage] = useState<PublicLanguage>("ar");
-  const [drawerTab, setDrawerTab] = useState<"hours" | null>(null);
+  const [drawerTab, setDrawerTab] = useState<"hours" | "branches" | null>(null);
   const [splashVisible, setSplashVisible] = useState(false);
   const [splashClosing, setSplashClosing] = useState(false);
   const splashClickBlockUntil = useRef(0);
@@ -980,6 +981,18 @@ export function PublicMenuClient({
     setDrawerTab(null);
   }
 
+  function switchBranch(branchId: string) {
+    if (!data.restaurant.branches?.some((branch) => branch.id === branchId)) return;
+    closeDrawer();
+    if (branchId === selectedBranchId) return;
+    try {
+      window.localStorage.setItem(`ordersawa:last-branch:${data.restaurant.slug}`, branchId);
+    } catch {
+      // Branch switching does not depend on browser storage.
+    }
+    navigateTo(`${publicPath()}?selectedBranch=${encodeURIComponent(branchId)}`);
+  }
+
   function blockPostSplashClick(event: React.SyntheticEvent) {
     if (Date.now() < splashClickBlockUntil.current) {
       event.preventDefault();
@@ -1274,13 +1287,34 @@ export function PublicMenuClient({
             <b>{currentLanguageLabel}</b>
           </button>
           {(data.restaurant.branches?.length ?? 0) > 1 ? (
-            <button type="button" onClick={() => {
-              closeDrawer();
-              navigateTo(publicPath("/branches"));
-            }}>
-              <span>{language === "ar" ? "تغيير الفرع" : "Change branch"}</span>
-              <ArrowLeft size={18} />
-            </button>
+            <>
+              <button
+                type="button"
+                className={drawerTab === "branches" ? "active" : ""}
+                aria-expanded={drawerTab === "branches"}
+                aria-controls="drawer-branch-options"
+                onClick={() => setDrawerTab((current) => current === "branches" ? null : "branches")}
+              >
+                <span>{language === "ar" ? "تغيير الفرع" : "Change branch"}</span>
+                <ChevronDown size={18} style={{ transform: drawerTab === "branches" ? "rotate(180deg)" : undefined }} />
+              </button>
+              {drawerTab === "branches" ? (
+                <div id="drawer-branch-options" className={branchStyles.drawerBranches} role="group" aria-label={language === "ar" ? "الفروع المتاحة" : "Available branches"}>
+                  {data.restaurant.branches?.map((branch) => (
+                    <button
+                      key={branch.id}
+                      type="button"
+                      className={branchStyles.drawerBranch}
+                      aria-current={branch.id === selectedBranchId ? "true" : undefined}
+                      onClick={() => switchBranch(branch.id)}
+                    >
+                      <span className={branchStyles.drawerBranchName}>{branch.name}</span>
+                      {branch.id === selectedBranchId ? <Check size={18} aria-hidden="true" /> : <ChevronLeft size={18} aria-hidden="true" />}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : null}
           <button type="button" className={drawerTab === "hours" ? "active" : ""} onClick={() => setDrawerTab((current) => current === "hours" ? null : "hours")}>
             <span>{t.hours}</span>
